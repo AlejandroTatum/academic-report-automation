@@ -1,0 +1,31 @@
+# Baseline format for academic reports generated with this toolkit.
+# Adjust these rules to match your university, teacher, or rubric.
+
+page:
+  size: A4
+  margins: 2.5cm
+
+font:
+  body: "Times New Roman"
+  fallback: "Liberation Serif"
+  size: 12pt
+
+paragraphs:
+  alignment: justify
+  first_line_indent: 1.27cm
+
+cover:
+  enabled: true
+  include_university: true
+  include_subject: true
+  include_author: true
+  include_teacher: true
+  include_date: true
+
+references:
+  default_style: IEEE
+  require_clickable_links: true
+
+figures:
+  require_caption: true
+  prefer_generated_assets: true

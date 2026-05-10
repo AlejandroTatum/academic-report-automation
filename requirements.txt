@@ -1,0 +1,11 @@
+markdown
+weasyprint
+python-docx
+pillow
+matplotlib
+altair
+vl-convert-python
+pandas
+plotly
+beautifulsoup4
+lxml

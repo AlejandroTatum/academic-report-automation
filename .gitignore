@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+pnpm-lock.yaml
+package-lock.json
+
+# Generated reports and local assets
+outputs/*
+!outputs/.gitkeep
+assets/generated/*
+!assets/generated/.gitkeep
+backups/
+.cache/
+reports/
+academic-sources/
+
+# Local/private documents
+*.pdf
+*.docx
+*.xlsx
+*.pptx
+*.zip
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
