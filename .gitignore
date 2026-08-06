@@ -24,6 +24,7 @@ backups/
 .cache/
 reports/
 academic-sources/
+.atl/
 
 # Local/private documents
 *.pdf
