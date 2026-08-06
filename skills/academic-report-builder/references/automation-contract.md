@@ -6,18 +6,21 @@ Route selection precedes the build. Complete the intake in `document-intake.md`,
 
 ## Canonical automation
 
-Set one root for every report automation command:
+Code and content live in two separate trees. Code is versioned and shared; content is personal and stays out of the code repository.
 
 ```bash
-REPORT_AUTOMATION_ROOT="/home/alejo/devwork/.projects/university/.reports-system/automation"
+REPORT_AUTOMATION_ROOT="/home/alejo/devwork/apps/academic-report-automation"
+REPORT_CONTENT_ROOT="/home/alejo/devwork/.projects/university/.reports-system/automation"
 ```
 
-From `$REPORT_AUTOMATION_ROOT`, prefer the router, validator, and visual auditor:
+`REPORT_CONTENT_ROOT` holds `reports/`, `academic-sources/`, `assets/generated/`, and the `outputs/` symlink. The tools default to that path, so exporting the variable is only needed to point them at a different content tree.
+
+Run every command from the code root and pass the report folder as an absolute path under the content root:
 
 ```bash
-cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/build_report_auto.py reports/<work-folder>/
-cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/validate_report.py reports/<work-folder>/
-cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/visual_pdf_auditor.py outputs/<materia-slug>/<final-pdf>.pdf
+cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/build_report_auto.py "$REPORT_CONTENT_ROOT/reports/<work-folder>/"
+cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/validate_report.py "$REPORT_CONTENT_ROOT/reports/<work-folder>/"
+cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/visual_pdf_auditor.py "$REPORT_CONTENT_ROOT/outputs/<materia-slug>/<final-pdf>.pdf"
 ```
 
 Use `latex` for long textual/mixed reports, `visual` for concept maps, infographics, or design-heavy deliverables, and `docx` only for editable delivery or mandatory DOCX templates. Keep final visible PDF/DOCX files only in `outputs/<materia-slug>/`; keep intermediates in `build/`, `backups/`, or canonical generated-asset folders.

@@ -1,0 +1,126 @@
+% Non-institutional (plain) report template — technical/project documentation.
+% Same body rendering rules as the academic template (tables, figures, code,
+% citations), but without cover page, institutional background, logo or
+% academic running header/footer. The body starts on page 1.
+
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{fontspec}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}[Ligatures=TeX]}{\setmainfont{TeX Gyre Termes}[Ligatures=TeX]}
+\IfFontExistsTF{Arial}{\setsansfont{Arial}}{\setsansfont{TeX Gyre Heros}}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{needspace}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{ragged2e}
+\usepackage{csquotes}
+\usepackage[backend=biber,style=ieee,sorting=none,hyperref=true]{biblatex}
+\usepackage[table]{xcolor}
+\usepackage{ifthen}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\reporthasbib}{{{HAS_BIB}}}
+\ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
+\newcommand{\reporthasfigures}{{{HAS_FIGURES}}}
+
+% Header data. Only the title, the optional English title and the metadata
+% line are printed; the remaining fields stay available to the renderer.
+\newcommand{\reporttitleen}{{{TITLE_EN}}}
+\newcommand{\reportstudent}{{{STUDENT}}}
+\newcommand{\reportdate}{{{DATE}}}
+% Institutional fields, intentionally not displayed by this template:
+% {{TEACHER}}
+% {{CAREER}}
+% {{PARALLEL}}
+% {{ACTIVITY}}
+% {{UNIVERSITY}}
+% {{FACULTY}}
+
+\onehalfspacing
+\raggedbottom
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{0pt}
+\emergencystretch=3em
+\setlist[itemize]{topsep=4pt,itemsep=2pt,leftmargin=1.2cm}
+\captionsetup{font=small,labelfont=bf,justification=centering}
+\renewcommand{\figurename}{Figura}
+
+\titleformat{\section}{\normalfont\bfseries\Large}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalfont\bfseries\large}{\thesubsection.}{0.6em}{}
+\titleformat{\subsubsection}{\normalfont\bfseries\normalsize}{\thesubsubsection.}{0.6em}{}
+\titlespacing*{\section}{0pt}{18pt}{10pt}
+\titlespacing*{\subsection}{0pt}{14pt}{7pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{5pt}
+
+% Boxed environment used by the Markdown converter for highlighted answers.
+\newsavebox{\answerboxbox}
+\newenvironment{answerbox}{%
+  \par\medskip\noindent
+  \setlength{\fboxsep}{10pt}%
+  \begin{lrbox}{\answerboxbox}%
+  \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}%
+  \vspace{4pt}%
+}{%
+  \vspace{4pt}%
+  \end{minipage}%
+  \end{lrbox}%
+  \fcolorbox{gray!50!black}{gray!5!white}{\usebox{\answerboxbox}}%
+  \par\medskip
+}
+
+% Page number only, centered in the footer.
+\pagestyle{plain}
+
+\hypersetup{
+  pdftitle={{{TITLE}}},
+  pdfauthor={{{STUDENT}}},
+  pdfsubject={{{SUBJECT}}},
+  colorlinks=false,
+  pdfborder={0 0 0}
+}
+
+\begin{document}
+
+% Compact technical header: title, thin rule, metadata line. No cover page.
+\thispagestyle{plain}
+\noindent{\sffamily\bfseries\LARGE {{TITLE}}\par}
+\ifthenelse{\equal{\reporttitleen}{}}{}{%
+  \vspace{0.22cm}
+  \noindent{\sffamily\large\itshape \reporttitleen\par}%
+}
+\vspace{0.30cm}
+\noindent\rule{\textwidth}{0.4pt}\par
+\vspace{0.18cm}
+\noindent{\sffamily\small \reportstudent
+  \ifthenelse{\equal{\reportdate}{}}{}{\enskip\textbullet\enskip\reportdate}\par}
+\vspace{0.85cm}
+
+{{FRONT_MATTER}}
+
+{{AI_SIGNATURE}}
+
+\ifthenelse{\equal{\reporthasfigures}{true}}{{{LIST_OF_FIGURES}}}{}
+
+{{BODY}}
+
+\ifthenelse{\equal{\reporthasbib}{true}}{
+\Needspace{6\baselineskip}
+\printbibliography[title={Referencias}]
+}{}
+
+{{AFTER_BIBLIOGRAPHY}}
+
+% The renderer fills FRONT_MATTER with the very same block it puts in
+% AI_DECLARATION, so the declaration is printed once above and the duplicate
+% is captured here instead of being typeset twice.
+\long\def\reportaideclarationalias{{{AI_DECLARATION}}}
+
+\end{document}

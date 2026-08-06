@@ -1,23 +1,19 @@
 {
-  "name": "academic-report-automation",
+  "name": "university-report-automation",
   "version": "1.0.0",
-  "description": "Academic report automation toolkit with templates, validation helpers and visual rendering utilities.",
-  "private": false,
-  "scripts": {
-    "visual:help": "python3 tools/visual_builder.py --help",
-    "build:sample:html": "python3 tools/build_report.py examples/sample_report.md --html outputs/sample_report.html",
-    "build:sample:pdf": "python3 tools/build_report.py examples/sample_report.md --pdf outputs/sample_report.pdf"
+  "description": "UNL academic report automation kit with local source library and robust visual builder.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
   },
-  "keywords": [
-    "academic-report",
-    "automation",
-    "python",
-    "weasyprint",
-    "markdown",
-    "visualization"
-  ],
-  "author": "Alejandro Padilla",
-  "license": "MIT",
+  "scripts": {
+    "visual:help": "./.venv/bin/python tools/visual_builder.py --help",
+    "visual:validate:so": "./.venv/bin/python tools/visual_builder.py validate assets/generated/sistemas-operativos/maquinas-virtuales-contenedores",
+    "build:vm-containers": "./.venv/bin/python tools/build_vm_contenedores_report.py"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.14.0",

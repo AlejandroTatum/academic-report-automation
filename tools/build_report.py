@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build university-style academic reports from Markdown.
+"""Build UNL-style university reports from Markdown.
 
 Usage:
-  python3 tools/build_report.py examples/sample_report.md --html outputs/sample_report.html
-  python3 tools/build_report.py examples/sample_report.md --pdf outputs/sample_report.pdf
+  python3 tools/build_report.py templates/ensayo_unl.md --html outputs/ensayo.html
+  python3 tools/build_report.py templates/ensayo_unl.md --pdf outputs/ensayo.pdf
 """
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def render(md_path: Path, css_path: Path) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("markdown_file", type=Path)
-    parser.add_argument("--css", type=Path, default=Path("templates/report.css"))
+    parser.add_argument("--css", type=Path, default=Path("templates/ensayo_unl.css"))
     parser.add_argument("--html", type=Path)
     parser.add_argument("--pdf", type=Path)
     args = parser.parse_args()

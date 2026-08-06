@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Common, backend-aware validation layer for academic reports."""
+"""Common, backend-aware validation layer for Alejandro's university reports."""
 from __future__ import annotations
 
 import argparse
@@ -11,9 +11,17 @@ from pathlib import Path
 
 import yaml
 
-from report_config import ReportConfig, load_report_config
+from report_config import ROOT as AUTOMATION_ROOT
+from report_config import CONTENT_ROOT, ReportConfig, load_report_config, relative_label
 from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_path
 from validate_ieee_refs import ValidationResult, validate_ieee
+
+# Visual PDF auditor integration — optional dependency
+try:
+    from visual_pdf_auditor import audit_pdf
+    VISUAL_AUDITOR_AVAILABLE = True
+except ImportError:
+    VISUAL_AUDITOR_AVAILABLE = False
 
 A4_WIDTH = 595.28
 A4_HEIGHT = 841.89
@@ -71,8 +79,26 @@ def common_validation(config: ReportConfig) -> ValidationResult:
         result.errors.append(f"No existe PDF final esperado: {config.pdf_path}")
 
     outputs = config.folder / "outputs"
-    if config.output_format == "pdf" and config.pdf_path.exists() and outputs not in config.pdf_path.parents:
-        result.warnings.append("El PDF final no está dentro de outputs/")
+    local_outputs = outputs.resolve()
+    global_outputs = GLOBAL_OUTPUTS.resolve()
+    final_pdf = config.pdf_path.resolve()
+    if config.output_format == "pdf" and config.pdf_path.exists():
+        in_local_outputs = local_outputs in final_pdf.parents
+        in_global_outputs = global_outputs in final_pdf.parents
+        if not (in_local_outputs or in_global_outputs):
+            expected_global_exists = False
+            if config.publish_global:
+                subject_slug = infer_subject_for_path(config.pdf_path, config.metadata)
+                if subject_slug:
+                    expected_global = GLOBAL_OUTPUTS / subject_slug / config.pdf_path.name
+                    expected_global_exists = expected_global.exists()
+            if not expected_global_exists:
+                result.warnings.append("El PDF final no está dentro de outputs/")
+        if in_local_outputs and not config.folder.name.startswith("_"):
+            result.errors.append(
+                "No guardar resultados finales en reports/<trabajo>/outputs/: "
+                "usar solamente outputs/<materia>/ para evitar duplicados"
+            )
 
     if outputs.exists():
         dirty = [p.name for p in outputs.iterdir() if p.is_file() and p.suffix.lower() not in {".pdf", ".docx"}]
@@ -84,7 +110,10 @@ def common_validation(config: ReportConfig) -> ValidationResult:
         if subject_slug:
             expected_global = GLOBAL_OUTPUTS / subject_slug / config.pdf_path.name
             if not expected_global.exists():
-                result.warnings.append(f"No existe copia global filtrada por materia: {expected_global.relative_to(GLOBAL_OUTPUTS.parent)}")
+                result.warnings.append(
+                    "No existe copia global filtrada por materia: "
+                    + relative_label(expected_global, GLOBAL_OUTPUTS.parent)
+                )
         else:
             result.warnings.append("No pude inferir la materia para publicar en outputs/<materia>/")
 
@@ -116,6 +145,63 @@ def common_validation(config: ReportConfig) -> ValidationResult:
         if blank_pages:
             result.errors.append("Posibles páginas vacías accidentales: " + ", ".join(blank_pages))
 
+        if config.academic_value("cover", "required", default=True) and len(pages) < 2:
+            result.errors.append("La portada es obligatoria pero el PDF tiene menos de 2 páginas")
+
+        # CRITICAL: detect LaTeX commands rendered as literal text in PDF
+        full_text = "\n".join(pages)
+        latex_escaped_patterns = [
+            (r"\quad", "\\quad"),
+            (r"\qquad", "\\qquad"),
+            (r"\frac", "\\frac"),
+            (r"\boxed", "\\boxed"),
+            (r"\sqrt", "\\sqrt"),
+            (r"\pi", "\\pi"),
+            (r"\sin", "\\sin"),
+            (r"\cos", "\\cos"),
+            (r"\tan", "\\tan"),
+            (r"\pm", "\\pm"),
+            (r"\cdot", "\\cdot"),
+            (r"\Longrightarrow", "\\Longrightarrow"),
+            (r"\left", "\\left"),
+            (r"\right", "\\right"),
+            (r"\begin", "\\begin"),
+            (r"\end", "\\end"),
+            (r"\textbackslash", "\\textbackslash"),
+        ]
+        found = []
+        for display_name, search_pattern in latex_escaped_patterns:
+            count = full_text.count(search_pattern)
+            if count > 0:
+                found.append(f"{display_name} ({count} vez/veces)")
+        if found:
+            result.errors.append(
+                "COMANDOS LATEX RENDERIZADOS COMO TEXTO LITERAL EN EL PDF: "
+                + ", ".join(found) + ". "
+                "Indica que latex_escape() en build_latex_report.py está "
+                "escapando comandos que deberían estar dentro de $...$ o $$...$$."
+            )
+
+    return result
+
+
+def asset_validation(_config: ReportConfig) -> ValidationResult:
+    """Validate that system-level build assets (logo, background) exist.
+
+    This checks the automation root's assets/ folder, not the report folder.
+    Every LaTeX pipeline run needs these files; warn early if they drift.
+    """
+    result = ValidationResult()
+    from build_latex_report import ASSETS_DIR, EXPECTED_ASSETS
+
+    for filename, description in EXPECTED_ASSETS:
+        path = ASSETS_DIR / filename
+        if not path.exists():
+            result.errors.append(
+                f"Asset faltante: {description} ({filename}) — esperado en {ASSETS_DIR}"
+            )
+        elif path.stat().st_size < 1_000:
+            result.errors.append(f"Asset sospechosamente pequeño: {path}")
     return result
 
 
@@ -143,27 +229,61 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
         images = run(["pdfimages", "-list", str(config.pdf_path)]).stdout.splitlines()
         image_rows = [line for line in images if re.match(r"^\s*\d+\s+\d+\s+image", line)]
         if config.academic_value("cover", "logo_required", default=True) and not image_rows:
-            result.errors.append("PDF no parece tener imágenes embebidas; revisar university logo")
+            result.errors.append("PDF no parece tener imágenes embebidas; revisar logo UNL")
     except FileNotFoundError:
         result.warnings.append("pdfimages no disponible; no se validó logo/imágenes")
 
     pages = pdf_text_pages(config.pdf_path)
-    if len(pages) >= 2:
+    body_page = config.academic_value("cover", "body_starts_on_page", default=2)
+    body_page_index = body_page - 1  # 0-indexed
+    if len(pages) > body_page_index:
         first = pages[0].lower()
-        second = pages[1].lower()
-        body_markers = ["introducción", "introduccion", "tema", "antecedentes", "descripción", "descripcion", "desarrollo"]
-        marker_pattern = r"\b(" + "|".join(re.escape(marker) for marker in body_markers) + r")\b"
-        if re.search(marker_pattern, first) and not config.raw.get("allow_body_on_cover", False):
+        body_content = pages[body_page_index].lower()
+        body_markers = [
+            "introducción",
+            "introduccion",
+            "tema",
+            "antecedentes",
+            "descripción",
+            "descripcion",
+            "desarrollo",
+            "ejercicio",
+            "ejercicios",
+        ]
+        body_marker_pattern = r"\b(" + "|".join(re.escape(marker) for marker in body_markers) + r")\b"
+        cover_body_markers = [
+            "introducción",
+            "introduccion",
+            "tema",
+            "antecedentes",
+            "descripción",
+            "descripcion",
+            "desarrollo",
+        ]
+        cover_body_marker_pattern = r"\b(" + "|".join(re.escape(marker) for marker in cover_body_markers) + r")\b"
+        if re.search(cover_body_marker_pattern, first) and not config.raw.get("allow_body_on_cover", False):
             result.errors.append("La portada parece mezclada con el cuerpo; el cuerpo debe iniciar en página 2")
-        if not re.search(marker_pattern, second) and config.backend == "latex":
-            result.warnings.append("No detecté inicio claro del cuerpo en página 2; revisar portada/cuerpo")
+        if not re.search(body_marker_pattern, body_content) and config.backend == "latex":
+            result.warnings.append(f"No detecté inicio claro del cuerpo en página {body_page}; revisar portada/cuerpo")
 
         for idx, page in enumerate(pages[:-1], start=1):
             lines = [line.strip() for line in page.splitlines() if line.strip()]
             if not lines:
                 continue
             last = lines[-1]
-            looks_heading = bool(re.match(r"^(\d+(?:\.\d+)*)?\s*[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ\s]{3,70}$", last)) and not last.endswith((".", ":", ";", ","))
+            looks_heading = (
+                bool(re.match(r"^(\d+(?:\.\d+)*)?\s*[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ\s]{3,70}$", last))
+                and not last.endswith((".", ":", ";", ","))
+            )
+            if looks_heading:
+                # Reduce false positives from pdftotext fragments: a heading
+                # should have a number prefix, span multiple words, or be at
+                # least 8 characters (single short words like "Manten" are
+                # typically split-word artifacts, not real headings).
+                has_number = bool(re.match(r"^\d+(?:\.\d+)*", last))
+                has_space = " " in last.strip()
+                if not (has_number or has_space or len(last.strip()) >= 8):
+                    looks_heading = False
             if looks_heading:
                 result.errors.append(f"Posible título huérfano al final de página {idx}: {last}")
 
@@ -230,16 +350,20 @@ def visual_validation(config: ReportConfig) -> ValidationResult:
         if not isinstance(fig, dict):
             result.errors.append(f"Figura {idx} inválida en figures.yml")
             continue
-        for key in ("file", "caption", "source", "renderer"):
+        for key in ("file", "title", "caption", "source", "renderer"):
             if not fig.get(key):
                 result.errors.append(f"Figura {idx} sin {key}")
-        file_path = Path(fig.get("file", ""))
-        if file_path and not file_path.is_absolute():
-            file_path = config.folder / file_path
-        if file_path and not file_path.exists():
-            result.errors.append(f"Figura {idx} no existe: {file_path}")
-        elif file_path and file_path.stat().st_size < 4_000:
-            result.warnings.append(f"Figura {idx} parece demasiado pequeña: {file_path}")
+        if not fig.get("section") and not fig.get("intended_section"):
+            result.errors.append(f"Figura {idx} sin section ni intended_section")
+        file_value = fig.get("file") or ""
+        if file_value:
+            file_path = Path(file_value)
+            if not file_path.is_absolute():
+                file_path = config.folder / file_path
+            if not file_path.exists():
+                result.errors.append(f"Figura {idx} no existe: {file_path}")
+            elif file_path.stat().st_size < 4_000:
+                result.warnings.append(f"Figura {idx} parece demasiado pequeña: {file_path}")
     return result
 
 
@@ -250,6 +374,98 @@ def docx_validation(config: ReportConfig) -> ValidationResult:
         return result
     if config.docx_path.stat().st_size < 10_000:
         result.warnings.append("DOCX demasiado pequeño; revisar que no esté vacío")
+    return result
+
+
+def visual_pdf_validation(config: ReportConfig) -> ValidationResult:
+    """Validate PDF visual quality using visual_pdf_auditor.py.
+    
+    Runs the heuristic page-image analysis (pdftoppm + PIL) on the final PDF.
+    Requires poppler-utils (pdftoppm) and Pillow.
+    Only runs when config.output_format == 'pdf' and the PDF exists.
+    """
+    result = ValidationResult()
+
+    if config.output_format != "pdf":
+        result.warnings.append("visual_pdf: saltado — formato no es PDF")
+        return result
+
+    pdf = config.pdf_path
+    if not pdf.exists():
+        result.errors.append(f"visual_pdf: no existe PDF para auditar: {pdf}")
+        return result
+
+    if not VISUAL_AUDITOR_AVAILABLE:
+        result.warnings.append(
+            "visual_pdf: visual_pdf_auditor no disponible; "
+            "ejecutá manual: python tools/visual_pdf_auditor.py <pdf>"
+        )
+        return result
+
+    try:
+        # Audit artefacts are build output for a report, i.e. content.
+        audit_dir = CONTENT_ROOT / "build" / "visual-audits" / pdf.stem
+        audit_result = audit_pdf(pdf, audit_dir)
+
+        if audit_result.severity == "FAIL":
+            failures = [
+                f for f in audit_result.findings
+                if f.near_blank or f.edge_clipping
+            ]
+            for finding in failures:
+                issues = []
+                if finding.near_blank:
+                    issues.append(f"NEAR_BLANK ({finding.blank_reason})")
+                if finding.edge_clipping:
+                    issues.append(f"EDGE_CLIPPING — {finding.edge_side}")
+                result.errors.append(
+                    f"visual_pdf [Página {finding.page}]: " + ", ".join(issues)
+                )
+
+            inner_low_density = [
+                f for f in audit_result.findings
+                if f.low_density and 1 < f.page < audit_result.total_pages
+            ]
+            for finding in inner_low_density:
+                result.errors.append(
+                    f"visual_pdf [Página {finding.page}]: LOW_DENSITY "
+                    f"(ink fraction={finding.density_frac}) — "
+                    "página interior casi vacía"
+                )
+
+            orphan_warnings = [
+                f for f in audit_result.findings if f.orphan_heading
+            ]
+            for finding in orphan_warnings:
+                result.warnings.append(
+                    f"visual_pdf [Página {finding.page}]: ORPHAN_HEADING "
+                    f"(confidence={finding.orphan_confidence})"
+                )
+
+            low_density = [
+                f for f in audit_result.findings if f.low_density
+            ]
+            for finding in low_density:
+                result.warnings.append(
+                    f"visual_pdf [Página {finding.page}]: LOW_DENSITY "
+                    f"(ink fraction={finding.density_frac})"
+                )
+        elif audit_result.severity == "PASS_WITH_WARNINGS":
+            for finding in audit_result.findings:
+                if finding.orphan_heading:
+                    result.warnings.append(
+                        f"visual_pdf [Página {finding.page}]: ORPHAN_HEADING "
+                        f"(confidence={finding.orphan_confidence})"
+                    )
+                if finding.low_density:
+                    result.warnings.append(
+                        f"visual_pdf [Página {finding.page}]: LOW_DENSITY "
+                        f"(ink fraction={finding.density_frac})"
+                    )
+
+    except Exception as exc:
+        result.warnings.append(f"visual_pdf: error ejecutando auditor: {exc}")
+
     return result
 
 
@@ -278,6 +494,11 @@ def validate(config: ReportConfig) -> ReportValidation:
     validation = ReportValidation()
     if validators.get("common", True):
         validation.add("common", common_validation(config))
+    if (
+        validators.get("common", True)
+        and config.backend == "latex"
+    ):
+        validation.add("assets", asset_validation(config))
     if validators.get("pdf_layout", False):
         validation.add("pdf_layout", pdf_layout_validation(config))
     if validators.get("ieee", True):
@@ -288,6 +509,8 @@ def validate(config: ReportConfig) -> ReportValidation:
         validation.add("latex_log", latex_log_validation(config))
     if validators.get("visual", False):
         validation.add("visual", visual_validation(config))
+    if validators.get("visual_pdf", False):
+        validation.add("visual_pdf", visual_pdf_validation(config))
     if validators.get("docx", False):
         validation.add("docx", docx_validation(config))
     write_quality_report(config, validation)
