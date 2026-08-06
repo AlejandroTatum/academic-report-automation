@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render and validate academic visuals for academic report automation.
+"""Render and validate academic visuals for UNL report automation.
 
 Renderers:
 - Mermaid CLI for diagrams.
@@ -20,10 +20,24 @@ import tempfile
 from pathlib import Path
 from textwrap import dedent
 
+import yaml
+
+from report_config import CONTENT_ROOT
+
 ROOT = Path(__file__).resolve().parents[1]
+# Toolchain: node_modules is reinstalled with the code, so it stays CODE.
 NODE_BIN = ROOT / "node_modules" / ".bin"
-BACKUPS = ROOT / "backups" / "visual-renders"
-LOCAL_CHROME_ROOT = ROOT / ".cache" / "puppeteer" / "chrome"
+# Render scratch (puppeteer config, temp .cjs) follows the content tree's
+# backups/ convention and keeps generated junk out of the monorepo checkout.
+BACKUPS = CONTENT_ROOT / "backups" / "visual-renders"
+# Chrome is toolchain too, so the code checkout is searched first; the content
+# tree is kept as a fallback because that is where the existing install lives.
+LOCAL_CHROME_ROOTS = (
+    ROOT / ".cache" / "puppeteer" / "chrome",
+    CONTENT_ROOT / ".cache" / "puppeteer" / "chrome",
+)
+# Back-compat alias for importers of the single-root name.
+LOCAL_CHROME_ROOT = LOCAL_CHROME_ROOTS[0]
 DEFAULT_WIDTH = 1400
 DEFAULT_HEIGHT = 900
 
@@ -46,8 +60,25 @@ def run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None =
 
 
 def resolve_path(path: str | Path) -> Path:
+    """Resolve a CLI path argument after the code/content split.
+
+    A relative argument is genuinely ambiguous now: spec inputs (visuals/specs)
+    and rendered outputs (assets/generated) are content, while a shipped
+    stylesheet under templates/ is code. Existing files are looked up in the
+    caller's cwd, then the content tree, then the code tree — so every relative
+    path that worked before still resolves to the same file.
+
+    A path that exists nowhere is an OUTPUT about to be written; everything this
+    tool generates is content, so it lands under the content root.
+    """
     p = Path(path)
-    return p if p.is_absolute() else ROOT / p
+    if p.is_absolute():
+        return p
+    for base in (Path.cwd(), CONTENT_ROOT, ROOT):
+        candidate = base / p
+        if candidate.exists():
+            return candidate
+    return CONTENT_ROOT / p
 
 
 def ensure_parent(path: Path) -> None:
@@ -55,10 +86,11 @@ def ensure_parent(path: Path) -> None:
 
 
 def newest_local_chrome() -> Path | None:
-    candidates = sorted(LOCAL_CHROME_ROOT.glob("linux-*/chrome-linux64/chrome"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for candidate in candidates:
-        if candidate.exists() and os.access(candidate, os.X_OK):
-            return candidate
+    for chrome_root in LOCAL_CHROME_ROOTS:
+        candidates = sorted(chrome_root.glob("linux-*/chrome-linux64/chrome"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for candidate in candidates:
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return candidate
     home_candidates = sorted(Path.home().glob(".cache/puppeteer/chrome/linux-*/chrome-linux64/chrome"), key=lambda p: p.stat().st_mtime, reverse=True)
     for candidate in home_candidates:
         if candidate.exists() and os.access(candidate, os.X_OK):
@@ -244,11 +276,20 @@ def metadata_errors(folder: Path) -> list[str]:
     meta = folder / "figures.yml"
     if not meta.exists():
         return [f"falta metadata: {meta}"]
-    text = meta.read_text(encoding="utf-8")
-    errors = []
-    for required in ("file:", "caption:", "source:", "renderer:"):
-        if required not in text:
-            errors.append(f"figures.yml no contiene {required}")
+    data = yaml.safe_load(meta.read_text(encoding="utf-8")) or {}
+    figures = data.get("figures") if isinstance(data, dict) else data
+    if not isinstance(figures, list) or not figures:
+        return [f"figures.yml no contiene lista de figuras"]
+    errors: list[str] = []
+    for idx, fig in enumerate(figures, start=1):
+        if not isinstance(fig, dict):
+            errors.append(f"Figura {idx} inválida en figures.yml")
+            continue
+        for key in ("file", "title", "caption", "source", "renderer"):
+            if not fig.get(key):
+                errors.append(f"Figura {idx} sin {key}")
+        if not fig.get("section") and not fig.get("intended_section"):
+            errors.append(f"Figura {idx} sin section ni intended_section")
     return errors
 
 
@@ -273,7 +314,7 @@ def command_validate(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Academic visual renderer for academic report automation")
+    parser = argparse.ArgumentParser(description="Academic visual renderer for UNL report automation")
     sub = parser.add_subparsers(dest="command", required=True)
 
     mermaid = sub.add_parser("mermaid", help="Render Mermaid spec to SVG/PNG/PDF")

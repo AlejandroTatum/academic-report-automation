@@ -1,31 +1,110 @@
-# Baseline format for academic reports generated with this toolkit.
-# Adjust these rules to match your university, teacher, or rubric.
+# Baseline format for Alejandro's UNL academic reports.
+# Teacher PDF/DOCX/rubric instructions override this file only when explicitly provided.
+#
+# ENFORCEMENT KEY:
+#   [ENFORCED]   — read by a validator function at runtime (validate_report.py)
+#   [TEST-GATED] — verified by tests against LaTeX templates (test_asset_font_validation.py)
+#   [GUIDANCE]   — describes template/layout defaults; not automatically validated
+#
+# Annotations are on each field or section header.
 
 page:
-  size: A4
-  margins: 2.5cm
+  size: A4  # [ENFORCED] pdf_layout_validation checks rendered PDF dimensions match A4
+  margins:
+    default_cm: 2.5                          # [GUIDANCE] hardcoded in .tex template
+    allowed_cm: [2.5, 3.0]                   # [GUIDANCE] manual override only
 
-font:
-  body: "Times New Roman"
-  fallback: "Liberation Serif"
-  size: 12pt
-
-paragraphs:
-  alignment: justify
-  first_line_indent: 1.27cm
+body_text:
+  # Canonical font: Times New Roman (Windows/macOS) with multi-tier fallback:
+  #   TeX Gyre Termes (XeLaTeX/lualatex without TNR) — Serif fallback for Linux/WeasyPrint.
+  # For sans-serif contexts (diagrams, figure labels): Arial → TeX Gyre Heros.
+  font_preference:                           # [TEST-GATED] test_asset_font_validation verifies
+    - Times New Roman                        #   templates reference Times New Roman first
+    - Arial
+  latex_fallback_chain:                      # [TEST-GATED] test_asset_font_validation verifies
+    serif:                                   #   .tex templates reference TeX Gyre Termes
+      - TeX Gyre Termes
+    sans:
+      - TeX Gyre Heros
+  linux_pdf_fallbacks:                       # [GUIDANCE] Linux fallback docs for manual review
+    serif: Liberation Serif
+    sans: Liberation Sans
+  size_pt: 12                                # [GUIDANCE] set in .tex template
+  alignment_default: justified               # [GUIDANCE] set in .tex template
+  alignment_allowed:                         # [GUIDANCE] set in .tex template
+    - justified
+    - left
+  first_line_indent_cm: 1.27                 # [GUIDANCE] set in .tex template (APA style)
+  line_spacing: 1.15                         # [GUIDANCE] set in .tex template
 
 cover:
-  enabled: true
-  include_university: true
-  include_subject: true
-  include_author: true
-  include_teacher: true
-  include_date: true
-
-references:
-  default_style: IEEE
-  require_clickable_links: true
+  required: true              # [ENFORCED] common_validation checks PDF has at least 2 pages (cover + body)
+  full_first_page: true       # [GUIDANCE] template layout, not validated
+  logo_required: true         # [ENFORCED] pdf_layout_validation checks for embedded images
+  body_starts_on_page: 2      # [ENFORCED] pdf_layout_validation checks body markers on page 2
+  source_model: academic-sources/sistemas-operativos/templates/modelos-ensayo/  # [GUIDANCE]
 
 figures:
-  require_caption: true
-  prefer_generated_assets: true
+  readable_at_pdf_zoom: "100%"       # [GUIDANCE] manual visual check
+  preferred_diagram_font: Arial      # [GUIDANCE] visual builder default
+  renderers:                         # [GUIDANCE] documented available tools
+    - HTML/Playwright
+    - Vega-Lite
+    - ECharts
+    - Mermaid only for simple diagrams or with custom CSS
+  quality_gate: "Replace unreadable gray/tiny Mermaid diagrams before export."  # [GUIDANCE]
+
+conclusions:
+  banned_openers:                              # [ENFORCED] common_validation reads this list
+    - Se concluye                              #   and flags them in PDF body text
+    - En conclusión
+    - En conclusion
+
+citations:
+  default_style: ieee                                          # [GUIDANCE] hardcoded default
+  clickable_citations: true                                     # [ENFORCED] hyperref + PDF links checked in validate_ieee_refs (config-driven)
+  require_bibliography_when_sources_used: true                  # [ENFORCED] validate_ieee_refs checks bib exists when sources cited (config-driven)
+  require_all_cited_sources_in_bibliography: true               # [ENFORCED] validate_ieee checks each citation
+  require_no_uncited_bibliography_entries: true                 # [ENFORCED] validate_ieee checks bib entries
+  validate_rendered_pdf: true                                   # [GUIDANCE] aspirational — no PDF render citation validator exists yet
+  banned_rendered_terms:                                        # [ENFORCED] validate_ieee_refs reads this list (config-driven)
+    - date of publication
+    - s. f.
+    - sin fecha
+  specific_locator_examples:                                   # [GUIDANCE] reference examples
+    - "[1, Fig. 2]"
+    - "[1, Sec. IV]"
+    - "[1, Ch. 3]"
+
+# =============================================================================
+# VALIDATORS REFERENCE
+# This section documents all validator checks available per backend.
+# The actual toggling happens in each report's report.yml validators: field.
+# See ReportConfig.validators in report_config.py for the dispatching logic.
+# =============================================================================
+validators:
+  common:
+    require_cover: true      # common_validation + pdf_layout_validation
+    require_unl_logo: true   # pdf_layout_validation (pdfimages check)
+    require_metadata:        # common_validation
+      - title
+      - subject
+      - teacher
+      - student
+      - date
+    require_clean_outputs: true   # common_validation
+    reject_blank_pages: true      # common_validation
+  latex:
+    require_hyperref: true                    # latex_log_validation
+    require_needspace_before_headings: true   # latex_log_validation + template generation
+    reject_orphan_headings: true              # pdf_layout_validation
+    validate_latex_log: true                  # latex_log_validation
+  visual:
+    require_figures_yml: true   # visual_validation
+    require_caption: true       # visual_validation (for each figure)
+    require_source: true        # visual_validation (for each figure)
+    require_renderer: true      # visual_validation (for each figure)
+  visual_pdf:
+    enabled_default: false      # [GUIDANCE] Opt-in manual
+    activation: "\"validators: {visual_pdf: true}\" en report.yml"
+    note: "Activates automatic visual PDF audit inside validate_report.py. Without this config, run visual_pdf_auditor.py manually after validation."

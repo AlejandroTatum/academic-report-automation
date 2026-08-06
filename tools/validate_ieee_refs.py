@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+import tempfile
 import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,36 @@ def pdf_text(pdf: Path) -> str:
         return ""
 
 
+def pdf_has_links(pdf: Path) -> bool:
+    if not pdf.exists():
+        return False
+    data = pdf.read_bytes()
+    haystack = data
+    for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+        try:
+            haystack += zlib.decompress(match.group(1))
+        except Exception:
+            continue
+    if b"/Subtype/Link" in haystack or b"/Annots" in haystack:
+        return True
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "pdf_links"
+            proc = subprocess.run(
+                ["pdftohtml", "-xml", "-i", str(pdf), str(out)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            xml = out.with_suffix(".xml")
+            if proc.returncode == 0 and xml.exists():
+                return "href=" in xml.read_text(encoding="utf-8", errors="ignore")
+    except FileNotFoundError:
+        return False
+    return False
+
+
 def bib_keys(bib_text: str) -> set[str]:
     return set(re.findall(r"@\w+\s*\{\s*([^,\s]+)", bib_text))
 
@@ -64,7 +95,7 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
     rendered = pdf_text(config.pdf_path)
     source_text = "\n".join([body_text, tex_text])
 
-    if not config.bib_path and ("[@" in body_text or "\\cite" in tex_text):
+    if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and not config.bib_path and ("[@" in body_text or "\\cite" in tex_text):
         result.errors.append("Hay citas en el cuerpo, pero no existe sources.bib/bibliography configurada")
 
     keys = bib_keys(bib_text)
@@ -77,13 +108,13 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
         if unused:
             result.warnings.append("Entradas BibTeX no citadas: " + ", ".join(unused))
 
-    if config.bib_path and config.pdf_path.exists():
+    if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and config.bib_path and config.pdf_path.exists():
         if not re.search(r"\b(Bibliograf[ií]a|Referencias|References)\b", rendered, re.I):
             result.errors.append("El PDF no muestra sección de Bibliografía/Referencias")
         if cited and not re.search(r"\[[0-9]+\]", rendered):
             result.errors.append("El PDF no muestra citas/referencias numéricas IEEE tipo [1]")
 
-    banned_rendered = ["date of publication", "s. f.", "sin fecha"]
+    banned_rendered = config.academic_value("citations", "banned_rendered_terms", default=["date of publication", "s. f.", "sin fecha"])
     lower_rendered = rendered.lower()
     found_banned = [item for item in banned_rendered if item in lower_rendered]
     if found_banned:
@@ -103,19 +134,11 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
         if doi_keys and "doi" not in lower_rendered:
             result.warnings.append("Hay DOI en BibTeX, pero el PDF no parece renderizar DOI; revisar estilo IEEE")
 
-    if config.backend == "latex":
+    if config.academic_value("citations", "clickable_citations", default=True) and config.backend == "latex":
         if "hyperref" not in tex_text:
             result.errors.append("LaTeX debe cargar hyperref para citas/referencias clickeables")
-        elif config.pdf_path.exists():
-            data = config.pdf_path.read_bytes()
-            haystack = data
-            for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
-                try:
-                    haystack += zlib.decompress(match.group(1))
-                except Exception:
-                    continue
-            if b"/Subtype/Link" not in haystack and b"/Annots" not in haystack:
-                result.warnings.append("No pude confirmar anotaciones de enlace en el PDF; revisar que las citas sean clickeables")
+        elif config.pdf_path.exists() and not pdf_has_links(config.pdf_path):
+            result.warnings.append("No pude confirmar anotaciones de enlace en el PDF; revisar que las citas sean clickeables")
 
     return result
 

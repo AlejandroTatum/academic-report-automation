@@ -66,12 +66,13 @@ Use when Alejandro needs visuals for university work: flowcharts, architecture d
 All report automation commands use a single canonical root. Before running commands, set this shell variable:
 
 ```bash
-REPORT_AUTOMATION_ROOT="/home/alejo/devwork/.projects/university/.reports-system/automation"
+REPORT_AUTOMATION_ROOT="/home/alejo/devwork/apps/academic-report-automation"
+REPORT_CONTENT_ROOT="/home/alejo/devwork/.projects/university/.reports-system/automation"
 ```
 
 Then use `$REPORT_AUTOMATION_ROOT` in all commands. This skill assumes you set this variable before execution.
 
-Canonical root: `/home/alejo/devwork/.projects/university/.reports-system/automation`
+Canonical root: `/home/alejo/devwork/apps/academic-report-automation`
 
 ## Commands
 

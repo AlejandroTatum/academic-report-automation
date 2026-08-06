@@ -1,0 +1,124 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper,left=3cm,right=2.5cm,top=3cm,bottom=2.5cm]{geometry}
+\usepackage{fontspec}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}[Ligatures=TeX]}{\setmainfont{TeX Gyre Termes}[Ligatures=TeX]}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{needspace}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{ragged2e}
+\usepackage{csquotes}
+\usepackage[backend=biber,style=ieee,sorting=none,hyperref=true]{biblatex}
+\usepackage[table]{xcolor}
+\usepackage{ifthen}
+\usepackage{eso-pic}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand\BackgroundPic{%
+  \put(0,0){%
+    \parbox[b][\paperheight]{\paperwidth}{%
+      \vfill
+      \centering
+      \includegraphics[width=\paperwidth,height=\paperheight]{{{BACKGROUND_PATH}}}%
+      \vfill
+}}}
+
+\newcommand{\reporthasbib}{{{HAS_BIB}}}
+\ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
+
+\onehalfspacing
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{0pt}
+\emergencystretch=3em
+\setlist[itemize]{label=\tiny$\blacksquare$,topsep=4pt,itemsep=6pt,leftmargin=0.75cm}
+\captionsetup{font=small,labelfont=bf,justification=centering}
+\renewcommand{\figurename}{Figura}
+\renewcommand{\contentsname}{Índice General}
+\renewcommand{\listfigurename}{Índice de Figuras}
+\renewcommand{\refname}{Referencias bibliográficas}
+
+\titleformat{\section}{\normalfont\bfseries\large}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalfont\bfseries\normalsize}{\thesubsection.}{0.6em}{}
+\titlespacing*{\section}{0pt}{14pt}{8pt}
+\titlespacing*{\subsection}{0pt}{12pt}{6pt}
+
+\renewcommand{\cfttoctitlefont}{\normalfont\Huge}
+\renewcommand{\cftloftitlefont}{\normalfont\Huge}
+\renewcommand{\cftsecfont}{\bfseries}
+\renewcommand{\cftsecpagefont}{\bfseries}
+\setlength{\cftbeforesecskip}{0.65em}
+\setlength{\cftbeforesubsecskip}{0.25em}
+
+\pagestyle{plain}
+
+\hypersetup{
+  pdftitle={{{TITLE}}},
+  pdfauthor={{{STUDENT}}},
+  pdfsubject={{{SUBJECT}}},
+  colorlinks=false,
+  pdfborder={0 0 0}
+}
+
+\begin{document}
+
+\begin{titlepage}
+  \AddToShipoutPictureBG*{\BackgroundPic}
+  \thispagestyle{empty}
+  \centering
+  \vspace*{3.1cm}
+  % Logo omitido: fondo-overleaf-investigacion.png ya incluye el logo UNL
+  % \includegraphics[width=3.1cm]{{{LOGO_PATH}}}\\[1.0cm]
+  \vspace*{2.7cm}
+  {\Large {{UNIVERSITY}}}\\[0.62cm]
+  {\large {{FACULTY}}}\\[0.62cm]
+  {\large {{CAREER}}}\\[1.25cm]
+  {\Large {{TITLE}}}\\[0.62cm]
+  {\large {{TITLE_EN}}}\\[0.85cm]
+
+  {\raggedleft
+    \setlength{\fboxsep}{4pt}
+    \fbox{%
+      \begin{minipage}{0.27\textwidth}\small
+        {{SUBJECT}}.
+      \end{minipage}%
+    }\par
+  }
+  \vspace{0.65cm}
+
+  {\bfseries\large AUTOR:}\\[0.45em]
+  {\large {{STUDENT}}}\\[1.15em]
+  {\bfseries\large DOCENTE:}\\[0.45em]
+  {\large {{TEACHER}}}\\[1.15em]
+  {\bfseries\large Loja, Ecuador}\\[0.65em]
+  {\bfseries\large 2026}
+\end{titlepage}
+
+\setcounter{page}{1}
+
+{{AI_DECLARATION}}
+{{AI_SIGNATURE}}
+\tableofcontents
+
+{{LIST_OF_FIGURES}}
+
+\newpage
+
+{{BODY}}
+
+\ifthenelse{\equal{\reporthasbib}{true}}{
+\Needspace{6\baselineskip}
+\printbibliography[title={Referencias bibliográficas}]
+}{}
+
+{{AFTER_BIBLIOGRAPHY}}
+
+\end{document}
