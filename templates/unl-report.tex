@@ -46,6 +46,7 @@
 \setlist[itemize]{topsep=4pt,itemsep=2pt,leftmargin=1.2cm}
 \captionsetup{font=small,labelfont=bf,justification=centering}
 \renewcommand{\figurename}{Figura}
+\renewcommand{\listfigurename}{Índice de Figuras}
 
 \titleformat{\section}{\normalfont\bfseries\Large}{\thesection.}{0.6em}{}
 \titleformat{\subsection}{\normalfont\bfseries\large}{\thesubsection.}{0.6em}{}
@@ -124,6 +125,10 @@
 \setcounter{page}{2}
 
 {{FRONT_MATTER}}
+
+% Empty unless the body actually contains Markdown images, so a report without
+% figures gets no index page and no pagination shift.
+{{LIST_OF_FIGURES}}
 
 {{BODY}}
 
