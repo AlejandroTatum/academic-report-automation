@@ -78,8 +78,12 @@ Keep a `body.md` bound to one backend.
 ```txt
 academic-report-automation/
 ├── examples/
+│   ├── ejemplo_informe_academico/  # complete report folder — copy this to start
+│   │   ├── report.yml
+│   │   ├── body.md
+│   │   └── sources.bib
 │   ├── placeholder.svg
-│   └── sample_report.md
+│   └── sample_report.md            # Markdown syntax snippet, not a report folder
 ├── templates/
 │   ├── academic_format.yml        # shared academic formatting rules
 │   ├── ensayo_unl.css             # stylesheet for the HTML preview branch
@@ -150,6 +154,27 @@ canonical one against a report folder:
 python3 tools/build_report_auto.py <report-folder>/
 python3 tools/validate_report.py <report-folder>/
 ```
+
+### Starting a real report
+
+`examples/ejemplo_informe_academico/` is a complete, minimal report folder:
+`report.yml`, `body.md`, `sources.bib`. Copy it into
+`$REPORT_CONTENT_ROOT/reports/`, rename it, and edit — the relative paths inside
+are written for that location.
+
+It satisfies every validator rule with no exemption, and
+`tools/test_shipped_example.py` keeps it that way, so the pattern you copy is
+the pattern the validator enforces. Two things it demonstrates on purpose:
+
+- `route:` is declared rather than left to the academic default. The route
+  decides which metadata is required; a project or business document that never
+  declares one is validated as university coursework and asked for a teacher.
+- The final PDF goes to `outputs/<materia>/`, never to
+  `reports/<trabajo>/outputs/`.
+
+A folder named with a leading `_` is scratch work and is not copied to
+`outputs/<materia>/`. That prefix is *only* about publication — use
+`publish_global:` when you want to say so explicitly.
 
 ### 5. Optional: install the Node toolchain
 
@@ -252,27 +277,28 @@ Requirements per workflow:
 | Asset validation | Python only |
 | Mermaid diagrams | `npm install` + local Chrome |
 | ECharts visuals | `npm install` |
-| HTML screenshots | `npm install` + local Chrome + see the known issues below |
+| HTML screenshots | `npm install` + local Chrome |
 
-### Known issues in the Node toolchain
+`echarts` and `html-shot` generate a temporary `.cjs` and run it with Node. It is
+written to `.cache/visual-renders/` **inside this repository**, because Node
+resolves `require(...)` by walking up from the script's own directory: a script
+parked on the content tree could never reach `node_modules/` here, whatever you
+installed. Both commands now check the dependency before spawning Node and say
+what to install if it is missing, instead of surfacing a module-resolution stack
+trace.
 
-These are real and currently unfixed. They are recorded here so they are
-visible rather than discovered at render time.
+For a browser, `npx playwright install chromium` matches the declared
+devDependency. An existing `@puppeteer/browsers` install under `.cache/puppeteer/`
+is still detected and takes precedence.
 
-1. **Two browser managers for one binary.** `require_chrome()` instructs you to
-   install Chrome with `npx @puppeteer/browsers install chrome@stable`, while
-   `package.json` declares `playwright` as the devDependency that drives it.
-   Puppeteer's browser layout and Playwright's are not the same thing; the code
-   bridges them by passing the discovered path as `executablePath`, but the two
-   managers are never installed or versioned together. Picking one of them is
-   the proper fix.
-2. **`html-shot` cannot resolve `playwright`.** `command_html_shot()` writes its
-   generated `.cjs` script into `<content root>/backups/visual-renders/`, which
-   is outside this repository. Node resolves `require('playwright')` by walking
-   up from the script's own directory, so it never reaches this repo's
-   `node_modules/` — `npm install` here does not make `html-shot` work. It needs
-   either a Node module path pointing at the code root or the script written
-   inside the repository.
+### Known issue in the Node toolchain
+
+**Two browser managers for one binary.** `@mermaid-js/mermaid-cli` bundles
+Puppeteer, while `playwright` manages its own Chromium. Both are declared. When
+both are installed the Puppeteer build wins for every renderer, including
+`html-shot`, which then drives a Puppeteer-managed Chrome through Playwright.
+That usually works, but Playwright pins its builds to its own version, so the
+pairing is not guaranteed across upgrades. Picking one manager is the proper fix.
 
 ## Portfolio Notes
 
