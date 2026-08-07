@@ -74,21 +74,47 @@ html, body {
 .report-title {
   text-align: center;
   font-weight: 700;
-  font-size: 12pt;
+  font-size: 16pt;
+  line-height: 1.2;
   margin: 12px 0 18px;
   text-transform: uppercase;
 }
 
+/* Typographic scale, anchored to the 12pt body declared in
+   academic_format.yml. Headings used to be 11pt — smaller than the text they
+   introduced, and h1 was indistinguishable from h2 — so sections read as
+   slightly-smaller bold text instead of titles.
+   The scale is deliberately restrained for a print deliverable:
+     body 12pt < h4 12.5pt < h3 13pt < h2 14pt < h1 16pt.
+   Size carries the hierarchy; the space above each heading reinforces it.
+   Font families are inherited from :root and are not redefined here. */
 h1 {
-  font-size: 11pt;
-  margin: 10px 0 5px;
+  font-size: 16pt;
+  line-height: 1.2;
+  margin: 20px 0 7px;
   font-weight: 700;
 }
 
 h2 {
-  font-size: 11pt;
-  margin: 12px 0 5px;
+  font-size: 14pt;
+  line-height: 1.22;
+  margin: 16px 0 6px;
   font-weight: 700;
+}
+
+h3 {
+  font-size: 13pt;
+  line-height: 1.24;
+  margin: 13px 0 5px;
+  font-weight: 700;
+}
+
+h4 {
+  font-size: 12.5pt;
+  line-height: 1.24;
+  margin: 11px 0 4px;
+  font-weight: 700;
+  font-style: italic;
 }
 
 p {
