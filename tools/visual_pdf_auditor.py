@@ -5,17 +5,26 @@ Visual PDF Auditor — heuristic page-image analysis for academic reports.
 Renders PDF pages to PNG via pdftoppm (no PyMuPDF required), then analyzes
 each page for common visual risks in academic PDF output:
 
-  - Near-blank pages / excessive whitespace
+  - Near-blank pages (almost no ink at all)
+  - Excessive whitespace (content stopping well short of the page bottom)
   - Ink/tone blocks touching page edges (possible clipping)
   - Possible orphan headings near page bottom
   - Suspiciously low content density
   - Table-like regions (grid/banding patterns)
+
+Every finding is classified in exactly one place — ``page_issues()``. The
+severity decision, the stderr header, the per-page tag list and ``visual_qa.md``
+all read from it, so the report can never contradict itself.
 
 Output artifacts:
   - Rendered page PNGs in <outdir>/rendered/page-*.png
   - Contact sheet (thumbnail grid) at <outdir>/contact_sheet.png
   - Report at <outdir>/visual_qa.md
   - Optional JSON output with --json
+
+Where artifacts land (see ``default_output_dir()``): a PDF inside the content
+root keeps them in the content build tree; a PDF outside it keeps them beside
+itself, never in the academic tree. ``-o/--output`` overrides both.
 
 Exit codes:
   0 = PASS or PASS_WITH_WARNINGS
@@ -60,6 +69,35 @@ MIN_CONTENT_FRAC = 0.005  # ink fraction below this → WARNING
 VERY_LOW_FRAC = 0.001  # ink fraction below this → FAIL (near-blank)
 TABLE_EDGE_THRESHOLD = 0.004  # edge-pixel fraction to suspect a table
 
+# Edge clipping — ink at the paper edge is LOCAL evidence, so it is measured
+# locally. Averaging the 5 px strip over the full page height made the check
+# unable to fire: at 150 DPI that strip is 5 × 1754 = 8 770 px and one clipped
+# line of text darkens roughly 100 of them (1.1 %), always below the old 2 %
+# page-wide threshold. The strip is scanned in overlapping bands instead, and
+# one inked band is enough.
+EDGE_BAND_IN = 0.10  # band height (inches) ≈ one line of 11 pt body text
+EDGE_BAND_INK_MIN = 0.20  # dark fraction inside a band that counts as clipping.
+# Measured over the reference corpus: the one genuinely clipped line fills 0.53
+# of its band, while every band of every clean page (covers included) measures
+# 0.000 — so the number sits in a wide empty gap, not on a cliff edge.
+EDGE_BAND_DARK = 200  # grey level below which an edge pixel counts as ink
+
+# Excessive whitespace — a page whose content stops well short of the bottom
+# while more content follows. This is the check the docstring always promised;
+# MIN_CONTENT_FRAC only ever caught pages that were nearly empty (< 0.5 % ink),
+# never a half-empty one (2–4 % ink).
+WHITESPACE_TAIL_MIN_FRAC = 0.25  # trailing blank space, as a fraction of page
+# height, that turns into a warning — a full quarter of the page below the last
+# line. Measured over the reference corpus: pages that simply end on a short
+# last line reach 0.21, the pages left half-empty by an injected page break
+# reach 0.29–0.31, so the threshold sits between the two clusters.
+WHITESPACE_INK_ROW_MIN = 0.002  # row ink fraction above which a row has content
+WHITESPACE_SOLID_RUN_FRAC = 0.60  # a page whose ink is one contiguous block
+# this tall (fraction of the used region) is figure/image dominated: a float
+# page ends where its figure ends, which is not stray whitespace. Text and
+# tables break into lines, so they never come close — 0.21 is the highest value
+# measured on the reference corpus.
+
 # Orphan-heading detection — "a short ink strip whose blank tail reaches the
 # page bottom". Every pixel threshold below is normalized against `dpi`
 # (inch * dpi); every other threshold is a fraction of page height/width.
@@ -96,6 +134,8 @@ class PageFinding:
     edge_side: Optional[str] = None
     low_density: bool = False
     density_frac: Optional[float] = None
+    excessive_whitespace: bool = False
+    whitespace_frac: Optional[float] = None
     table_suspect: bool = False
     table_confidence: Optional[float] = None
     ink_center_of_mass_y: Optional[float] = None
@@ -114,6 +154,97 @@ class AuditResult:
     render_success: bool = True
     severity: str = "PASS"  # PASS | PASS_WITH_WARNINGS | FAIL
     summary: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Classification — the single definition of what a finding means
+# ---------------------------------------------------------------------------
+
+FAILURE = "FAILURE"  # a probable defect: the PDF should not ship like this
+WARNING = "WARNING"  # a judgement call: a human has to look at the page
+INFO = "INFO"  # context only, never affects severity
+
+
+@dataclass
+class PageIssue:
+    level: str
+    tag: str
+    detail: str
+
+
+def page_issues(finding: PageFinding, total_pages: int) -> list[PageIssue]:
+    """Classify one page's findings. This is the ONLY place that decides what
+    counts as a failure and what counts as a warning.
+
+    The severity decision, the stderr header, the per-page tag list and
+    ``visual_qa.md`` all derive from this function. They used to carry their own
+    copies of the predicate, which drifted until the tool printed ``FAIL`` and
+    ``0 failures`` in the same block.
+    """
+    issues: list[PageIssue] = []
+
+    if finding.near_blank:
+        issues.append(PageIssue(FAILURE, "NEAR_BLANK", finding.blank_reason or ""))
+
+    if finding.edge_clipping:
+        issues.append(
+            PageIssue(FAILURE, "EDGE_CLIPPING", f"{finding.edge_side} edge"),
+        )
+
+    if finding.low_density:
+        # Sparse interior pages are defects; the cover is sparse by design and
+        # the closing page may hold nothing but a short bibliography.
+        interior = 1 < finding.page < total_pages
+        issues.append(
+            PageIssue(
+                FAILURE if interior else WARNING,
+                "LOW_DENSITY",
+                f"ink fraction={finding.density_frac}",
+            ),
+        )
+
+    if finding.orphan_heading:
+        issues.append(
+            PageIssue(
+                WARNING, "ORPHAN_HEADING", f"confidence={finding.orphan_confidence}",
+            ),
+        )
+
+    if finding.excessive_whitespace:
+        issues.append(
+            PageIssue(
+                WARNING,
+                "EXCESSIVE_WHITESPACE",
+                f"blank tail={finding.whitespace_frac} of page height",
+            ),
+        )
+
+    if finding.table_suspect:
+        issues.append(
+            PageIssue(
+                INFO, "TABLE_SUSPECT", f"confidence={finding.table_confidence}",
+            ),
+        )
+
+    return issues
+
+
+def count_flagged_pages(result: AuditResult, level: str) -> int:
+    """Number of pages carrying at least one issue of *level*."""
+    return sum(
+        1
+        for f in result.findings
+        if any(i.level == level for i in page_issues(f, result.total_pages))
+    )
+
+
+def decide_severity(result: AuditResult) -> str:
+    """PASS | PASS_WITH_WARNINGS | FAIL, from the classified findings."""
+    if count_flagged_pages(result, FAILURE) > 0:
+        return "FAIL"
+    if count_flagged_pages(result, WARNING) > 0:
+        return "PASS_WITH_WARNINGS"
+    return "PASS"
 
 
 # ---------------------------------------------------------------------------
@@ -344,10 +475,41 @@ def has_full_bleed_background(img: Image.Image, margin: int = 8) -> bool:
     return has_edge_artwork and crit_c and crit_d and crit_e
 
 
+def _max_band_ink(strip: Image.Image, band_px: int, step_px: int) -> float:
+    """Highest dark fraction found in any horizontal band of *strip*.
+
+    The bands overlap (``step_px`` is half a band) so a line of ink can never
+    be split across two windows and diluted below the threshold.
+    """
+    gs = _grayscale(strip)
+    w, h = gs.size
+    if w == 0 or h == 0:
+        return 0.0
+
+    band = max(1, min(band_px, h))
+    step = max(1, min(step_px, band))
+    starts = list(range(0, h - band + 1, step))
+    if starts[-1] != h - band:
+        starts.append(h - band)  # always include the band flush with the end
+
+    px = _pixels(gs)
+    best = 0.0
+    for y0 in starts:
+        segment = px[y0 * w : (y0 + band) * w]
+        dark = sum(1 for p in segment if p < EDGE_BAND_DARK)
+        best = max(best, dark / len(segment))
+    return best
+
+
 def check_edge_clipping(
-    img: Image.Image, margin: int = EDGE_MARGIN_PX,
+    img: Image.Image, margin: int = EDGE_MARGIN_PX, *, dpi: int = DEFAULT_DPI,
 ) -> Optional[str]:
-    """Return edge name if ink touches page edge, else None.
+    """Return edge name if ink reaches the page edge, else None.
+
+    The edge strip is scanned in overlapping one-line-tall bands, so a single
+    clipped line of text trips the check. Measuring the strip as a whole-page
+    average could not: one line covers about 1 % of a full-height strip, which
+    is below any threshold ordinary page furniture would survive.
 
     Pages with a full-bleed background (detected by *has_full_bleed_background*)
     are skipped — the background image is expected to reach the paper edge
@@ -358,16 +520,20 @@ def check_edge_clipping(
 
     w, h = img.size
     gs = _grayscale(img)
-    zones = {
+    band_px = max(2, round(EDGE_BAND_IN * dpi))
+    step_px = max(1, band_px // 2)
+
+    # Top and bottom strips are rotated so that every strip is scanned
+    # band-by-band along its long axis by the same code.
+    rotate = Image.Transpose.ROTATE_90
+    strips = {
         "left": gs.crop((0, 0, margin, h)),
         "right": gs.crop((w - margin, 0, w, h)),
-        "top": gs.crop((0, 0, w, margin)),
-        "bottom": gs.crop((0, h - margin, w, h)),
+        "top": gs.crop((0, 0, w, margin)).transpose(rotate),
+        "bottom": gs.crop((0, h - margin, w, h)).transpose(rotate),
     }
-    for side, strip in zones.items():
-        px = _pixels(strip)
-        dark = sum(1 for p in px if p < 200)
-        if dark / len(px) > 0.02:
+    for side, strip in strips.items():
+        if _max_band_ink(strip, band_px, step_px) > EDGE_BAND_INK_MIN:
             return side
     return None
 
@@ -468,6 +634,67 @@ def check_low_density(img: Image.Image) -> tuple[bool, float]:
     """Return (is_low_density, ink_fraction)."""
     frac = ink_fraction(img)
     return frac < MIN_CONTENT_FRAC, round(frac, 6)
+
+
+def check_excessive_whitespace(
+    img: Image.Image,
+    *,
+    is_cover: bool = False,
+    is_last_page: bool = False,
+) -> tuple[bool, Optional[float]]:
+    """Check whether content stops well short of the page bottom.
+
+    Returns (is_excessive, blank_tail_fraction). The signature this looks for
+    is a page carrying ordinary amounts of ink whose last line sits a quarter
+    of a page or more above the footer band, while the document continues on
+    the next page — what an injected ``\\Needspace`` or a forced page break
+    leaves behind. It is deliberately a WARNING: whether that whitespace is a
+    defect or a wanted break is a human judgement.
+
+    Four kinds of legitimately short page are excluded:
+
+      - the cover and the closing page (by index, as the orphan check does):
+        nothing follows the last page, so its trailing space is just the end
+        of the document;
+      - a page too empty to be content at all — ``check_near_blank()`` and
+        ``check_low_density()`` already own those;
+      - a page dominated by one figure: its ink is a single contiguous block
+        rather than lines of text, and a float page ends where its figure ends.
+
+    A page that ends a chapter is NOT excluded, because nothing in the page
+    image distinguishes it from the same page broken by accident. The warning
+    points at the page and leaves the call to the reader.
+    """
+    if is_cover or is_last_page:
+        return False, None
+
+    if ink_fraction(img) < MIN_CONTENT_FRAC:
+        return False, None  # the density checks own this page
+
+    gs = _grayscale(img)
+    h = gs.height
+    rows = _row_ink_profile(gs)
+    scan_end = int(h * (1.0 - ORPHAN_FOOTER_BAND_FRAC))  # ignore the footer band
+    ink_rows = [y for y in range(scan_end) if rows[y] > WHITESPACE_INK_ROW_MIN]
+    if not ink_rows:
+        return False, None
+
+    first, last = ink_rows[0], ink_rows[-1]
+    blank_tail = (scan_end - 1 - last) / h
+    if blank_tail < WHITESPACE_TAIL_MIN_FRAC:
+        return False, None
+
+    # Figure-dominated page: the ink is one contiguous block, not text lines.
+    used = last - first + 1
+    longest_run = 0
+    run = 0
+    for y in range(first, last + 1):
+        run = run + 1 if rows[y] > WHITESPACE_INK_ROW_MIN else 0
+        longest_run = max(longest_run, run)
+    if longest_run / used > WHITESPACE_SOLID_RUN_FRAC:
+        return False, None
+
+    return True, round(blank_tail, 3)
 
 
 def check_table_like(img: Image.Image) -> tuple[bool, Optional[float]]:
@@ -573,6 +800,8 @@ def write_visual_qa_report(result: AuditResult, output_path: Path) -> Path:
         "## Summary",
         "",
         f"- **Status**: {icon} {sev}",
+        f"- **Failure pages**: {count_flagged_pages(result, FAILURE)}",
+        f"- **Warning pages**: {count_flagged_pages(result, WARNING)}",
         f"- **Pages analysed**: {result.total_pages}",
         f"- **Render resolution**: {result.page_width_px}×{result.page_height_px} px ({DEFAULT_DPI} DPI)",
     ]
@@ -594,34 +823,23 @@ def write_visual_qa_report(result: AuditResult, output_path: Path) -> Path:
     lines.append("## Per-Page Findings")
     lines.append("")
 
+    # Same classifier as the severity decision and the stderr header.
     flagged = [
-        f for f in result.findings
-        if f.near_blank or f.orphan_heading or f.edge_clipping
-        or f.low_density or f.table_suspect
+        (f, page_issues(f, result.total_pages)) for f in result.findings
     ]
+    flagged = [(f, issues) for f, issues in flagged if issues]
 
     if not flagged:
         lines.append("*No significant issues detected.*")
         lines.append("")
 
-    for f in flagged:
-        issues: list[str] = []
-        if f.near_blank:
-            issues.append(f"**NEAR_BLANK** — {f.blank_reason}")
-        if f.orphan_heading:
-            issues.append(f"**ORPHAN_HEADING** — confidence={f.orphan_confidence}")
-        if f.edge_clipping:
-            issues.append(f"**EDGE_CLIPPING** — {f.edge_side} edge")
-        if f.low_density:
-            issues.append(f"**LOW_DENSITY** — ink fraction={f.density_frac}")
-        if f.table_suspect:
-            issues.append(f"**TABLE_SUSPECT** — confidence={f.table_confidence}")
-
+    for f, issues in flagged:
         lines.append(f"### Page {f.page}")
         lines.append("")
-        lines.append(f"- Center of mass (Y): {f.ink_center_of_mass_y:.3f}")
+        if f.ink_center_of_mass_y is not None:
+            lines.append(f"- Center of mass (Y): {f.ink_center_of_mass_y:.3f}")
         for issue in issues:
-            lines.append(f"- {issue}")
+            lines.append(f"- **{issue.level}** · {issue.tag} — {issue.detail}")
         if f.note:
             lines.append(f"- Note: {f.note}")
         lines.append("")
@@ -687,7 +905,7 @@ def audit_pdf(
 
             # Edge clipping — individual pages with full-bleed background
             # are handled inside check_edge_clipping()
-            side = check_edge_clipping(img)
+            side = check_edge_clipping(img, dpi=dpi)
             if side:
                 finding.edge_clipping = True
                 finding.edge_side = side
@@ -711,6 +929,17 @@ def audit_pdf(
             finding.low_density = low
             finding.density_frac = dens
 
+            # Excessive whitespace — same index exemptions as the orphan
+            # check: the cover is sparse by design, and the last page has no
+            # following content that could have been pulled up onto it.
+            blank, tail = check_excessive_whitespace(
+                img,
+                is_cover=(page_num == 1),
+                is_last_page=(page_num == n_pages),
+            )
+            finding.excessive_whitespace = blank
+            finding.whitespace_frac = tail
+
             # Table suspect
             tbl, tblc = check_table_like(img)
             finding.table_suspect = tbl
@@ -729,25 +958,10 @@ def audit_pdf(
     except Exception as exc:
         result.contact_sheet = f"ERROR: {exc}"
 
-    # ---- 4. Severity ----
-    n_pages = result.total_pages
-    # Low density on inner pages (not cover, not last) counts as FAILURE.
-    # Cover pages are naturally sparse; last page may be bibliography-only.
-    failures = sum(
-        1 for f in result.findings
-        if f.near_blank or f.edge_clipping
-        or (f.low_density and 1 < f.page < n_pages)
-    )
-    warnings = sum(
-        1 for f in result.findings if f.orphan_heading or f.low_density
-    )
-
-    if failures > 0:
-        result.severity = "FAIL"
-    elif warnings > 0:
-        result.severity = "PASS_WITH_WARNINGS"
-    else:
-        result.severity = "PASS"
+    # ---- 4. Severity ---- (classified once, in page_issues())
+    failures = count_flagged_pages(result, FAILURE)
+    warnings = count_flagged_pages(result, WARNING)
+    result.severity = decide_severity(result)
 
     result.summary = (
         f"{result.total_pages} pages · "
@@ -769,8 +983,38 @@ def audit_pdf(
 
 # Code root, kept for callers that import it. Audit artefacts themselves (page
 # renders, contact sheet, visual_qa.md) are build output for a specific report,
-# so their default location lives in the content tree.
+# so their default location lives in the content tree — but only for PDFs that
+# actually belong to it. See default_output_dir().
 ROOT = Path(__file__).resolve().parents[1]
+
+AUDIT_DIR_NAME = "visual-audits"
+
+
+def default_output_dir(
+    pdf_path: Path, content_root: Optional[Path] = None,
+) -> Path:
+    """Where audit artefacts go when ``--output`` is not given.
+
+    Two rules, both of which the old default broke:
+
+      - A PDF that lives under the content root keeps its artefacts inside the
+        content build tree (``<content root>/build/visual-audits/…``), where
+        the existing report workflows look for them. A PDF from anywhere else
+        keeps them beside itself, so auditing a throwaway file in a temp
+        directory can never deposit renders in the academic tree.
+      - The leaf directory is derived from the PDF's own location, not just its
+        basename, so two same-named PDFs from different directories cannot
+        overwrite each other's results.
+    """
+    root = (content_root if content_root is not None else CONTENT_ROOT).resolve()
+    pdf = pdf_path.resolve()
+
+    if pdf.is_relative_to(root):
+        # e.g. reports/c4/outputs/doc.pdf → build/visual-audits/reports/c4/outputs/doc
+        relative = pdf.parent.relative_to(root)
+        return root / "build" / AUDIT_DIR_NAME / relative / pdf.stem
+
+    return pdf.parent / AUDIT_DIR_NAME / pdf.stem
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -799,7 +1043,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-o", "--output", type=Path, default=None,
-        help="Output directory (default: build/visual-audits/<pdf-stem>/)",
+        help=(
+            "Output directory. Default: inside the content root, "
+            "build/visual-audits/<path-of-the-pdf>/<pdf-stem>/; for a PDF "
+            "outside it, <pdf-directory>/visual-audits/<pdf-stem>/"
+        ),
     )
     parser.add_argument(
         "--dpi", type=int, default=DEFAULT_DPI,
@@ -821,7 +1069,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: PDF not found: {pdf}", file=sys.stderr)
         return 2
 
-    outdir = args.output or (CONTENT_ROOT / "build" / "visual-audits" / pdf.stem)
+    outdir = args.output or default_output_dir(pdf)
 
     try:
         result = audit_pdf(pdf, outdir, dpi=args.dpi)
@@ -845,8 +1093,9 @@ def _print_summary(result: AuditResult) -> None:
     print(f"{sep}", file=sys.stderr)
     print(f"  Severity:  {result.severity}", file=sys.stderr)
     print(f"  Pages:     {result.total_pages}", file=sys.stderr)
-    failures = sum(1 for f in result.findings if f.near_blank or f.edge_clipping)
-    warnings = sum(1 for f in result.findings if f.orphan_heading or f.low_density)
+    # Same classifier as the severity decision — never a second predicate here.
+    failures = count_flagged_pages(result, FAILURE)
+    warnings = count_flagged_pages(result, WARNING)
     print(f"  Failures:  {failures}", file=sys.stderr)
     print(f"  Warnings:  {warnings}", file=sys.stderr)
     print(f"{sep}", file=sys.stderr)
@@ -856,18 +1105,11 @@ def _print_summary(result: AuditResult) -> None:
     print(f"{sep}\n", file=sys.stderr)
 
     for f in result.findings:
-        tags: list[str] = []
-        if f.near_blank:
-            tags.append("NEAR_BLANK")
-        if f.orphan_heading:
-            tags.append("ORPHAN_H")
-        if f.edge_clipping:
-            tags.append(f"CLIP-{f.edge_side}")
-        if f.low_density:
-            tags.append("LOW_DENSITY")
-        if f.table_suspect:
-            tags.append("TABLE")
-        tag = " | ".join(tags) if tags else "OK"
+        issues = page_issues(f, result.total_pages)
+        tag = " | ".join(
+            f"{i.level}: {i.tag} ({i.detail})" if i.detail else f"{i.level}: {i.tag}"
+            for i in issues
+        ) or "OK"
         print(f"  [Page {f.page:2d}] {tag}", file=sys.stderr)
 
     print(file=sys.stderr)
