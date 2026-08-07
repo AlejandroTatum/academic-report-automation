@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fires after `git pull --rebase` and after `git rebase`, which do NOT fire
+# post-merge. Without this, a rebase-based pull would leave the runtimes stale.
+exec "$(dirname "${BASH_SOURCE[0]}")/lib/sync-skills.sh"
