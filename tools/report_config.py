@@ -83,6 +83,91 @@ MISSING = object()
 # Deliberately narrow: every other section stays globally owned.
 OVERRIDABLE_SECTIONS = frozenset({"cover"})
 
+# ---------------------------------------------------------------------------
+# Document routes
+# ---------------------------------------------------------------------------
+#
+# `route:` in report.yml binds a report to one of the five routes defined in
+# skills/academic-report-builder/references/document-routing.md. It is a
+# CONTENT classification and is deliberately independent of `type:`/`backend:`
+# (LATEX_TYPES/VISUAL_TYPES/DOCX_TYPES above are BACKEND classifications: they
+# choose a renderer, they say nothing about whether the document is university
+# coursework).
+#
+# Accepted values — the canonical name, or the route letter used by the
+# contract:
+#
+#     route: academic   (or `a`)  Route A — university academic work
+#     route: project    (or `b`)  Route B — project documentation
+#     route: business   (or `c`)  Route C — professional/business report
+#     route: technical  (or `d`)  Route D — technical document
+#     route: other      (or `e`)  Route E — other
+#
+# Values are compared case-insensitively and trimmed. An absent key means
+# Route A, which is what every existing report already relies on. An
+# unrecognised value is a hard error: the routing contract is emphatic that
+# nothing may fall back silently to the academic route.
+ROUTE_KEY = "route"
+DEFAULT_ROUTE = "academic"
+
+ROUTE_ALIASES = {
+    "a": "academic",
+    "b": "project",
+    "c": "business",
+    "d": "technical",
+    "e": "other",
+}
+
+# Metadata report.yml must carry, per route. Only Route A may demand the
+# academic machinery (`subject`, `teacher`); the other routes are forbidden by
+# the contract from auto-including it, so requiring it there forced users to
+# invent fake values. Title, author and date stay universal: every document has
+# a name, someone who wrote it and a date.
+ROUTE_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
+    "academic": ("title", "subject", "teacher", "student", "date"),
+    "project": ("title", "student", "date"),
+    "business": ("title", "student", "date"),
+    "technical": ("title", "student", "date"),
+    "other": ("title", "student", "date"),
+}
+
+# Metadata that belongs to the academic shell only. Present on another route it
+# is a contract smell, not a build failure — hence a warning.
+ACADEMIC_ONLY_METADATA = ("subject", "teacher")
+
+
+def unknown_route_message(route: str) -> str:
+    """Spanish guidance for a `route:` value no route table recognises."""
+    accepted = ", ".join(sorted(ROUTE_REQUIRED_METADATA))
+    return (
+        f"Ruta de documento desconocida en report.yml: '{route}'. "
+        f"Valores aceptados en 'route': {accepted} "
+        "(o las letras a, b, c, d, e). Sin 'route' se asume ruta académica."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Final-output layout rule
+# ---------------------------------------------------------------------------
+
+LOCAL_OUTPUTS_ERROR = (
+    "No guardar resultados finales en reports/<trabajo>/outputs/: "
+    "usar solamente outputs/<materia>/ para evitar duplicados"
+)
+
+
+def targets_local_outputs(config: "ReportConfig") -> bool:
+    """True when the configured final PDF lands in ``<report folder>/outputs/``.
+
+    Folders whose name starts with ``_`` are exempt: the versioned example
+    ``_example_latex_essay`` deliberately keeps its output next to itself.
+    """
+    if config.output_format != "pdf":
+        return False
+    if config.folder.name.startswith("_"):
+        return False
+    return (config.folder / "outputs").resolve() in config.pdf_path.resolve().parents
+
 
 def dig(source: Any, keys: tuple[str, ...]) -> Any:
     """Walk nested mappings, returning MISSING when any key is absent."""
@@ -103,6 +188,38 @@ class ReportConfig:
     @property
     def type(self) -> str:
         return str(self.raw.get("type") or self.raw.get("tipo") or "essay").strip().lower()
+
+    @property
+    def route(self) -> str:
+        """Canonical document route for this report.
+
+        Returns the canonical name (``academic``, ``project``, ``business``,
+        ``technical``, ``other``) for a recognised value, ``DEFAULT_ROUTE``
+        when the key is absent, and the written value verbatim when it is not
+        recognised — so the caller can name it in the error instead of
+        guessing a route on the user's behalf.
+        """
+        written = str(self.raw.get(ROUTE_KEY) or "").strip().lower()
+        if not written:
+            return DEFAULT_ROUTE
+        return ROUTE_ALIASES.get(written, written)
+
+    @property
+    def route_is_known(self) -> bool:
+        return self.route in ROUTE_REQUIRED_METADATA
+
+    @property
+    def required_metadata(self) -> tuple[str, ...]:
+        """Metadata keys this report's route genuinely needs.
+
+        Raises ValueError for an unrecognised route: there is no defensible
+        default here, and silently answering with the academic set is exactly
+        the fallback the routing contract forbids. Callers check
+        ``route_is_known`` first and report ``unknown_route_message``.
+        """
+        if not self.route_is_known:
+            raise ValueError(unknown_route_message(self.route))
+        return ROUTE_REQUIRED_METADATA[self.route]
 
     @property
     def backend(self) -> str:
@@ -168,7 +285,9 @@ class ReportConfig:
             "title": ["title", "titulo", "tema"],
             "subject": ["subject", "asignatura"],
             "teacher": ["teacher", "docente"],
-            "student": ["student", "estudiante", "nombre"],
+            # Non-academic routes name the same field "author"; it is the same
+            # person, so it resolves to the same canonical key.
+            "student": ["student", "estudiante", "nombre", "author", "autor"],
             "date": ["date", "fecha"],
             "career": ["career", "carrera"],
             "parallel": ["parallel", "paralelo"],
@@ -177,8 +296,9 @@ class ReportConfig:
             if canonical in meta and meta[canonical]:
                 continue
             for key in keys:
-                if self.raw.get(key):
-                    meta[canonical] = self.raw[key]
+                value = meta.get(key) or self.raw.get(key)
+                if value:
+                    meta[canonical] = value
                     break
         return meta
 
@@ -276,13 +396,35 @@ def read_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_report_config(folder: Path) -> ReportConfig:
+    """Load and sanity-check a report folder's configuration.
+
+    Two rules are enforced here rather than after the build, because both are
+    knowable from report.yml alone and both otherwise cost the user three
+    LuaLaTeX passes before they hear about it:
+
+    * an unrecognised ``route:`` value (no silent fallback to Route A);
+    * a final PDF pointed at ``reports/<work>/outputs/``.
+
+    The output rule only fires for a path the report actually declares. A
+    report that never wrote ``pdf:`` has nothing to correct in its own file;
+    the post-build check in ``validate_report`` still covers that case.
+    """
     folder = folder.resolve()
     report_yml = folder / "report.yml"
     if not report_yml.exists():
         raise SystemExit(f"No existe report.yml en {folder}")
     raw = read_yaml(report_yml)
     academic = read_yaml(DEFAULT_FORMAT)
-    return ReportConfig(folder=folder, raw=raw, academic_format=academic)
+    config = ReportConfig(folder=folder, raw=raw, academic_format=academic)
+
+    if not config.route_is_known:
+        raise SystemExit(unknown_route_message(config.route))
+
+    declares_final_pdf = any(key in raw for key in ("pdf", "output_pdf"))
+    if declares_final_pdf and targets_local_outputs(config):
+        raise SystemExit(f"{LOCAL_OUTPUTS_ERROR}\nRuta configurada: {config.pdf_path}")
+
+    return config
 
 
 def latex_escape(value: Any) -> str:
