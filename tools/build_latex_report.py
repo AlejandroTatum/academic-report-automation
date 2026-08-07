@@ -55,6 +55,9 @@ def resolve_template(key: str | None) -> Path:
 
 # Asset constants — single source of truth for expected filenames.
 ASSETS_DIR = ROOT / "assets"
+# Markdown image syntax. Only ever matched against Markdown source, never
+# against a body that markdown_to_latex() has already converted.
+MARKDOWN_IMAGE_RE = re.compile(r"!\[.*\]\(.*\)")
 LOGO_FILENAME = "unl-logo-aa1-transparent.png"
 BACKGROUND_FILENAME = "fondo-overleaf-investigacion.png"
 # Known extra PNGs in assets/ that are NOT referenced by the LaTeX pipeline.
@@ -347,7 +350,11 @@ def render_tex(config: ReportConfig) -> str:
     if not config.body_path.exists():
         raise SystemExit(f"No existe body.md: {config.body_path}")
     template = template_path.read_text(encoding="utf-8")
-    body = markdown_to_latex(config.body_path.read_text(encoding="utf-8"))
+    markdown_source = config.body_path.read_text(encoding="utf-8")
+    body = markdown_to_latex(markdown_source)
+    # Figure detection runs against the Markdown source: once converted, images
+    # are \includegraphics commands and the Markdown pattern can never match.
+    has_figures = bool(MARKDOWN_IMAGE_RE.search(markdown_source))
     meta = config.metadata
     front_matter = ""
     ai_declaration_latex = ""
@@ -443,10 +450,8 @@ def render_tex(config: ReportConfig) -> str:
         "{{BACKGROUND_PATH}}": latex_escape(BACKGROUND_FILENAME),
         "{{BIB_FILE}}": latex_escape(bib_file),
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
-        "{{HAS_FIGURES}}": "true" if re.search(r"!\[.*\]\(.*\)", body) else "false",
-        "{{LIST_OF_FIGURES}}": (
-            r"\newpage\listoffigures" if re.search(r"!\[.*\]\(.*\)", body) else ""
-        ),
+        "{{HAS_FIGURES}}": "true" if has_figures else "false",
+        "{{LIST_OF_FIGURES}}": r"\newpage\listoffigures" if has_figures else "",
         "{{FRONT_MATTER}}": front_matter,
         "{{AI_DECLARATION}}": ai_declaration_latex,
         "{{AI_SIGNATURE}}": ai_signature_latex,
