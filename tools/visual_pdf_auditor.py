@@ -55,11 +55,29 @@ from report_config import CONTENT_ROOT
 # ---------------------------------------------------------------------------
 
 DEFAULT_DPI = 150  # ~0.17 mm/px — good balance for heuristics
-BOTTOM_ORPHAN_FRAC = 0.12  # bottom 12 % of page for orphan heading check
 EDGE_MARGIN_PX = 5  # threshold from page edge to check for clipping
 MIN_CONTENT_FRAC = 0.005  # ink fraction below this → WARNING
 VERY_LOW_FRAC = 0.001  # ink fraction below this → FAIL (near-blank)
 TABLE_EDGE_THRESHOLD = 0.004  # edge-pixel fraction to suspect a table
+
+# Orphan-heading detection — "a short ink strip whose blank tail reaches the
+# page bottom". Every pixel threshold below is normalized against `dpi`
+# (inch * dpi); every other threshold is a fraction of page height/width.
+ORPHAN_FOOTER_BAND_FRAC = 0.10  # bottom 10 % excluded from the scan (footer)
+ORPHAN_INK_ROW_MIN = 0.01  # row ink fraction above this counts as "substantive"
+ORPHAN_BLANK_TAIL_MIN_FRAC = 0.20  # blank tail below the last ink row, as a
+# fraction of page height, required to even consider an orphan
+ORPHAN_BLANK_ROW_MAX = 0.002  # row ink fraction at/below this is "blank" for
+# the grow-up strip scan (below a table's vertical-rule density on purpose)
+ORPHAN_LINE_MERGE_GAP_IN = 0.14  # blank run (inches) bridged when growing the
+# strip upward — merges wrapped heading/paragraph lines
+ORPHAN_MIN_HEIGHT_IN = 0.06  # minimum strip height (inches) to be heading-shaped
+ORPHAN_MAX_HEIGHT_IN = 0.45  # maximum strip height (inches) to be heading-shaped
+ORPHAN_MIN_ROW_FRAC = 0.04  # minimum peak row ink fraction within the strip
+ORPHAN_MAX_ROW_FRAC = 0.90  # maximum peak row ink fraction within the strip
+ORPHAN_MIN_TOP_FRAC = 0.20  # strip must start below this fraction of page height
+ORPHAN_CONTENT_ABOVE_MIN_FRAC = 0.005  # min ink fraction required above the
+# strip (between 15 % of height and the strip start) — rejects title-only pages
 
 
 # ---------------------------------------------------------------------------
@@ -346,85 +364,89 @@ def check_edge_clipping(
     return None
 
 
-# NOTE: an earlier duplicate definition of check_orphan_heading() used to sit
-# here and was silently replaced by the one below, so its cover-page guard
-# never ran. The guard is deliberately NOT reinstated: has_full_bleed_background()
-# returns True for an ordinary body page and even for a blank one (three of its
-# five criteria are satisfied by clean edges alone), so calling it here would
-# suppress orphan detection on every page instead of only on covers.
-def check_orphan_heading(img: Image.Image) -> tuple[bool, Optional[float]]:
-    """Check for a possible orphan heading at the bottom of the page.
+def _row_ink_profile(gs: Image.Image, threshold: int = 240) -> list[float]:
+    """Return, for each row of *gs* (already grayscale), the fraction of
+    pixels darker than *threshold*."""
+    px_data = _pixels(gs)
+    w = gs.width
+    return [
+        sum(1 for p in px_data[y * w : (y + 1) * w] if p < threshold) / w
+        for y in range(gs.height)
+    ]
 
-    Heuristic: the bottom band has a short (few-row) strip of ink that
-    does *not* span the full page width — resembling a heading/title
-    with no body content after it.
-    """
-    w, h = img.size
-    bottom_start = int(h * (1 - BOTTOM_ORPHAN_FRAC))
-    bottom_band = img.crop((0, bottom_start, w, h))
-    gs = _grayscale(bottom_band)
-    rows: list[float] = []
-    for y in range(gs.height):
-        row_dark = sum(
-            1 for x in range(gs.width) if gs.getpixel((x, y)) < 240
-        )
-        rows.append(row_dark / gs.width)
 
-    # Find contiguous ink strips
-    strips: list[tuple[int, int]] = []
-    in_strip = False
-    start = 0
-    for y, frac in enumerate(rows):
-        if frac > 0.02 and not in_strip:
+def _grow_up(rows: list[float], last: int, blank_row_max: float, merge_gap: int) -> int:
+    """Walk upward from row *last*, extending the strip start while a blank
+    run shorter than *merge_gap* rows is bridged (merged into the strip)."""
+    start = last
+    blank_run = 0
+    y = last
+    while y > 0:
+        y -= 1
+        if rows[y] > blank_row_max:
             start = y
-            in_strip = True
-        elif frac <= 0.001 and in_strip:
-            strips.append((start, y - 1))
-            in_strip = False
-    if in_strip:
-        strips.append((start, len(rows) - 1))
+            blank_run = 0
+        else:
+            blank_run += 1
+            if blank_run > merge_gap:
+                break
+    return start
 
-    if not strips:
+
+def check_orphan_heading(
+    img: Image.Image,
+    *,
+    dpi: int = DEFAULT_DPI,
+    is_cover: bool = False,
+) -> tuple[bool, Optional[float]]:
+    """Check for a possible orphan heading stranded near the page bottom.
+
+    Signature: a short ink strip (heading-shaped) whose blank tail reaches
+    the page bottom — because its body content was pushed to the next page.
+    Scans the whole page below ~15 % of height, excluding only the bottom
+    ``ORPHAN_FOOTER_BAND_FRAC`` footer band. All pixel thresholds are
+    normalized against *dpi*.
+    """
+    if is_cover:
         return False, None
 
-    for s, e in strips:
-        strip_height = e - s + 1
-        # A heading should be a few lines at most
-        if strip_height > 12:
-            continue
-        # Should not occupy a large fraction of the bottom band
-        if strip_height / gs.height > 0.3:
-            continue
+    w, h = img.size
+    px_per_in = max(1.0, float(dpi))
+    scan_end = int(h * (1.0 - ORPHAN_FOOTER_BAND_FRAC))
+    rows = _row_ink_profile(_grayscale(img), threshold=240)
 
-        max_row_frac = max(rows[s : e + 1])
-        # Heading rows do not span full width
-        if max_row_frac >= 0.5:
-            continue
-        # Very sparse strips (e.g. page numbers, section numbering)
-        # are not orphan headings — require at least some substance
-        if max_row_frac < 0.04:
-            continue
+    # 1. last substantive ink row inside the scan region
+    last = None
+    for y in range(scan_end - 1, -1, -1):
+        if rows[y] > ORPHAN_INK_ROW_MIN:
+            last = y
+            break
+    if last is None:
+        return False, None  # blank page — near_blank owns it
 
-        # Skip strips in the bottom 40 % of the bottom band — they're likely
-        # footer elements (page numbers, institution text) rather than
-        # orphan headings. Also skip when near the absolute page bottom.
-        if s > gs.height * 0.5 or (bottom_start + s + strip_height) > h * 0.96:
-            continue
+    # 2. blank tail must reach the scan bottom
+    blank_tail = (scan_end - 1 - last) / h
+    if blank_tail < ORPHAN_BLANK_TAIL_MIN_FRAC:
+        return False, None
 
-        # There should be a noticeable gap above the strip
-        gap_above = s >= 4
+    # 3. grow the strip upward, merging wrapped lines via the DPI-normalized gap
+    merge_gap = max(1, round(ORPHAN_LINE_MERGE_GAP_IN * px_per_in))
+    start = _grow_up(rows, last, ORPHAN_BLANK_ROW_MAX, merge_gap)
 
-        # The area above the bottom band should have normal content
-        main_area = img.crop((0, int(h * 0.15), w, bottom_start))
-        if ink_fraction(main_area) < 0.005:
-            continue
+    # 4. heading-shaped guards
+    strip_in = (last - start + 1) / px_per_in
+    if not (ORPHAN_MIN_HEIGHT_IN <= strip_in <= ORPHAN_MAX_HEIGHT_IN):
+        return False, None
+    peak = max(rows[start : last + 1])
+    if not (ORPHAN_MIN_ROW_FRAC <= peak < ORPHAN_MAX_ROW_FRAC):
+        return False, None
+    if start < h * ORPHAN_MIN_TOP_FRAC:
+        return False, None
+    above = img.crop((0, int(h * 0.15), w, start))
+    if ink_fraction(above) < ORPHAN_CONTENT_ABOVE_MIN_FRAC:
+        return False, None
 
-        if gap_above:
-            conf = round(min(1.0, (0.5 - max_row_frac) / 0.4), 2)
-            if conf > 0.2:
-                return True, conf
-
-    return False, None
+    return True, round(min(1.0, blank_tail / 0.5), 2)
 
 
 def check_low_density(img: Image.Image) -> tuple[bool, float]:
@@ -655,9 +677,10 @@ def audit_pdf(
                 finding.edge_clipping = True
                 finding.edge_side = side
 
-            # Orphan heading — cover pages with full-bleed background
-            # are handled inside check_orphan_heading()
-            orphan, conf = check_orphan_heading(img)
+            # Orphan heading — cover page (page 1) is exempted by index,
+            # not by has_full_bleed_background() (it returns True even for
+            # ordinary/blank pages, so it cannot be used as a guard here).
+            orphan, conf = check_orphan_heading(img, dpi=dpi, is_cover=(page_num == 1))
             finding.orphan_heading = orphan
             finding.orphan_confidence = conf
 
