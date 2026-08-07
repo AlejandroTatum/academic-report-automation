@@ -47,21 +47,29 @@ next page. A full table, a multi-line paragraph, or a natural page end
 guards: they either fail the blank-tail threshold or merge into a strip far
 taller than a heading.
 
-The cover page (page 1) is exempted by index — `audit_pdf` calls
-`check_orphan_heading(img, dpi=dpi, is_cover=(page_num == 1))`, which
-short-circuits to `(False, None)` without inspecting pixels. No other page
-receives an index-based exemption; the last page of a document is evaluated
-on its own merits and can still be flagged if a short block of text is
-followed by a large blank tail.
+Two pages are exempted by index rather than by image analysis — `audit_pdf`
+calls `check_orphan_heading(img, dpi=dpi, is_cover=(page_num == 1),
+is_last_page=(page_num == n_pages))`, and either flag short-circuits to
+`(False, None)` without inspecting pixels:
+
+- **The cover (page 1)** is decorative and sparse by design.
+- **The last page** cannot strand a heading at all. An orphan means the
+  heading's content was pushed onto the *following* page; the final page has
+  no following page, so trailing blank space there is simply where the
+  document ends.
+
+Both exemptions are deterministic and DPI-independent. Neither uses
+`has_full_bleed_background()`, which returns `True` for ordinary and even
+blank pages and therefore cannot serve as a guard.
 
 Orphan findings are always **warnings**, never errors, in
 `visual_pdf_validation()` — they never fail the automated build or block a
 PDF from being produced. The blocking classification above (line 35) is a
 **human visual-QA** rule applied during manual page-by-page review; it is
 independent from the automated warning severity. Recall is favored over
-precision: a short final line preceded by generous trailing whitespace on
-the last page can legitimately warn even when it is not a rendering defect
-— inspect it visually before treating any single orphan warning as a
+precision on interior pages: a short line preceded by generous trailing
+whitespace can legitimately warn even when it is not a rendering defect —
+inspect it visually before treating any single orphan warning as a
 build-blocking issue.
 
 No fixture PNGs are committed to this repository to test the detector — it
