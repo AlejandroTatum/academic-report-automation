@@ -27,9 +27,14 @@ from report_config import CONTENT_ROOT
 ROOT = Path(__file__).resolve().parents[1]
 # Toolchain: node_modules is reinstalled with the code, so it stays CODE.
 NODE_BIN = ROOT / "node_modules" / ".bin"
-# Render scratch (puppeteer config, temp .cjs) follows the content tree's
-# backups/ convention and keeps generated junk out of the monorepo checkout.
-BACKUPS = CONTENT_ROOT / "backups" / "visual-renders"
+# Every file Node itself has to open — the generated .cjs renderers and the
+# puppeteer config — lives HERE, inside the code checkout, and not in the
+# content tree. Node resolves `require('playwright')` by walking UP from the
+# script's own directory, so a script parked under CONTENT_ROOT can never reach
+# ROOT/node_modules, which is exactly where NODE_BIN already expects the
+# toolchain to be. `.cache/` is gitignored and already holds toolchain scratch
+# (see LOCAL_CHROME_ROOTS), so nothing leaks into the checkout's status.
+NODE_SCRATCH = ROOT / ".cache" / "visual-renders"
 # Chrome is toolchain too, so the code checkout is searched first; the content
 # tree is kept as a fallback because that is where the existing install lives.
 LOCAL_CHROME_ROOTS = (
@@ -38,6 +43,15 @@ LOCAL_CHROME_ROOTS = (
 )
 # Back-compat alias for importers of the single-root name.
 LOCAL_CHROME_ROOT = LOCAL_CHROME_ROOTS[0]
+# Browser layouts, per manager. @puppeteer/browsers names its builds after the
+# platform, Playwright after the Chromium revision; Playwright also used a
+# `chrome-linux/` directory before it moved to `chrome-linux64/`.
+PUPPETEER_CHROME_GLOBS = ("linux-*/chrome-linux64/chrome",)
+PLAYWRIGHT_CHROME_GLOBS = (
+    "chromium-*/chrome-linux64/chrome",
+    "chromium-*/chrome-linux/chrome",
+)
+PLAYWRIGHT_BROWSERS_PATH_ENV = "PLAYWRIGHT_BROWSERS_PATH"
 DEFAULT_WIDTH = 1400
 DEFAULT_HEIGHT = 900
 
@@ -85,16 +99,87 @@ def ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def node_module_dirs(start: Path) -> list[Path]:
+    """Every ``node_modules`` Node would consult for a require from ``start``.
+
+    Node's CommonJS resolver walks up from the requiring file's own directory,
+    so this is the whole reason generated scripts must live under ROOT.
+    """
+    return [parent / "node_modules" for parent in (start, *start.parents)]
+
+
+def resolves_node_package(name: str, start: Path | None = None) -> bool:
+    """True when a script in ``start`` could ``require(name)``."""
+    root = start or NODE_SCRATCH
+    return any((modules / name).is_dir() for modules in node_module_dirs(root))
+
+
+def require_node_package(name: str, start: Path | None = None) -> None:
+    """Fail early, and accurately, when the Node toolchain is not installed.
+
+    Without this the user only ever saw a raw MODULE_NOT_FOUND stack trace from
+    Node, which named neither the package to install nor the directory to
+    install it in.
+    """
+    if shutil.which("node") is None:
+        raise SystemExit(
+            "Node no encontrado en el PATH. Instalá Node.js para generar visuales."
+        )
+    if resolves_node_package(name, start):
+        return
+    raise SystemExit(
+        f"Dependencia Node '{name}' no encontrada en {ROOT / 'node_modules'}. "
+        f"Instalá el toolchain de este repositorio con: npm install --prefix {ROOT}"
+    )
+
+
+def playwright_browser_roots() -> tuple[Path, ...]:
+    """Where Playwright keeps its managed browsers on this machine.
+
+    ``PLAYWRIGHT_BROWSERS_PATH=0`` is Playwright's documented way of asking for
+    the browsers to be stored next to the package itself.
+    """
+    override = (os.environ.get(PLAYWRIGHT_BROWSERS_PATH_ENV) or "").strip()
+    if override == "0":
+        return (ROOT / "node_modules" / "playwright-core" / ".local-browsers",)
+    if override:
+        return (Path(override).expanduser(),)
+    return (Path.home() / ".cache" / "ms-playwright",)
+
+
+def chrome_search_plan() -> list[tuple[Path, tuple[str, ...]]]:
+    """Browser roots to search, in priority order, with their layout globs.
+
+    The puppeteer roots come first so an install that already works keeps
+    working; the Playwright cache is appended because ``playwright`` is what
+    package.json actually declares.
+    """
+    plan: list[tuple[Path, tuple[str, ...]]] = [
+        (root, PUPPETEER_CHROME_GLOBS) for root in LOCAL_CHROME_ROOTS
+    ]
+    plan.append((Path.home() / ".cache" / "puppeteer" / "chrome", PUPPETEER_CHROME_GLOBS))
+    plan.extend((root, PLAYWRIGHT_CHROME_GLOBS) for root in playwright_browser_roots())
+    return plan
+
+
+def newest_executable(root: Path, patterns: tuple[str, ...]) -> Path | None:
+    """Newest executable matching any of ``patterns`` under ``root``."""
+    candidates = [
+        candidate
+        for pattern in patterns
+        for candidate in root.glob(pattern)
+        if candidate.exists() and os.access(candidate, os.X_OK)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
 def newest_local_chrome() -> Path | None:
-    for chrome_root in LOCAL_CHROME_ROOTS:
-        candidates = sorted(chrome_root.glob("linux-*/chrome-linux64/chrome"), key=lambda p: p.stat().st_mtime, reverse=True)
-        for candidate in candidates:
-            if candidate.exists() and os.access(candidate, os.X_OK):
-                return candidate
-    home_candidates = sorted(Path.home().glob(".cache/puppeteer/chrome/linux-*/chrome-linux64/chrome"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for candidate in home_candidates:
-        if candidate.exists() and os.access(candidate, os.X_OK):
-            return candidate
+    for chrome_root, patterns in chrome_search_plan():
+        found = newest_executable(chrome_root, patterns)
+        if found:
+            return found
     return None
 
 
@@ -102,8 +187,8 @@ def require_chrome() -> Path:
     chrome = newest_local_chrome()
     if not chrome:
         raise SystemExit(
-            "Chrome/Chromium no encontrado. Instalá localmente con: "
-            "npx @puppeteer/browsers install chrome@stable --path .cache/puppeteer"
+            "Chrome/Chromium no encontrado. Instalá el navegador del toolchain "
+            f"ejecutando en {ROOT}: npx playwright install chromium"
         )
     return chrome
 
@@ -119,9 +204,9 @@ def mmdc_bin() -> Path:
 
 
 def puppeteer_config() -> Path:
-    BACKUPS.mkdir(parents=True, exist_ok=True)
+    NODE_SCRATCH.mkdir(parents=True, exist_ok=True)
     chrome = require_chrome()
-    config = BACKUPS / "puppeteer-config.json"
+    config = NODE_SCRATCH / "puppeteer-config.json"
     config.write_text(json.dumps({"executablePath": str(chrome), "args": ["--no-sandbox"]}, indent=2), encoding="utf-8")
     return config
 
@@ -195,8 +280,9 @@ def command_echarts(args: argparse.Namespace) -> int:
         chart.dispose();
         """
     )
-    BACKUPS.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", suffix=".cjs", dir=BACKUPS, delete=False, encoding="utf-8") as tmp:
+    require_node_package("echarts")
+    NODE_SCRATCH.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", suffix=".cjs", dir=NODE_SCRATCH, delete=False, encoding="utf-8") as tmp:
         tmp.write(node_script)
         tmp_path = Path(tmp.name)
     try:
@@ -213,6 +299,7 @@ def command_html_shot(args: argparse.Namespace) -> int:
     ensure_parent(out)
     if not src.exists():
         raise SystemExit(f"No existe HTML: {src}")
+    require_node_package("playwright")
     chrome = require_chrome()
     node_script = dedent(
         """
@@ -232,8 +319,8 @@ def command_html_shot(args: argparse.Namespace) -> int:
         })().catch(err => { console.error(err); process.exit(1); });
         """
     )
-    BACKUPS.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", suffix=".cjs", dir=BACKUPS, delete=False, encoding="utf-8") as tmp:
+    NODE_SCRATCH.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", suffix=".cjs", dir=NODE_SCRATCH, delete=False, encoding="utf-8") as tmp:
         tmp.write(node_script)
         tmp_path = Path(tmp.name)
     try:

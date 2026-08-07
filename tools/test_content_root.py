@@ -146,7 +146,6 @@ CONTENT_PATHS = {
     "BACKUPS": output_router.BACKUPS,
     "SOURCE_ROOT": source_library.SOURCE_ROOT,
     "MANIFEST": source_library.MANIFEST,
-    "VISUAL_RENDER_BACKUPS": visual_builder.BACKUPS,
 }
 
 
