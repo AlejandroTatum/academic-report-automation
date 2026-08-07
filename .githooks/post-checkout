@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Fires on `git checkout` / `git switch` and on the initial clone checkout.
+# Args: <prev-head> <new-head> <is-branch-checkout>. Skip file checkouts,
+# which do not move HEAD and cannot change the skills tree.
+[[ "${3:-0}" == "1" ]] || exit 0
+exec "$(dirname "${BASH_SOURCE[0]}")/lib/sync-skills.sh"

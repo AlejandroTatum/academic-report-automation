@@ -89,6 +89,46 @@ python3 -m pip install -r requirements-dev.txt
 python3 -m pytest tools/ tests/
 ```
 
+## Agent skills
+
+`skills/` holds the agent skill definitions and is the single source of truth
+for them. The agent runtimes — `~/.claude/skills/` and
+`~/.config/opencode/skills/` — are mirrors. Edit here and sync outward; a file
+edited directly in a runtime directory is overwritten on the next sync.
+
+Sync by hand:
+
+```bash
+./scripts/sync_skills.sh          # dry run — shows what would change
+./scripts/sync_skills.sh --apply  # write the changes
+```
+
+The sync is gated on the skill contract tests, so a skill that fails its own
+routing contract never reaches a runtime.
+
+### Syncing automatically on pull
+
+Install the versioned hooks once per clone:
+
+```bash
+./scripts/install_hooks.sh
+```
+
+This sets `core.hooksPath` to `.githooks/`, which is needed because `.git/hooks/`
+is not versioned — the hooks travel with the repository, but each clone has to be
+told where to look.
+
+After that, `post-merge`, `post-rewrite` and `post-checkout` re-sync the runtimes
+whenever the repository changes. All three are covered because a plain `git pull`
+fires `post-merge` while `git pull --rebase` fires `post-rewrite` instead, and a
+branch switch fires neither.
+
+The hook fingerprints the tracked contents of `skills/` and exits immediately when
+nothing changed, so an ordinary pull costs nothing. When a sync fails it says so
+and deliberately leaves the fingerprint unwritten, so the next pull retries rather
+than silently skipping a pending update. Git ignores the exit code of `post-*`
+hooks, so this can never block a pull.
+
 ## Visual Builder
 
 The toolkit includes a visual builder for reproducible diagrams and charts.
