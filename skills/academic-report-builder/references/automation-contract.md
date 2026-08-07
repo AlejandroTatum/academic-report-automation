@@ -23,6 +23,8 @@ cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/validate_report.py "$RE
 cd "$REPORT_AUTOMATION_ROOT" && ./.venv/bin/python tools/visual_pdf_auditor.py "$REPORT_CONTENT_ROOT/outputs/<materia-slug>/<final-pdf>.pdf"
 ```
 
+Before the first build, `report.yml` must carry the resolved route as `route:` and, on the routes that forbid numbered headings, `section_numbering: false`. Both are defined in `document-routing.md`. Without `route:` the report is validated as university academic work and will be asked for a teacher and a subject the route forbids.
+
 Use `latex` for long textual/mixed reports, `visual` for concept maps, infographics, or design-heavy deliverables, and `docx` only for editable delivery or mandatory DOCX templates. Keep final visible PDF/DOCX files only in `outputs/<materia-slug>/`; keep intermediates in `build/`, `backups/`, or canonical generated-asset folders.
 
 `visual_pdf_auditor.py` is manual unless `report.yml` contains `validators: {visual_pdf: true}`. It produces `visual_qa.md` and `contact_sheet.png`; both are precheck evidence, not approval. Automatic execution inside `validate_report.py` does not change this authority boundary.

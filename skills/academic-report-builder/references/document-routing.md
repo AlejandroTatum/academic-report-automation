@@ -41,3 +41,21 @@ The ONLY route that may activate academic institutional machinery.
 - Build a specific contract with the user: name the sections, the forbidden content, the format sources, and the reading priorities before generating anything.
 - Reuse fragments from other routes only when the user confirms each one.
 - MUST NEVER fall silently back to the academic route, or to any other route, when the contract is incomplete. An incomplete Route E contract stops the run.
+
+## Declaring the resolved route
+
+The route is a decision the tooling cannot infer, so write it into `report.yml` before building. Without it every document is validated as university academic work.
+
+| Route | `route:` value | Required metadata |
+| --- | --- | --- |
+| A | `academic` (or `a`) | `title`, `subject`, `teacher`, `student`, `date` |
+| B | `project` (or `b`) | `title`, `student`, `date` |
+| C | `business` (or `c`) | `title`, `student`, `date` |
+| D | `technical` (or `d`) | `title`, `student`, `date` |
+| E | `other` (or `e`) | `title`, `student`, `date` |
+
+- An absent `route:` means Route A. That default exists so reports written before the key keep working; it is never a licence to omit the key on a non-academic document.
+- An unrecognised value stops the run naming the accepted ones. There is no silent fallback.
+- Declaring `subject` or `teacher` on a non-academic route warns: those fields are academic furniture the route forbids.
+- `section_numbering: false` removes numbered headings, which Routes B, C and D forbid. Absent means numbered, so Route A needs nothing.
+- These two keys carry the routing contract into the build. A route confirmed with Alejandro but never written to `report.yml` is not a resolved route.
