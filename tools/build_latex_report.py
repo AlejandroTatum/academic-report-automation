@@ -58,6 +58,22 @@ ASSETS_DIR = ROOT / "assets"
 # Markdown image syntax. Only ever matched against Markdown source, never
 # against a body that markdown_to_latex() has already converted.
 MARKDOWN_IMAGE_RE = re.compile(r"!\[.*\]\(.*\)")
+
+
+def cover_field(value: str | None) -> str:
+    r"""Escape an optional cover field, never returning an empty string.
+
+    Cover templates render these on their own line as ``{\large {{FIELD}}}\\``.
+    An empty substitution leaves ``{\large }\\``, which LaTeX rejects outright
+    with ``There's no line here to end.`` — a fatal error whose message points
+    at the title page rather than at the metadata field nobody set.
+
+    ``\strut`` is an invisible box with the height and depth of a normal line,
+    so the line exists for LaTeX to end while the reader sees nothing, and the
+    cover's vertical rhythm stays exactly as designed.
+    """
+    text = (value or "").strip()
+    return latex_escape(text) if text else r"\strut"
 LOGO_FILENAME = "unl-logo-aa1-transparent.png"
 BACKGROUND_FILENAME = "fondo-overleaf-investigacion.png"
 # Known extra PNGs in assets/ that are NOT referenced by the LaTeX pipeline.
@@ -376,7 +392,7 @@ def render_tex(config: ReportConfig) -> str:
         r"\vspace*{1.15cm}",
         r"\begin{flushright}",
         r"\rule{7.3cm}{0.4pt}\\[-0.1cm]",
-        rf"{{\bfseries {latex_escape(student)}}}\\",
+        rf"{{\bfseries {cover_field(student)}}}\\",
         "Autor",
         r"\end{flushright}",
         r"\newpage",
@@ -444,10 +460,10 @@ def render_tex(config: ReportConfig) -> str:
     bib_file = config.bib_path.name if config.bib_path else ""
     replacements = {
         "{{TITLE}}": latex_escape(meta.get("title") or config.raw.get("title") or "Reporte académico"),
-        "{{TITLE_EN}}": latex_escape(meta.get("title_en") or config.raw.get("title_en") or ""),
+        "{{TITLE_EN}}": cover_field(meta.get("title_en") or config.raw.get("title_en")),
         "{{SUBJECT}}": latex_escape(meta.get("subject") or ""),
-        "{{TEACHER}}": latex_escape(meta.get("teacher") or ""),
-        "{{STUDENT}}": latex_escape(meta.get("student") or ""),
+        "{{TEACHER}}": cover_field(meta.get("teacher")),
+        "{{STUDENT}}": cover_field(meta.get("student")),
         "{{DATE}}": latex_escape(meta.get("date") or ""),
         "{{CAREER}}": latex_escape(meta.get("career") or "Carrera de Computación"),
         "{{PARALLEL}}": latex_escape(meta.get("parallel") or ""),
