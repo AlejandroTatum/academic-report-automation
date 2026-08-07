@@ -262,9 +262,11 @@ def has_full_bleed_background(img: Image.Image, margin: int = 8) -> bool:
     Unlike a strict "full-bleed" check that requires all 4 sides, this detects
     also partial-bleed decorative backgrounds (common in UNL cover pages):
 
-      Criteria (must meet at least two):
+      Evidence — at least one is required:
         (A) Top edge near a corner has >15 % dark pixels (header decoration)
         (B) Right edge near top has >15 % dark pixels (side decoration)
+
+      Disqualifiers — all must hold:
         (C) Left edge is clean (<2 % dark) throughout — distinguishes
             background corner decoration from full-width content clipping
         (D) Bottom edge is clean (<2 % dark)
@@ -331,9 +333,15 @@ def has_full_bleed_background(img: Image.Image, margin: int = 8) -> bool:
     else:
         crit_e = True  # No right-edge ink at all — trivially satisfied
 
-    # Score: need at least 2 positive criteria
-    score = sum([crit_a, crit_b, crit_c, crit_d, crit_e])
-    return score >= 2
+    # A cover is identified by what it HAS, not by what it lacks.
+    #
+    # Only crit_a and crit_b are evidence: ink actually reaching a paper edge.
+    # crit_c, crit_d and crit_e are disqualifiers — every one of them is
+    # satisfied by any page with tidy margins, including a blank one. Counting
+    # them toward a "two out of five" score meant absence of ink was treated as
+    # proof of artwork, and the function returned True for ordinary body pages.
+    has_edge_artwork = crit_a or crit_b
+    return has_edge_artwork and crit_c and crit_d and crit_e
 
 
 def check_edge_clipping(
