@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import unicodedata
 from pathlib import Path
 
 from output_router import publish_global_output
@@ -53,6 +54,49 @@ def resolve_template(key: str | None) -> Path:
         )
     return template_path
 
+
+# report.yml key that turns academic section numbering on or off for one
+# report. `document-routing.md` forbids auto-included academic section
+# numbering on Routes B, C and D, but the templates numbered unconditionally.
+#
+# The key is intentionally independent of `route:`: numbering is an explicit
+# typographic decision, and a routing key that silently restyled a document
+# would be surprising. A future change could derive the *default* from the
+# route once that key settles.
+SECTION_NUMBERING_KEY = "section_numbering"
+
+# Absence of the key means numbered. Every report that exists today declares
+# nothing about numbering and must keep rendering exactly as it does now.
+SECTION_NUMBERING_DEFAULT = True
+
+_SECTION_NUMBERING_TRUE = {"true", "yes", "on", "si", "sí", "1"}
+_SECTION_NUMBERING_FALSE = {"false", "no", "off", "0"}
+
+
+def section_numbering_enabled(raw: dict) -> bool:
+    """Read `section_numbering:` from a report.yml mapping.
+
+    Returns the historical default when the key is absent. An unrecognised
+    value fails loudly rather than picking a side: guessing would silently
+    renumber — or unnumber — a whole document over a typo.
+    """
+    if SECTION_NUMBERING_KEY not in raw:
+        return SECTION_NUMBERING_DEFAULT
+    value = raw.get(SECTION_NUMBERING_KEY)
+    if isinstance(value, bool):
+        return value
+    written = str(value if value is not None else "").strip().lower()
+    if written in _SECTION_NUMBERING_TRUE:
+        return True
+    if written in _SECTION_NUMBERING_FALSE:
+        return False
+    raise SystemExit(
+        f"Valor no válido para '{SECTION_NUMBERING_KEY}' en report.yml: "
+        f"{value!r}. Valores aceptados: true, false (también sí/no, on/off). "
+        "Sin la clave, las secciones se numeran como hasta ahora."
+    )
+
+
 # Asset constants — single source of truth for expected filenames.
 ASSETS_DIR = ROOT / "assets"
 # Markdown image syntax. Only ever matched against Markdown source, never
@@ -95,6 +139,33 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproce
     return subprocess.run(cmd, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=check)
 
 
+# Characters after which an inline-code run may break across lines. Monospace
+# fonts carry no hyphenation patterns, so without these explicit penalties a
+# path like ``tools/test_content_root.py`` is one unbreakable box: it overflows
+# a table column into its neighbour, and in justified prose it forces TeX to
+# shrink the surrounding interword glue until the code looks glued to the words
+# next to it.
+INLINE_CODE_BREAK_AFTER = "/_-.:,=()"
+
+
+def inline_code(value: str) -> str:
+    r"""Render inline code as ``\texttt`` with explicit break opportunities.
+
+    ``\allowbreak{}`` is a zero-width penalty: it never adds a hyphen and never
+    changes the glyphs, it only tells TeX that a line may end there. The
+    trailing separator gets none, since a break at the very end of the run
+    would leave the box empty.
+    """
+    characters = list(value)
+    last = len(characters) - 1
+    pieces: list[str] = []
+    for index, character in enumerate(characters):
+        pieces.append(latex_escape(character))
+        if character in INLINE_CODE_BREAK_AFTER and index < last:
+            pieces.append(r"\allowbreak{}")
+    return r"\texttt{" + "".join(pieces) + "}"
+
+
 def convert_inline(text: str) -> str:
     placeholders: list[tuple[str, str]] = []
 
@@ -108,7 +179,7 @@ def convert_inline(text: str) -> str:
 
     keep(r"\[@([A-Za-z0-9_:\-.,; ]+)\]", lambda m: r"\cite{" + re.sub(r"\s+", "", m.group(1)) + "}")
     keep(r"\$([^$]+)\$", lambda m: "$" + m.group(1) + "$")
-    keep(r"`([^`]+)`", lambda m: r"\texttt{" + latex_escape(m.group(1)) + "}")
+    keep(r"`([^`]+)`", lambda m: inline_code(m.group(1)))
     escaped = latex_escape(text)
     escaped = re.sub(r"\*\*([^*]+)\*\*", lambda m: r"\textbf{" + m.group(1) + "}", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", lambda m: r"\emph{" + m.group(1) + "}", escaped)
@@ -118,11 +189,30 @@ def convert_inline(text: str) -> str:
     return escaped
 
 
+# Fenced code blocks: ``` or ~~~ (three or more), with an optional language
+# word. Anything between an opening fence and its closing fence is literal.
+CODE_FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})\s*(?P<language>[^`]*)$")
+# Headings the templates already print by themselves through \printbibliography.
+BIBLIOGRAPHY_HEADINGS = {"bibliografia", "referencias", "references", "bibliography"}
+
+
+def fold_heading(title: str) -> str:
+    """Normalize a heading for case- and accent-insensitive comparison."""
+    decomposed = unicodedata.normalize("NFKD", title)
+    stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return stripped.casefold().strip()
+
+
+def is_bibliography_heading(title: str) -> bool:
+    """True for the heading titles ``\\printbibliography`` already prints."""
+    return fold_heading(title) in BIBLIOGRAPHY_HEADINGS
+
+
 def markdown_to_latex(markdown: str) -> str:
     lines = markdown.splitlines()
     output: list[str] = []
     paragraph: list[str] = []
-    in_list = False
+    list_env: str | None = None
 
     def split_table_row(row: str) -> list[str]:
         stripped = row.strip().strip("|")
@@ -192,11 +282,61 @@ def markdown_to_latex(markdown: str) -> str:
             paragraph = []
 
     def close_list() -> None:
-        nonlocal in_list
-        if in_list:
-            output.append(r"\end{itemize}")
+        nonlocal list_env
+        if list_env:
+            output.append(rf"\end{{{list_env}}}")
             output.append("")
-            in_list = False
+            list_env = None
+
+    def open_list(env: str) -> None:
+        """Start ``env``, closing a list of the other kind still open."""
+        nonlocal list_env
+        if list_env == env:
+            return
+        close_list()
+        output.append(rf"\begin{{{env}}}")
+        list_env = env
+
+    def render_code_block(code_lines: list[str]) -> None:
+        r"""Emit a fenced block as page-breakable verbatim.
+
+        ``verbatim`` belongs to the LaTeX kernel, so this adds no package the
+        templates would have to load, and it breaks between its own lines
+        instead of overflowing the page as one atomic box. The content is
+        emitted untouched — neither ``latex_escape()`` nor ``convert_inline()``
+        may run over it — except for a literal ``\end{verbatim}``, which would
+        otherwise close the environment from the inside.
+        """
+        block = list(code_lines)
+        while block and not block[0].strip():
+            block.pop(0)
+        while block and not block[-1].strip():
+            block.pop()
+        if not block:
+            return
+        # verbatim never wraps a long line, so the font size sets the usable
+        # column count. \footnotesize fits ~89 monospace columns in the A4
+        # text block; \small stops at ~79 and pushes a plain 80-column source
+        # line into the margin.
+        output.extend([
+            r"\begingroup",
+            r"\footnotesize",
+            r"\begin{verbatim}",
+        ])
+        output.extend(line.rstrip().replace(r"\end{verbatim}", r"\end {verbatim}") for line in block)
+        output.extend([
+            r"\end{verbatim}",
+            r"\endgroup",
+            "",
+        ])
+
+    def find_closing_fence(marker: str, start: int) -> int | None:
+        """Index of the fence that closes the block opened at ``start - 1``."""
+        for index in range(start, len(lines)):
+            candidate = lines[index].strip()
+            if len(candidate) >= 3 and set(candidate) == {marker}:
+                return index
+        return None
 
     i = 0
     while i < len(lines):
@@ -207,6 +347,22 @@ def markdown_to_latex(markdown: str) -> str:
             flush_paragraph()
             close_list()
             i += 1
+            continue
+
+        # Fences come first: a code line may contain anything, including the
+        # pipes, hashes and dashes every other block rule keys on.
+        fence = CODE_FENCE_RE.match(stripped)
+        if fence:
+            closing = find_closing_fence(fence.group("marker")[0], i + 1)
+            if closing is None:
+                # Unterminated fence: drop the stray marker and keep parsing.
+                # Consuming everything to EOF would turn the rest of the
+                # document — headings, tables, lists — into literal text.
+                i += 1
+                continue
+            flush_paragraph(); close_list()
+            render_code_block(lines[i + 1 : closing])
+            i = closing + 1
             continue
 
         if "|" in stripped and i + 1 < len(lines) and is_table_separator(lines[i + 1]):
@@ -306,6 +462,14 @@ def markdown_to_latex(markdown: str) -> str:
             flush_paragraph(); close_list()
             level = len(heading.group(1))
             raw_title = heading.group(2).strip()
+            if is_bibliography_heading(raw_title) and not any(
+                rest.strip() for rest in lines[i + 1 :]
+            ):
+                # The templates end with \printbibliography, which prints its
+                # own title. An empty trailing bibliography heading would show
+                # that title twice, once numbered and once not.
+                i += 1
+                continue
             title = convert_inline(raw_title)
             command = {1: "section", 2: "subsection", 3: "subsubsection"}.get(level, "paragraph")
             if raw_title.casefold() in {"conclusiones", "conclusión", "conclusion"}:
@@ -352,10 +516,19 @@ def markdown_to_latex(markdown: str) -> str:
         bullet = re.match(r"^[-*]\s+(.+)$", stripped)
         if bullet:
             flush_paragraph()
-            if not in_list:
-                output.append(r"\begin{itemize}")
-                in_list = True
+            open_list("itemize")
             output.append(r"\item " + convert_inline(bullet.group(1)))
+            i += 1
+            continue
+
+        # Ordered lists — "1." and "1)" alike. Without this the numbers stay in
+        # the paragraph buffer and the whole procedure renders as one justified
+        # run-on line.
+        ordered = re.match(r"^\d+[.)]\s+(.+)$", stripped)
+        if ordered:
+            flush_paragraph()
+            open_list("enumerate")
+            output.append(r"\item " + convert_inline(ordered.group(1)))
             i += 1
             continue
 
@@ -475,6 +648,7 @@ def render_tex(config: ReportConfig) -> str:
         "{{BIB_FILE}}": latex_escape(bib_file),
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
+        "{{SECTION_NUMBERING}}": "true" if section_numbering_enabled(config.raw) else "false",
         "{{LIST_OF_FIGURES}}": r"\newpage\listoffigures" if has_figures else "",
         "{{FRONT_MATTER}}": front_matter,
         "{{AI_DECLARATION}}": ai_declaration_latex,
@@ -501,6 +675,104 @@ def validate_assets_exist() -> list[str]:
         elif path.stat().st_size < 1_000:
             errors.append(f"Asset sospechosamente pequeño ({path.stat().st_size} bytes): {path}")
     return errors
+
+
+# Extensions \includegraphics tries when a reference carries no suffix.
+FIGURE_SUFFIXES = (".png", ".pdf", ".jpg", ".jpeg", ".eps")
+# Same Markdown image syntax as MARKDOWN_IMAGE_RE, capturing the source path.
+MARKDOWN_IMAGE_SRC_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def figure_references(markdown: str) -> list[str]:
+    """Return every local image path referenced from a Markdown body.
+
+    Remote sources are skipped: LaTeX cannot fetch them, and reporting them as
+    missing files would be misleading.
+    """
+    references: list[str] = []
+    for match in MARKDOWN_IMAGE_SRC_RE.finditer(markdown):
+        source = match.group(1).strip().split(" ")[0].strip()
+        if not source or source.startswith(("http://", "https://", "data:")):
+            continue
+        references.append(source)
+    return references
+
+
+def resolve_figure(reference: str, build_dir: Path) -> Path | None:
+    r"""Resolve a figure reference the way ``\includegraphics`` will.
+
+    Relative references resolve from the build directory — the documented
+    convention (``../../../assets/generated/...``). A reference with no suffix
+    matches any of the graphics extensions LaTeX would try on its own.
+    """
+    candidate = Path(reference)
+    base = candidate if candidate.is_absolute() else build_dir / candidate
+    if base.suffix:
+        return base if base.exists() else None
+    for suffix in FIGURE_SUFFIXES:
+        with_suffix = base.with_suffix(suffix)
+        if with_suffix.exists():
+            return with_suffix
+    return None
+
+
+def validate_figure_paths(
+    markdown: str, build_dir: Path, docker_mount: Path | None = None
+) -> list[str]:
+    r"""Check every figure reference before the compiler ever starts.
+
+    ``\includegraphics`` aborts the whole run on a file it cannot open, so an
+    unresolvable figure has to be caught here or it becomes a fatal LaTeX error
+    buried in the transcript.
+
+    ``docker_mount`` is the host directory bind-mounted at ``/work`` when the
+    Docker fallback is the engine. Under Docker an absolute host path simply
+    does not exist inside the container, and a relative path that escapes the
+    mount is equally invisible — both are rejected up front.
+
+    Returns a list of Spanish error messages (empty when every figure resolves).
+    """
+    errors: list[str] = []
+    for reference in figure_references(markdown):
+        if docker_mount is not None and Path(reference).is_absolute():
+            errors.append(
+                f"Figura con ruta absoluta no utilizable dentro del contenedor Docker: "
+                f"{reference}. Use una ruta relativa al directorio de compilación: {build_dir}"
+            )
+            continue
+        resolved = resolve_figure(reference, build_dir)
+        if resolved is None:
+            errors.append(f"Figura no encontrada: {reference} (resuelta desde {build_dir})")
+            continue
+        if docker_mount is not None and not is_within(resolved.resolve(), docker_mount.resolve()):
+            errors.append(
+                f"Figura fuera del directorio montado en Docker ({docker_mount}): "
+                f"{reference} → {resolved}"
+            )
+    return errors
+
+
+def compilation_failure_message(
+    pdf_path: Path, log_path: Path, output: str, max_lines: int = 30
+) -> str:
+    """Build the failure text for a compilation that produced no PDF.
+
+    The compiler transcript is captured rather than streamed, so a failure used
+    to be reported as a bare "no PDF" while the real cause — a missing figure,
+    an unavailable package — stayed inside the pipe. This surfaces the lines
+    LaTeX itself marks as errors plus the tail of the transcript, and always
+    points at the full log for the rest.
+    """
+    lines = [line.rstrip() for line in (output or "").splitlines()]
+    parts = [f"La compilación no generó PDF: {pdf_path}"]
+    errors = [line for line in lines if line.startswith("!")]
+    if errors:
+        parts.extend(["", "Errores reportados por LaTeX:", *errors[:10]])
+    tail = [line for line in lines if line.strip()][-max_lines:]
+    if tail:
+        parts.extend(["", f"Últimas {len(tail)} líneas de la salida del compilador:", *tail])
+    parts.extend(["", f"Log completo: {log_path}"])
+    return "\n".join(parts)
 
 
 def is_within(path: Path, base: Path) -> bool:
@@ -568,6 +840,26 @@ def docker_compile_command(config: ReportConfig) -> list[str]:
     ]
 
 
+def is_same_file(built: Path, destination: Path) -> bool:
+    """Return True when both paths name the same file on disk.
+
+    The final publication step copies the build output to the configured
+    ``pdf:`` destination. Those are usually distinct, but a report is entitled
+    to point ``pdf:`` straight at the build output — and since final artifacts
+    are barred from ``reports/<work>/outputs/``, that is now the obvious thing
+    to write. ``shutil.copy2`` raises ``SameFileError`` for a self-copy, which
+    killed the build *after* the PDF had been produced successfully.
+
+    Path equality is not enough: a symlinked build directory reaches the same
+    inode through a different path. ``Path.samefile`` compares the actual
+    files, and a missing destination simply means it is not the built PDF.
+    """
+    try:
+        return built.samefile(destination)
+    except (OSError, ValueError):
+        return False
+
+
 def compile_latex(config: ReportConfig) -> None:
     build_dir = config.tex_path.parent
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -584,27 +876,52 @@ def compile_latex(config: ReportConfig) -> None:
         shutil.copy2(background, build_dir / background.name)
     engine = shutil.which("latexmk")
     latex_engine = shutil.which("lualatex") or shutil.which("xelatex") or shutil.which("pdflatex")
-    if engine:
-        run([engine, "-lualatex", "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], cwd=build_dir, check=False)
-    elif latex_engine:
-        for command in ([latex_engine, "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name],):
-            run(list(command), cwd=build_dir, check=False)
-        if config.bib_path and shutil.which("biber"):
-            run(["biber", config.tex_path.stem], cwd=build_dir, check=False)
-        elif config.bib_path and shutil.which("bibtex"):
-            run(["bibtex", config.tex_path.stem], cwd=build_dir, check=False)
-        run([latex_engine, "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], cwd=build_dir, check=False)
-        run([latex_engine, "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], cwd=build_dir, check=False)
-    elif shutil.which("docker"):
-        run(docker_compile_command(config), cwd=config.folder, check=False)
-    else:
+    docker_engine = None if (engine or latex_engine) else shutil.which("docker")
+    if not (engine or latex_engine or docker_engine):
         raise SystemExit("No hay pdflatex/latexmk ni Docker para compilar LaTeX")
+
+    # Figures are resolved before any compiler starts. A figure LaTeX cannot
+    # open is a fatal error, and the Docker fallback cannot see an absolute
+    # host path at all — both are far clearer here than inside a transcript.
+    if config.body_path.exists():
+        figure_errors = validate_figure_paths(
+            config.body_path.read_text(encoding="utf-8"),
+            build_dir,
+            docker_mount=docker_mount_root(config) if docker_engine else None,
+        )
+        if figure_errors:
+            raise SystemExit("Errores de figuras:\n- " + "\n- ".join(figure_errors))
+
+    # The transcript is kept so a failure can show what LaTeX actually said.
+    transcripts: list[str] = []
+
+    def compile_step(command: list[str], cwd: Path) -> None:
+        completed = run(command, cwd=cwd, check=False)
+        transcripts.append(completed.stdout or "")
+
+    if engine:
+        compile_step([engine, "-lualatex", "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], build_dir)
+    elif latex_engine:
+        compile_step([latex_engine, "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], build_dir)
+        if config.bib_path and shutil.which("biber"):
+            compile_step(["biber", config.tex_path.stem], build_dir)
+        elif config.bib_path and shutil.which("bibtex"):
+            compile_step(["bibtex", config.tex_path.stem], build_dir)
+        compile_step([latex_engine, "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], build_dir)
+        compile_step([latex_engine, "-interaction=nonstopmode", "-halt-on-error", config.tex_path.name], build_dir)
+    else:
+        compile_step(docker_compile_command(config), config.folder)
 
     built_pdf = build_dir / f"{config.tex_path.stem}.pdf"
     if not built_pdf.exists():
-        raise SystemExit(f"La compilación no generó PDF: {built_pdf}")
+        log_path = build_dir / f"{config.tex_path.stem}.log"
+        transcript = "\n".join(part for part in transcripts if part.strip())
+        if not transcript.strip() and log_path.exists():
+            transcript = log_path.read_text(encoding="utf-8", errors="replace")
+        raise SystemExit(compilation_failure_message(built_pdf, log_path, transcript))
     config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(built_pdf, config.pdf_path)
+    if not is_same_file(built_pdf, config.pdf_path):
+        shutil.copy2(built_pdf, config.pdf_path)
     if config.publish_global:
         global_pdf = publish_global_output(config.pdf_path, config.metadata)
         if global_pdf:
