@@ -121,16 +121,20 @@ def markdown_to_latex(markdown: str) -> str:
             return
         columns = max(len(row) for row in rows)
         # Clean bordered grid: visible rows (\hline) and columns (| separators),
-        # centered alignment, subtle gray header, consistent padding.
+        # centered alignment, subtle gray header, consistent padding. Both
+        # branches emit a page-breakable environment (xltabular/longtable)
+        # instead of an atomic float — a table too tall for the remaining
+        # page space must flow onto the next page, not strand the heading
+        # above it while the whole table jumps as one block.
         if columns <= 2:
             colspec = " | ".join(["c"] * columns)
-            env = "tabular"
+            env = "longtable"
             table_open = rf"\begin{{{env}}}{{| {colspec} |}}"
             font_size = r"\small"
         else:
-            # Centered grid columns with automatic text wrapping via tabularx
+            # Centered grid columns with automatic text wrapping via xltabular
             colspec = " | ".join([r">{\centering\arraybackslash}X"] * columns)
-            env = "tabularx"
+            env = "xltabular"
             table_open = rf"\begin{{{env}}}{{\textwidth}}{{| {colspec} |}}"
             font_size = r"\footnotesize"
 
@@ -138,10 +142,13 @@ def markdown_to_latex(markdown: str) -> str:
             return row + [""] * (columns - len(row))
 
         header_cells = normalized(rows[0])
+        # No \begin{table}[H]/\centering — longtable/xltabular are not floats
+        # and center themselves (\LTleft=\LTright=\fill by default). The
+        # font-size/spacing declarations need an explicit group since the
+        # table environment no longer provides one.
         output.extend([
-            r"\Needspace{15\baselineskip}",
-            r"\begin{table}[H]",
-            r"\centering",
+            r"\Needspace{4\baselineskip}",
+            r"\begingroup",
             font_size,
             r"\renewcommand{\arraystretch}{1.2}",
             r"\setlength{\tabcolsep}{3pt}",
@@ -150,13 +157,14 @@ def markdown_to_latex(markdown: str) -> str:
             r"\rowcolor[gray]{0.92}",
             " & ".join(r"\textbf{" + convert_inline(cell) + "}" for cell in header_cells) + r" \\",
             r"\hline",
+            r"\endhead",
         ])
         for idx, row in enumerate(rows[1:]):
             output.append(" & ".join(convert_inline(cell) for cell in normalized(row)) + r" \\")
             output.append(r"\hline")
         output.extend([
             rf"\end{{{env}}}",
-            r"\end{table}",
+            r"\endgroup",
             "",
         ])
 
