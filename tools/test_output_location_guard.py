@@ -61,15 +61,23 @@ def test_explicit_local_outputs_pdf_fails_before_any_compilation(tmp_path):
     assert "c1_academic_unl.pdf" in message
 
 
-def test_underscore_prefixed_example_keeps_its_exemption(tmp_path):
+def test_underscore_prefix_no_longer_buys_an_exemption(tmp_path):
+    """The layout rule applies to scratch folders too.
+
+    The exemption used to exist for `_example_latex_essay`, which is not
+    versioned in this repository at all — and does not even need it: it writes
+    its final PDF to `build/`. The example this repository DOES ship satisfies
+    the rule outright, so nothing is left to exempt.
+    """
     folder = write_report(
-        tmp_path / "reports" / "_example_latex_essay",
-        "type: essay\noutput: pdf\npdf: outputs/example.pdf\n",
+        tmp_path / "reports" / "_borrador_interno",
+        "type: essay\noutput: pdf\npdf: outputs/borrador.pdf\n",
     )
 
-    config = load_report_config(folder)
+    with pytest.raises(SystemExit) as excinfo:
+        load_report_config(folder)
 
-    assert config.pdf_path == folder.resolve() / "outputs" / "example.pdf"
+    assert LOCAL_OUTPUTS_ERROR in str(excinfo.value)
 
 
 def test_global_outputs_path_loads_without_complaint(tmp_path):
@@ -136,16 +144,16 @@ def test_post_build_check_still_reports_the_same_guidance(tmp_path):
     assert any(LOCAL_OUTPUTS_ERROR in error for error in result.errors)
 
 
-def test_post_build_check_keeps_the_underscore_exemption(tmp_path):
-    folder = tmp_path / "reports" / "_example_latex_essay"
+def test_post_build_check_flags_underscore_folders_too(tmp_path):
+    folder = tmp_path / "reports" / "_borrador_interno"
     (folder / "outputs").mkdir(parents=True)
-    pdf = folder / "outputs" / "example.pdf"
+    pdf = folder / "outputs" / "borrador.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
     config = ReportConfig(
         folder=folder,
         raw={
             "type": "essay",
-            "pdf": "outputs/example.pdf",
+            "pdf": "outputs/borrador.pdf",
             "metadata": {"title": "T", "subject": "S", "teacher": "D", "student": "E", "date": "F"},
         },
         academic_format={},
@@ -153,4 +161,83 @@ def test_post_build_check_keeps_the_underscore_exemption(tmp_path):
 
     result = common_validation(config)
 
-    assert not any(LOCAL_OUTPUTS_ERROR in error for error in result.errors)
+    assert any(LOCAL_OUTPUTS_ERROR in error for error in result.errors)
+
+
+# ---------------------------------------------------------------------------
+# One rule, one predicate: the two checks may never disagree
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("folder_name", ["informe", "_borrador_interno"])
+@pytest.mark.parametrize(
+    ("declared_pdf", "forbidden"),
+    [("outputs/x.pdf", True), ("build/x.pdf", False), ("../../outputs/so/x.pdf", False)],
+)
+def test_load_guard_and_post_build_check_answer_the_same_question(
+    tmp_path, folder_name, declared_pdf, forbidden
+):
+    """Both call sites read `targets_local_outputs`, so their verdicts match.
+
+    They used to be spelled out separately, and the post-build check carried its
+    own copy of the underscore condition — two places to keep in step, and the
+    kind of drift where a report loads fine and then fails after three LuaLaTeX
+    passes.
+    """
+    folder = tmp_path / "reports" / folder_name
+    pdf = folder / declared_pdf
+    pdf.parent.mkdir(parents=True, exist_ok=True)
+    pdf.write_bytes(b"%PDF-1.4\n")
+    config = ReportConfig(
+        folder=folder,
+        raw={
+            "type": "essay",
+            "pdf": declared_pdf,
+            "metadata": {"title": "T", "subject": "S", "teacher": "D", "student": "E", "date": "F"},
+        },
+        academic_format={},
+    )
+
+    post_build_flags_it = any(
+        LOCAL_OUTPUTS_ERROR in error for error in common_validation(config).errors
+    )
+
+    assert targets_local_outputs(config) is forbidden
+    assert post_build_flags_it is forbidden
+
+
+# ---------------------------------------------------------------------------
+# The prefix keeps its OTHER meaning: scratch work is not published globally
+# ---------------------------------------------------------------------------
+
+
+def test_underscore_prefix_still_means_do_not_publish_a_global_copy(tmp_path):
+    folder = write_report(
+        tmp_path / "reports" / "_borrador_interno",
+        "type: essay\noutput: pdf\npdf: ../../outputs/so/borrador.pdf\n",
+    )
+
+    assert load_report_config(folder).publish_global is False
+
+
+def test_an_ordinary_folder_still_publishes_a_global_copy_by_default(tmp_path):
+    folder = write_report(
+        tmp_path / "reports" / "informe",
+        "type: essay\noutput: pdf\npdf: ../../outputs/so/informe.pdf\n",
+    )
+
+    assert load_report_config(folder).publish_global is True
+
+
+def test_publish_global_written_down_overrides_the_prefix_guess(tmp_path):
+    scratch = write_report(
+        tmp_path / "reports" / "_borrador_interno",
+        "type: essay\noutput: pdf\npublish_global: true\n",
+    )
+    ordinary = write_report(
+        tmp_path / "reports" / "informe",
+        "type: essay\noutput: pdf\npublish_global: false\n",
+    )
+
+    assert load_report_config(scratch).publish_global is True
+    assert load_report_config(ordinary).publish_global is False

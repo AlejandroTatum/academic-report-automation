@@ -1,0 +1,46 @@
+# Ejemplo mínimo de una carpeta de trabajo.
+#
+# Copiá esta carpeta dentro de $REPORT_CONTENT_ROOT/reports/ y renombrala: las
+# rutas relativas de abajo están escritas para esa ubicación, que es donde viven
+# los trabajos reales. Acá se entrega solo la fuente; build/ y el PDF final los
+# produce el pipeline.
+
+type: essay
+backend: latex
+output: pdf
+
+# Ruta documental. Ver skills/academic-report-builder/references/document-routing.md
+# para los cinco valores y la metadata que exige cada uno. Sin esta clave, todo
+# documento se valida como trabajo académico universitario.
+route: academic
+
+metadata:
+  title: "Ejemplo de informe académico"
+  subject: "Sistemas Operativos"
+  teacher: "Nombre del docente"
+  student: "Nombre del estudiante"
+  career: "Carrera de Computación"
+  parallel: "A"
+  date: "7 de agosto de 2026"
+
+body: body.md
+bibliography: sources.bib
+tex: build/main.tex
+quality_report: backups/quality_report.md
+
+# El entregable final va a outputs/<materia>/, nunca a reports/<trabajo>/outputs/:
+# una sola copia y un solo lugar donde buscarla. Este ejemplo no pide ninguna
+# excepción para cumplirlo, y por eso sirve como patrón a copiar.
+pdf: ../../outputs/sistemas-operativos/ejemplo_informe_academico.pdf
+
+# El PDF ya se escribe dentro de outputs/<materia>/, así que publicar una copia
+# global lo duplicaría sobre sí mismo. Se declara explícitamente: no se deduce
+# del nombre de la carpeta.
+publish_global: false
+
+validators:
+  common: true
+  ieee: true
+  pdf_layout: true
+  latex: true
+  latex_log: true

@@ -19,6 +19,7 @@ from report_config import (
     ReportConfig,
     load_report_config,
     relative_label,
+    targets_local_outputs,
     unknown_route_message,
 )
 from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_path
@@ -311,11 +312,15 @@ def common_validation(config: ReportConfig) -> ValidationResult:
                     expected_global_exists = expected_global.exists()
             if not expected_global_exists:
                 result.warnings.append("El PDF final no está dentro de outputs/")
-        if in_local_outputs and not config.folder.name.startswith("_"):
+        if targets_local_outputs(config):
             # Defence in depth: load_report_config already refuses a declared
             # path here, so reaching this branch means the PDF landed in the
             # forbidden folder some other way (an implicit default, a stale
             # copy, a builder writing outside its configuration).
+            #
+            # The condition is the shared predicate, not a second spelling of
+            # it: this branch used to repeat the underscore exemption inline,
+            # which is two places to keep in step for one rule.
             result.errors.append(LOCAL_OUTPUTS_ERROR)
 
     if outputs.exists():

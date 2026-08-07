@@ -159,12 +159,28 @@ LOCAL_OUTPUTS_ERROR = (
 def targets_local_outputs(config: "ReportConfig") -> bool:
     """True when the configured final PDF lands in ``<report folder>/outputs/``.
 
-    Folders whose name starts with ``_`` are exempt: the versioned example
-    ``_example_latex_essay`` deliberately keeps its output next to itself.
+    The rule has no exemptions, and this is the single predicate behind it: the
+    load-time guard in ``load_report_config`` and the post-build check in
+    ``validate_report`` both ask this function, so the two can never disagree
+    about the same report.
+
+    Folders named with a leading ``_`` used to be exempt, on the grounds that an
+    example report kept its output next to itself. That justification named
+    ``_example_latex_essay``, which is not versioned here — it lives in the
+    private content tree — so a validation rule carved out an exception for a
+    file no reader of this repository can open. It never needed the exception
+    either: it writes its final PDF to ``build/``. The example that IS shipped
+    here, ``examples/ejemplo_informe_academico``, satisfies this rule outright,
+    which is the point of shipping it — the pattern people copy is the pattern
+    the validator enforces.
+
+    The ``_`` prefix keeps its one genuine meaning in ``publish_global``:
+    scratch work, no global copy. That is a publication decision. Where the
+    final file may be written is a layout decision. Reading one prefix as both
+    meant that marking a report as scratch silently switched off a layout rule
+    nobody asked to switch off.
     """
     if config.output_format != "pdf":
-        return False
-    if config.folder.name.startswith("_"):
         return False
     return (config.folder / "outputs").resolve() in config.pdf_path.resolve().parents
 
@@ -238,6 +254,17 @@ class ReportConfig:
 
     @property
     def publish_global(self) -> bool:
+        """Whether a copy of the final file belongs in ``outputs/<materia>/``.
+
+        A leading ``_`` in the folder name is the default answer for scratch
+        work — drafts and experiments are not deliverables, so they are not
+        published. That is the prefix's only meaning: it says nothing about
+        where the final file may be written, which is
+        ``targets_local_outputs``' business. Writing ``publish_global:`` in
+        report.yml overrides the guess in either direction, and a report whose
+        ``pdf:`` already points into ``outputs/<materia>/`` normally sets it to
+        false so the deliverable is not copied on top of itself.
+        """
         if "publish_global" in self.raw:
             return bool(self.raw.get("publish_global"))
         return not self.folder.name.startswith("_")
