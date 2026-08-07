@@ -34,6 +34,42 @@ After a heading, the same page must fit at least one of:
 
 If none fits, the heading moves to the next page. A heading rendered alone at the bottom of a page is a blocking defect, not a stylistic detail.
 
+### Automated detection — blank-tail signature
+
+`visual_pdf_auditor.py::check_orphan_heading()` scans the whole page below
+~15% of page height down to the bottom, excluding only the bottom 10%
+footer band (page numbers, institution text) from the blank-space check. It
+flags a page where a short, heading-shaped ink strip (0.06–0.45 inch tall,
+DPI-normalized) is followed by a blank tail reaching at least 20% of page
+height — the signature of a heading whose body content was pushed to the
+next page. A full table, a multi-line paragraph, or a natural page end
+(content simply stops with normal trailing margin) are rejected by the same
+guards: they either fail the blank-tail threshold or merge into a strip far
+taller than a heading.
+
+The cover page (page 1) is exempted by index — `audit_pdf` calls
+`check_orphan_heading(img, dpi=dpi, is_cover=(page_num == 1))`, which
+short-circuits to `(False, None)` without inspecting pixels. No other page
+receives an index-based exemption; the last page of a document is evaluated
+on its own merits and can still be flagged if a short block of text is
+followed by a large blank tail.
+
+Orphan findings are always **warnings**, never errors, in
+`visual_pdf_validation()` — they never fail the automated build or block a
+PDF from being produced. The blocking classification above (line 35) is a
+**human visual-QA** rule applied during manual page-by-page review; it is
+independent from the automated warning severity. Recall is favored over
+precision: a short final line preceded by generous trailing whitespace on
+the last page can legitimately warn even when it is not a rendering defect
+— inspect it visually before treating any single orphan warning as a
+build-blocking issue.
+
+No fixture PNGs are committed to this repository to test the detector — it
+is a sanitized public toolkit and the real fixture PDF carries private
+content. Detector tests build synthetic images (`tools/test_orphan_detection.py`),
+parametrized over `dpi in (150, 300)`, calibrated to page geometry measured
+on the real fixture.
+
 ## Whitespace classification
 
 Whitespace is never judged by size alone. Classify every large empty region:
@@ -61,6 +97,36 @@ Inspection must record every page with:
 - Font size must stay legible; shrinking type to fit columns is a defect.
 - Remove unnecessary columns before compressing any column.
 - Split a table into grouped tables when a horizontal layout is too wide for the page.
+
+### Breakable-table contract
+
+`render_table()` in `build_latex_report.py` emits page-breakable tables, not
+atomic floats: `xltabular` for more than 2 columns, `longtable` for 2 or
+fewer columns — never `\begin{table}[H]` + `tabularx`/`tabular`. A table too
+tall for the remaining page space now flows onto the next page instead of
+jumping whole, which is what used to strand the heading above it. Every
+emitted table follows this shape:
+
+- `\Needspace{4\baselineskip}` (not `15\baselineskip`) reserves just enough
+  room to avoid a bare header row at the page foot, without forcing an early
+  page break that itself causes stranding.
+- `\begingroup ... \endgroup` wraps the font-size (`\footnotesize`/`\small`),
+  `\arraystretch`, `\tabcolsep`, and the table environment — required because
+  a non-float table provides no group of its own.
+- `\endhead` sits immediately after the header row's closing `\hline` and
+  before the first data row, so the (optionally gray-shaded) header repeats
+  on every continuation page.
+- No `\endfirsthead` (longtable/xltabular reuse `\endhead` for the first
+  page) and no `\endfoot` (every data row already emits its own trailing
+  `\hline`).
+
+All three templates (`unl-report.tex`, `plain-report.tex`,
+`chamba-overleaf.tex`) declare `\usepackage{xltabular}` after `tabularx`.
+With this contract, "a whole table displaced to the following page" and
+"space forced by an indivisible table" (see the whitespace table below)
+should no longer occur for any table long enough to need a real split —
+verify tables that DO break across a page boundary still show the repeated
+header and an unbroken bottom rule on every chunk.
 
 Recommended split for wide requirement tables — avoid six compressed columns by using two tables sharing the same code:
 
