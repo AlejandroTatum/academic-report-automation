@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import unicodedata
 from pathlib import Path
 
@@ -358,6 +359,16 @@ def markdown_to_latex(markdown: str) -> str:
                 # Unterminated fence: drop the stray marker and keep parsing.
                 # Consuming everything to EOF would turn the rest of the
                 # document — headings, tables, lists — into literal text.
+                #
+                # Recovering is right; recovering silently is not. The block's
+                # lines now reflow as prose, which is precisely the defect
+                # fence support exists to prevent, so say where it started.
+                print(
+                    f"Aviso: cerca de código sin cerrar en la línea {i + 1} "
+                    f"({stripped}); su contenido se reflowará como texto "
+                    "corriente. Cerrá el bloque para que salga como código.",
+                    file=sys.stderr,
+                )
                 i += 1
                 continue
             flush_paragraph(); close_list()

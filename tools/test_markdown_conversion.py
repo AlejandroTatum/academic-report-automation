@@ -126,6 +126,28 @@ def test_unterminated_fence_does_not_swallow_the_rest_of_the_document() -> None:
     assert "```" not in tex
 
 
+def test_unterminated_fence_says_so_instead_of_degrading_in_silence(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Recovering from a missing closing fence is right; doing it mutely is not.
+
+    The block's lines are reflowed as prose, which is exactly the defect the
+    fence support was added to remove — only now it happens because the author
+    forgot three backticks. Whoever reads the PDF must be told where to look.
+    """
+    _tex_for("# Antes\n\n```python\nvalor = 1\n\n# Despues\n\nParrafo final.\n")
+
+    message = capsys.readouterr().err
+    assert "cerca" in message.lower()
+    assert "3" in message  # the line the unterminated fence opened on
+
+
+def test_a_closed_fence_stays_quiet(capsys: pytest.CaptureFixture[str]) -> None:
+    _tex_for("```python\nvalor = 1\n```\n")
+
+    assert capsys.readouterr().err == ""
+
+
 def test_fence_closes_an_open_list() -> None:
     tex = _tex_for("- uno\n- dos\n```\ncodigo\n```\n")
     lines = tex.splitlines()
