@@ -398,6 +398,7 @@ def check_orphan_heading(
     *,
     dpi: int = DEFAULT_DPI,
     is_cover: bool = False,
+    is_last_page: bool = False,
 ) -> tuple[bool, Optional[float]]:
     """Check for a possible orphan heading stranded near the page bottom.
 
@@ -406,8 +407,14 @@ def check_orphan_heading(
     Scans the whole page below ~15 % of height, excluding only the bottom
     ``ORPHAN_FOOTER_BAND_FRAC`` footer band. All pixel thresholds are
     normalized against *dpi*.
+
+    Two pages are exempt by index rather than by image analysis. The cover is
+    decorative and sparse by design. The last page cannot strand a heading at
+    all: an orphan means the heading's content moved onto the *following*
+    page, and there is no following page — trailing blank space there is just
+    where the document ends.
     """
-    if is_cover:
+    if is_cover or is_last_page:
         return False, None
 
     w, h = img.size
@@ -677,10 +684,17 @@ def audit_pdf(
                 finding.edge_clipping = True
                 finding.edge_side = side
 
-            # Orphan heading — cover page (page 1) is exempted by index,
-            # not by has_full_bleed_background() (it returns True even for
-            # ordinary/blank pages, so it cannot be used as a guard here).
-            orphan, conf = check_orphan_heading(img, dpi=dpi, is_cover=(page_num == 1))
+            # Orphan heading — the cover (page 1) and the final page are
+            # exempted by index, not by has_full_bleed_background() (it returns
+            # True even for ordinary/blank pages, so it cannot be used as a
+            # guard here). The last page has no following page for content to
+            # have been pushed onto, so it cannot strand a heading.
+            orphan, conf = check_orphan_heading(
+                img,
+                dpi=dpi,
+                is_cover=(page_num == 1),
+                is_last_page=(page_num == n_pages),
+            )
             finding.orphan_heading = orphan
             finding.orphan_confidence = conf
 

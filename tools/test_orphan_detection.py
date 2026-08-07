@@ -326,3 +326,49 @@ def test_old_positional_call_still_valid() -> None:
     is_orphan, confidence = auditor.check_orphan_heading(img)
     assert is_orphan is True
     assert confidence is not None
+
+
+# ---------------------------------------------------------------------------
+# Last-page exclusion by index
+# ---------------------------------------------------------------------------
+#
+# An orphan heading means the heading's own content was pushed onto the
+# FOLLOWING page. The last page has no following page, so a stranded heading
+# cannot exist there by definition — whatever blank space trails the final
+# block is simply where the document ends.
+#
+# This is the same deterministic, DPI-free index exemption already used for
+# the cover, and it is not a threshold tweak: no calibration constant moves.
+
+
+def test_is_last_page_short_circuits_regardless_of_content() -> None:
+    """``is_last_page=True`` returns (False, None) even for content that would
+    otherwise be flagged as an orphan heading."""
+    img = page_with_orphan_heading(150)
+    is_orphan, confidence = auditor.check_orphan_heading(
+        img, dpi=150, is_last_page=True,
+    )
+    assert is_orphan is False
+    assert confidence is None
+
+
+def test_is_last_page_defaults_to_false() -> None:
+    """Without is_last_page, the same orphan-heading image is still flagged."""
+    img = page_with_orphan_heading(150)
+    is_orphan, _confidence = auditor.check_orphan_heading(img, dpi=150)
+    assert is_orphan is True
+
+
+def test_trailing_blank_on_a_final_page_is_not_an_orphan() -> None:
+    """The real regression: the rebuilt fixture's page 24 ends with a short
+    bibliography entry followed by ~49 % blank space. Flagged when treated as
+    an interior page, exempt as the final one."""
+    img = page_with_orphan_heading(150, heading_top_frac=0.42)
+    assert auditor.check_orphan_heading(img, dpi=150)[0] is True
+    assert auditor.check_orphan_heading(img, dpi=150, is_last_page=True)[0] is False
+
+
+def test_signature_has_keyword_only_is_last_page() -> None:
+    params = inspect.signature(auditor.check_orphan_heading).parameters
+    assert params["is_last_page"].kind == inspect.Parameter.KEYWORD_ONLY
+    assert params["is_last_page"].default is False
