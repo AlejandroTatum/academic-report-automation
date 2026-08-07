@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Backend router for academic reports.
 
-Chooses LaTeX/visual/DOCX routing based on report.yml. Only LaTeX has a
-fully generic builder; visual and DOCX jobs are validated with the shared gates
-because their builders usually depend on the specific teacher/template task.
+Chooses LaTeX/visual/DOCX routing based on report.yml. LaTeX and DOCX both have
+a fully generic ``body.md`` builder; visual jobs are still validated with the
+shared gates because their builders depend on the specific teacher/template
+task.
 
 Unsupported backends fail fast with a non-zero exit and a clear message
 instead of silently falling through to validation.
@@ -29,12 +30,12 @@ UNSUPPORTED_BUILDER_MESSAGES: dict[str, str] = {
         "(ej: tools/build_mapa_conceptual_investigacion.py) "
         "y luego ejecutá este router con --validate-only."
     ),
-    "docx": (
-        "Backend 'docx' no tiene builder genérico en este router. "
-        "Usá el script DOCX específico de tu tarea "
-        "(ej: tools/restyle_docx_aa1.py) "
-        "y luego ejecutá este router con --validate-only."
-    ),
+}
+
+# Backends with a generic builder in this router, mapped to their script.
+GENERIC_BUILDERS: dict[str, str] = {
+    "latex": "build_latex_report.py",
+    "docx": "build_docx_report.py",
 }
 
 
@@ -51,24 +52,22 @@ def build_backend(
     Raises:
         SystemExit: on unsupported/no-op backend or subprocess failure.
     """
-    if config.backend == "latex":
-        cmd = [
-            sys.executable,
-            str(Path(__file__).with_name("build_latex_report.py")),
-            str(config.folder),
-        ]
-        if args.tex_only:
+    if config.backend in GENERIC_BUILDERS:
+        script = GENERIC_BUILDERS[config.backend]
+        cmd = [sys.executable, str(Path(__file__).with_name(script)), str(config.folder)]
+        # --tex-only is a LaTeX-only switch; the DOCX builder has no such stage.
+        if args.tex_only and config.backend == "latex":
             cmd.append("--tex-only")
         try:
             proc = subprocess.run(cmd, text=True)
         except FileNotFoundError:
             raise SystemExit(
                 "Error: no se encontró el ejecutable de Python o el script "
-                "build_latex_report.py en la ruta esperada."
+                f"{script} en la ruta esperada."
             )
         except OSError as exc:
             raise SystemExit(
-                f"Error del sistema al ejecutar el builder LaTeX: {exc}"
+                f"Error del sistema al ejecutar el builder {config.backend}: {exc}"
             )
         if proc.returncode != 0:
             raise SystemExit(proc.returncode)
@@ -77,8 +76,8 @@ def build_backend(
     else:
         raise SystemExit(
             f"Backend no soportado: '{config.backend}'. "
-            "Soportados: latex (builder completo), "
-            "visual/docx (solo validación con --validate-only tras build manual)."
+            "Soportados: latex, docx (builders completos), "
+            "visual (solo validación con --validate-only tras build manual)."
         )
 
 

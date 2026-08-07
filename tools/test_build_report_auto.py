@@ -142,23 +142,58 @@ class TestBuildBackend:
 
     # -- DOCX path ----------------------------------------------------------
 
-    def test_docx_backend_fails_fast(self) -> None:
-        """DOCX backend raises SystemExit with a non-zero code."""
+    def test_docx_routes_to_build_docx_report(self) -> None:
+        """DOCX backend invokes build_docx_report.py via subprocess.
+
+        This backend used to fail fast with a pointer to a task-specific
+        restyling script, because no generic Markdown -> DOCX builder existed
+        while the intake still offered DOCX as a delivery format.
+        """
         config = FakeReportConfig(backend="docx")
         args = FakeArgs()
 
-        with pytest.raises(SystemExit) as exc:
+        with patch("build_report_auto.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(  # type: ignore[arg-type]
+                args=[], returncode=0,
+            )
+            build_backend(config, args)  # should not raise
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert any("build_docx_report.py" in part for part in cmd), (
+            f"Expected build_docx_report.py in command, got: {cmd}"
+        )
+        assert str(config.folder) in cmd
+
+    def test_docx_is_no_longer_advertised_as_unsupported(self) -> None:
+        """DOCX has a generic builder, so it must not carry a no-op message."""
+        assert "docx" not in UNSUPPORTED_BUILDER_MESSAGES
+
+    def test_docx_ignores_the_latex_only_tex_only_flag(self) -> None:
+        """--tex-only is a LaTeX stage; the DOCX builder has no such switch."""
+        config = FakeReportConfig(backend="docx")
+        args = FakeArgs(tex_only=True)
+
+        with patch("build_report_auto.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(  # type: ignore[arg-type]
+                args=[], returncode=0,
+            )
             build_backend(config, args)
 
-        assert exc.value.code  # truthy → non-zero / non-empty
-        message = str(exc.value.code)
-        assert "docx" in message.lower()
-        assert "builder" in message.lower() or "script" in message.lower()
+        assert "--tex-only" not in mock_run.call_args[0][0]
 
-    def test_docx_backend_message_references_specific_script(self) -> None:
-        """DOCX error message references a known DOCX script."""
-        msg = UNSUPPORTED_BUILDER_MESSAGES.get("docx", "")
-        assert "restyle_docx_aa1" in msg
+    def test_docx_subprocess_failure_raises_systemexit(self) -> None:
+        """A failing DOCX builder propagates its exit code, like LaTeX does."""
+        config = FakeReportConfig(backend="docx")
+        args = FakeArgs()
+
+        with patch("build_report_auto.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(  # type: ignore[arg-type]
+                args=[], returncode=3,
+            )
+            with pytest.raises(SystemExit) as exc:
+                build_backend(config, args)
+            assert exc.value.code == 3
 
     # -- Unknown backend ----------------------------------------------------
 
@@ -374,7 +409,6 @@ class TestMain:
         "backend,keyword",
         [
             pytest.param("visual", "visual", id="visual"),
-            pytest.param("docx", "docx", id="docx"),
             pytest.param("html", "no soportado", id="unknown"),
         ],
     )
