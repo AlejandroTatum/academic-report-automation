@@ -15,9 +15,53 @@ Academic reports often require consistent formatting, metadata, figures, referen
 - Academic formatting templates.
 - IEEE reference validation helpers.
 - Report quality validation checks.
-- Visual asset generation with Mermaid, Vega-Lite, ECharts and HTML screenshots.
+- Visual asset generation with Mermaid, Vega-Lite, ECharts and HTML screenshots
+  (requires the optional Node toolchain — see [Node toolchain](#node-toolchain)).
 - Sample report for local testing.
 - Clean project structure prepared for public GitHub use.
+
+## Which pipeline should I use?
+
+There are two Markdown pipelines and they are not interchangeable.
+
+| | Canonical pipeline | Preview pipeline |
+| --- | --- | --- |
+| Entry point | `tools/build_report_auto.py` | `tools/build_report.py` |
+| Route | Markdown → `build_latex_report.py` → LaTeX → PDF | Markdown → HTML → WeasyPrint PDF |
+| Input | a report folder with `report.yml`, `body.md`, `sources.bib` | a single Markdown file |
+| Covers, bibliography, validation gates | yes | no |
+| Use it for | every deliverable | a quick look at one Markdown file |
+
+**`build_report_auto.py` is canonical for anything you intend to submit or
+ship.** It is the pipeline the agent skill mandates
+(`skills/academic-report-builder/references/automation-contract.md`), and it is
+the only one that renders BibTeX citations, institutional covers and the
+validation gates.
+
+`build_report.py` is a lightweight HTML/WeasyPrint preview of a single Markdown
+file. It is useful when you want to see prose and tables in a browser without a
+LaTeX toolchain. It does not read `report.yml`, does not resolve `[@citation]`
+keys and does not build a bibliography; when it finds citation syntax it says
+so in a warning banner instead of rendering it. The Quick Start below uses it
+because it is the shortest path to a visible result, not because it is the
+recommended way to produce a report.
+
+### Markdown compatibility note: `---` means two different things
+
+The two pipelines read the same character sequence differently, and a `body.md`
+written for one can be misread by the other:
+
+- **LaTeX branch** (`build_latex_report.py`): a line matching `^-{3,}$` becomes
+  a `\newpage`, i.e. a page break, anywhere in the document.
+- **HTML branch** (`build_report.py`): a `---` on the **first** line opens a
+  YAML front-matter block, which supplies the document metadata.
+
+`build_report.py` treats `---` as front-matter only when it opens the file *and*
+the block reads as `key: value` pairs. A `---` used as a page break — or any
+`---` further down the document — renders as an ordinary horizontal rule and is
+never mistaken for metadata. The LaTeX branch has no equivalent guard, so a
+front-matter block written for the HTML branch will turn into page breaks there.
+Keep a `body.md` bound to one backend.
 
 ## Tech Stack
 
@@ -37,21 +81,40 @@ academic-report-automation/
 │   ├── placeholder.svg
 │   └── sample_report.md
 ├── templates/
-│   ├── academic_format.yml
-│   ├── report.css
-│   └── university-report.tex
+│   ├── academic_format.yml        # shared academic formatting rules
+│   ├── ensayo_unl.css             # stylesheet for the HTML preview branch
+│   ├── ensayo_unl.md              # sample UNL essay with YAML front-matter
+│   ├── unl-report.tex             # LaTeX template with the UNL cover
+│   ├── plain-report.tex           # LaTeX template without institutional furniture
+│   └── chamba-overleaf.tex        # Overleaf-compatible variant
 ├── tools/
-│   ├── build_report.py
-│   ├── build_latex_report.py
-│   ├── report_config.py
-│   ├── validate_ieee_refs.py
-│   ├── validate_report.py
-│   └── visual_builder.py
+│   ├── build_report_auto.py       # canonical entry point (report folder -> PDF)
+│   ├── build_latex_report.py      # Markdown -> LaTeX -> PDF renderer
+│   ├── build_report.py            # HTML/WeasyPrint preview of one Markdown file
+│   ├── report_config.py           # CODE root / CONTENT root resolution
+│   ├── output_router.py           # publishes final PDFs under outputs/<subject>/
+│   ├── source_library.py          # local academic source library
+│   ├── validate_report.py         # deliverable validation gates
+│   ├── validate_ieee_refs.py      # IEEE reference checks
+│   ├── visual_builder.py          # Mermaid / Vega-Lite / ECharts / screenshots
+│   ├── visual_pdf_auditor.py      # rendered-PDF visual audit
+│   └── test_*.py                  # pytest suite for the tools above
+├── scripts/
+│   ├── sync_skills.sh
+│   └── install_hooks.sh
+├── skills/                        # agent skill definitions (source of truth)
+├── tests/                         # skill contract tests
 ├── assets/generated/
 ├── outputs/
 ├── requirements.txt
+├── requirements-dev.txt
 └── package.json
 ```
+
+A few tools in `tools/` are one-off report builders kept for reference
+(`build_vm_contenedores_report.py`, `build_prompting_final_pdf.py`,
+`build_mapa_conceptual_investigacion.py`, `restyle_docx_aa1.py`). They are not
+part of the general pipeline.
 
 ## Quick Start
 
@@ -79,6 +142,24 @@ python3 tools/build_report.py examples/sample_report.md --html outputs/sample_re
 ```bash
 python3 tools/build_report.py examples/sample_report.md --pdf outputs/sample_report.pdf
 ```
+
+Both commands use the preview pipeline. For an actual deliverable, use the
+canonical one against a report folder:
+
+```bash
+python3 tools/build_report_auto.py <report-folder>/
+python3 tools/validate_report.py <report-folder>/
+```
+
+### 5. Optional: install the Node toolchain
+
+Only needed for `tools/visual_builder.py`. Everything above works without it.
+
+```bash
+npm install
+```
+
+See [Node toolchain](#node-toolchain) for what else it needs.
 
 ## Running the tests
 
@@ -144,6 +225,54 @@ Supported visual workflows include:
 - ECharts visuals
 - HTML screenshots through Playwright
 - Generated asset validation
+
+### Node toolchain
+
+The visual builder is the only part of the toolkit that needs Node. A fresh
+checkout ships no `node_modules/`, so nothing under `visual_builder.py` works
+until you install it:
+
+```bash
+npm install                # @mermaid-js/mermaid-cli, playwright, echarts
+```
+
+Some subcommands also need a local Chrome/Chromium binary. `visual_builder.py`
+looks for one under `.cache/puppeteer/chrome/` in the code root and then in the
+content root, and tells you to install it with:
+
+```bash
+npx @puppeteer/browsers install chrome@stable --path .cache/puppeteer
+```
+
+Requirements per workflow:
+
+| Workflow | Needs |
+| --- | --- |
+| Vega-Lite charts | Python only (`vl-convert-python`) |
+| Asset validation | Python only |
+| Mermaid diagrams | `npm install` + local Chrome |
+| ECharts visuals | `npm install` |
+| HTML screenshots | `npm install` + local Chrome + see the known issues below |
+
+### Known issues in the Node toolchain
+
+These are real and currently unfixed. They are recorded here so they are
+visible rather than discovered at render time.
+
+1. **Two browser managers for one binary.** `require_chrome()` instructs you to
+   install Chrome with `npx @puppeteer/browsers install chrome@stable`, while
+   `package.json` declares `playwright` as the devDependency that drives it.
+   Puppeteer's browser layout and Playwright's are not the same thing; the code
+   bridges them by passing the discovered path as `executablePath`, but the two
+   managers are never installed or versioned together. Picking one of them is
+   the proper fix.
+2. **`html-shot` cannot resolve `playwright`.** `command_html_shot()` writes its
+   generated `.cjs` script into `<content root>/backups/visual-renders/`, which
+   is outside this repository. Node resolves `require('playwright')` by walking
+   up from the script's own directory, so it never reaches this repo's
+   `node_modules/` — `npm install` here does not make `html-shot` work. It needs
+   either a Node module path pointing at the code root or the script written
+   inside the repository.
 
 ## Portfolio Notes
 
