@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Test runner. Kept out of requirements.txt so a runtime install stays lean,
+# but required to execute the suite under tools/ and tests/.
+pytest

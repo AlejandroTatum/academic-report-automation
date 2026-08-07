@@ -80,6 +80,15 @@ python3 tools/build_report.py examples/sample_report.md --html outputs/sample_re
 python3 tools/build_report.py examples/sample_report.md --pdf outputs/sample_report.pdf
 ```
 
+## Running the tests
+
+The suite needs `pytest`, which is not part of the runtime dependencies:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest tools/ tests/
+```
+
 ## Visual Builder
 
 The toolkit includes a visual builder for reproducible diagrams and charts.
