@@ -75,11 +75,21 @@ TABLE_EDGE_THRESHOLD = 0.004  # edge-pixel fraction to suspect a table
 # line of text darkens roughly 100 of them (1.1 %), always below the old 2 %
 # page-wide threshold. The strip is scanned in overlapping bands instead, and
 # one inked band is enough.
-EDGE_BAND_IN = 0.10  # band height (inches) ≈ one line of 11 pt body text
-EDGE_BAND_INK_MIN = 0.20  # dark fraction inside a band that counts as clipping.
-# Measured over the reference corpus: the one genuinely clipped line fills 0.53
-# of its band, while every band of every clean page (covers included) measures
-# 0.000 — so the number sits in a wide empty gap, not on a cliff edge.
+# The unit is a ROW of that strip, not a band. A band tall enough to hold a
+# line with ascenders is about three times the x-height of a line without
+# them, so the same clipped run measured 0.53 of its band in the first sample
+# and 0.16 in the second. A threshold tuned on either one misses the other:
+# it was tracking typography, not evidence. A row is inked or it is not.
+EDGE_ROW_INK_MIN = 0.40  # fraction of the strip's width that makes a row inked.
+# Measured across the corpus: a clipped row reaches 0.80 while every row of
+# every clean page — covers, footers, page numbers and header rules included —
+# measures 0.000, so the number sits in a wide empty gap.
+EDGE_ROW_RUN_IN = 0.01  # consecutive inked rows (inches) required to report.
+# Two rows at 150 DPI. The width threshold above already rejects dust — a
+# speck covers a fifth of the strip, not two fifths — so this only guards
+# against a single stray row. Deliberately not larger: on a real render the
+# antialiased stems of a clipped line of lowercase type hold full coverage
+# for just two rows before they fade, and that page loses content all the same.
 EDGE_BAND_DARK = 200  # grey level below which an edge pixel counts as ink
 
 # Excessive whitespace — a page whose content stops well short of the bottom
@@ -475,30 +485,33 @@ def has_full_bleed_background(img: Image.Image, margin: int = 8) -> bool:
     return has_edge_artwork and crit_c and crit_d and crit_e
 
 
-def _max_band_ink(strip: Image.Image, band_px: int, step_px: int) -> float:
-    """Highest dark fraction found in any horizontal band of *strip*.
+def _longest_inked_run(strip: Image.Image) -> int:
+    """Longest run of consecutive rows that are meaningfully inked.
 
-    The bands overlap (``step_px`` is half a band) so a line of ink can never
-    be split across two windows and diluted below the threshold.
+    A row, not a band, is the natural unit here. Averaging over a band
+    reintroduces the very dilution this check exists to avoid, just at a
+    smaller scale: a band tall enough to hold a line of text with ascenders
+    is roughly three times the x-height of a line without them, so the same
+    clipped run measures 0.53 of the band in one font and 0.16 in another.
+    Tuned on the first, it misses the second — a real page overflowing by
+    361 pt audited clean.
+
+    A row is either inked or it is not, whatever the type size, so the run
+    length carries the evidence and the threshold stops tracking typography.
     """
     gs = _grayscale(strip)
     w, h = gs.size
     if w == 0 or h == 0:
-        return 0.0
-
-    band = max(1, min(band_px, h))
-    step = max(1, min(step_px, band))
-    starts = list(range(0, h - band + 1, step))
-    if starts[-1] != h - band:
-        starts.append(h - band)  # always include the band flush with the end
+        return 0
 
     px = _pixels(gs)
-    best = 0.0
-    for y0 in starts:
-        segment = px[y0 * w : (y0 + band) * w]
-        dark = sum(1 for p in segment if p < EDGE_BAND_DARK)
-        best = max(best, dark / len(segment))
-    return best
+    longest = current = 0
+    for y in range(h):
+        row = px[y * w : (y + 1) * w]
+        inked = sum(1 for p in row if p < EDGE_BAND_DARK) / w
+        current = current + 1 if inked >= EDGE_ROW_INK_MIN else 0
+        longest = max(longest, current)
+    return longest
 
 
 def check_edge_clipping(
@@ -506,10 +519,13 @@ def check_edge_clipping(
 ) -> Optional[str]:
     """Return edge name if ink reaches the page edge, else None.
 
-    The edge strip is scanned in overlapping one-line-tall bands, so a single
-    clipped line of text trips the check. Measuring the strip as a whole-page
-    average could not: one line covers about 1 % of a full-height strip, which
-    is below any threshold ordinary page furniture would survive.
+    Evidence is local: a single clipped line of text has to trip this, and a
+    whole-strip average cannot see one — it is about 1 % of a full-height
+    strip, below any threshold ordinary page furniture would survive.
+
+    The unit is a row of the strip, and the evidence is how many inked rows
+    run consecutively. Anything shaped like a line of type clears the minimum
+    run; anti-aliasing dust and a stray speck do not, whatever the type size.
 
     Pages with a full-bleed background (detected by *has_full_bleed_background*)
     are skipped — the background image is expected to reach the paper edge
@@ -520,11 +536,10 @@ def check_edge_clipping(
 
     w, h = img.size
     gs = _grayscale(img)
-    band_px = max(2, round(EDGE_BAND_IN * dpi))
-    step_px = max(1, band_px // 2)
+    min_run = max(2, round(EDGE_ROW_RUN_IN * dpi))
 
     # Top and bottom strips are rotated so that every strip is scanned
-    # band-by-band along its long axis by the same code.
+    # row-by-row across its short axis by the same code.
     rotate = Image.Transpose.ROTATE_90
     strips = {
         "left": gs.crop((0, 0, margin, h)),
@@ -533,7 +548,7 @@ def check_edge_clipping(
         "bottom": gs.crop((0, h - margin, w, h)).transpose(rotate),
     }
     for side, strip in strips.items():
-        if _max_band_ink(strip, band_px, step_px) > EDGE_BAND_INK_MIN:
+        if _longest_inked_run(strip) >= min_run:
             return side
     return None
 

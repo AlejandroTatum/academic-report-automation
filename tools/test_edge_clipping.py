@@ -126,6 +126,45 @@ def test_a_single_clipped_line_is_detected(dpi: int, side: str) -> None:
     assert auditor.check_edge_clipping(page, dpi=dpi) == side
 
 
+def lowercase_clipped_page(dpi: int) -> Image.Image:
+    """A clipped line of lowercase text, measured off a real rendered PDF.
+
+    The first calibration used one positive sample whose glyphs were 0.09 in
+    tall — ascenders and descenders included. A line of lowercase x has an
+    x-height of roughly 0.033 in and nothing above or below it, and its
+    clipped glyphs taper as they run off the sheet. Measured on the real page:
+    the last five columns carry 5, 3, 3, 1 and 0 inked rows.
+
+    Averaged over a one-line-tall band that is 0.160 of the band area. Any
+    threshold tuned on the thicker sample misses it, which is how a page with
+    a 361 pt overflow audited as a clean PASS.
+    """
+    # Written as the detector measures it: per-row coverage of the edge strip.
+    # Off the real page at 150 DPI, two consecutive rows cover 4 of the 5
+    # columns and the rest of the run tapers to a single column as the
+    # antialiased stems fade out.
+    scale = max(1, round(dpi / 150))
+    rows = [0.8, 0.8] * scale + [0.2] * (3 * scale)
+    img, draw, w, h = _page(dpi)
+    y = h // 2
+    draw.rectangle(
+        [round(1.0 * dpi), y, w - 1 - auditor.EDGE_MARGIN_PX, y + len(rows)], fill=0,
+    )
+    for offset, coverage in enumerate(rows):
+        inked = round(coverage * auditor.EDGE_MARGIN_PX)
+        for column in range(inked):
+            draw.point((w - auditor.EDGE_MARGIN_PX + column, y + offset), fill=0)
+    return img
+
+
+@pytest.mark.parametrize("dpi", DPIS)
+def test_a_clipped_line_of_lowercase_text_is_detected(dpi: int) -> None:
+    """Thin ink at the edge is still lost content; height must not excuse it."""
+    page = lowercase_clipped_page(dpi)
+
+    assert auditor.check_edge_clipping(page, dpi=dpi) == "right"
+
+
 @pytest.mark.parametrize("dpi", DPIS)
 def test_the_clipped_line_stays_invisible_to_a_whole_strip_average(dpi: int) -> None:
     """Why the check has to be local: one line never moves the page average."""
