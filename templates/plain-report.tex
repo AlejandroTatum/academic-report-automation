@@ -32,6 +32,18 @@
 \ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
 \newcommand{\reporthasfigures}{{{HAS_FIGURES}}}
 
+% Academic section numbering, driven by `section_numbering:` in report.yml.
+% Absent key renders "true", which is the historical behaviour. Routes B, C
+% and D forbid auto-included academic section numbering, so those documents
+% can switch it off per report.
+%
+% Lowering secnumdepth suppresses only the printed label. The headings are
+% still \section, so \@sect keeps calling \addcontentsline (table of contents
+% and list-of-figures machinery intact) and hyperref keeps placing its anchor.
+% Starring the headings would have dropped both.
+\newcommand{\reportsectionnumbering}{{{SECTION_NUMBERING}}}
+\ifthenelse{\equal{\reportsectionnumbering}{false}}{\setcounter{secnumdepth}{0}}{}
+
 % Header data. Only the title, the optional English title and the metadata
 % line are printed; the remaining fields stay available to the renderer.
 \newcommand{\reporttitleen}{{{TITLE_EN}}}

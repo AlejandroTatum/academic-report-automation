@@ -38,6 +38,18 @@
 \newcommand{\reporthasbib}{{{HAS_BIB}}}
 \ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
 
+% Academic section numbering, driven by `section_numbering:` in report.yml.
+% Route A legitimately wants numbered sections, so the default here is "true"
+% and nothing changes for existing academic reports. The switch exists anyway
+% so both templates share one mechanism instead of the plain one being a
+% special case.
+%
+% Lowering secnumdepth suppresses only the printed label. The headings are
+% still \section, so \@sect keeps calling \addcontentsline (table of contents
+% and list-of-figures machinery intact) and hyperref keeps placing its anchor.
+\newcommand{\reportsectionnumbering}{{{SECTION_NUMBERING}}}
+\ifthenelse{\equal{\reportsectionnumbering}{false}}{\setcounter{secnumdepth}{0}}{}
+
 \onehalfspacing
 \raggedbottom
 \setlength{\parindent}{1.27cm}
@@ -102,7 +114,14 @@
   {\bfseries\large {{CAREER}}}\\[1.35cm]
   {\bfseries\Large {{TITLE}}}\\[0.9cm]
 
-  \begin{flushright}
+  % The whole cover is a centred stack, so the framed metadata box belongs on
+  % the same vertical axis. It used to sit in a `flushright` group, which hung
+  % it off to the right where it lined up with nothing else on the page.
+  % `center` and `flushright` are both trivlists with identical \topsep, so
+  % swapping them moves the box horizontally and leaves the tuned vertical
+  % rhythm exactly as it was. The text inside the box stays left-aligned: the
+  % minipage is left-aligned by default and nothing re-centres it.
+  \begin{center}
     \setlength{\fboxsep}{8pt}
     \fbox{%
       \begin{minipage}{0.48\textwidth}\small
@@ -111,7 +130,7 @@
         Paralelo: {{PARALLEL}}.
       \end{minipage}%
     }
-  \end{flushright}
+  \end{center}
   \vspace{0.8cm}
 
   {\bfseries\large AUTOR:}\\[0.45em]
