@@ -346,16 +346,12 @@ def check_edge_clipping(
     return None
 
 
-def check_orphan_heading(img: Image.Image) -> tuple[bool, Optional[float]]:
-    """Check for a possible orphan heading at the bottom of the page.
-
-    Pages with a full-bleed background (cover page) are skipped — centered
-    title-like text on decorative covers falsely triggers this heuristic.
-    """
-    if has_full_bleed_background(img):
-        return False, None
-
-
+# NOTE: an earlier duplicate definition of check_orphan_heading() used to sit
+# here and was silently replaced by the one below, so its cover-page guard
+# never ran. The guard is deliberately NOT reinstated: has_full_bleed_background()
+# returns True for an ordinary body page and even for a blank one (three of its
+# five criteria are satisfied by clean edges alone), so calling it here would
+# suppress orphan detection on every page instead of only on covers.
 def check_orphan_heading(img: Image.Image) -> tuple[bool, Optional[float]]:
     """Check for a possible orphan heading at the bottom of the page.
 
