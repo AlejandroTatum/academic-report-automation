@@ -1,55 +1,62 @@
-# figures.yml schema
+# `figures.yml` visual metadata contract
 
-Every figure folder must include a `figures.yml` for traceability. Each figure is an entry under `figures:`.
+Every visual asset folder must contain a manifest with a `figures:` list. The
+shared validator in `tools/visual_metadata.py` is the executable source for
+this contract; both visual and report validation call it.
 
 ## Required fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `file` | string | Filename of the rendered asset (e.g. `diagrama-estados.svg`) |
-| `title` | string | Short display title of the figure |
-| `caption` | string | Full caption as it will appear under the figure in the report |
-| `source` | string | Provenance — what spec, requirement, lecture slide, or domain model the figure derives from |
-| `renderer` | string | Tool/script used to generate the figure (e.g. `Custom PIL renderer`, `Mermaid`, `Vega-Lite`, `HTML + Playwright`) |
-| `section` | string (canonical) | Report section where the figure should be inserted |
-| `intended_section` | string (alias) | Accepted as a backward-compatible alias for `section`. New entries should use `section`. |
+| Field | Type | Contract |
+|---|---|---|
+| `file` | non-blank string | Asset path, relative to the manifest folder when not absolute. |
+| `title` | non-blank string | Short display title. |
+| `caption` | non-blank string | Self-contained report caption. |
+| `source` | non-blank string | Explicit provenance: spec, requirement, lecture material, or own work. |
+| `renderer` | non-blank string | Tool used to render the asset. Open-ended for reproducibility; no closed registry is assumed. |
+| `section` | non-blank string | Canonical report section. |
+| `request_id` | non-blank string | Stable, unique request identity within the manifest. |
+| `result_id` | non-blank string | Stable, unique rendered-result identity within the manifest. |
+| `content_sha256` | lowercase 64-character hex string | SHA-256 of the asset's raw bytes. It is checked whenever the asset exists. |
+| `license` | non-blank string | Explicit license or permission text; never replace it with the status alone. |
+| `license_status` | enum | One of `original`, `licensed`, `public_domain`, `permission_granted`. |
+| `alt_text` | non-blank string | Accessibility description for readers who cannot see the asset. |
 
-## Traceability rule
+`source` is the provenance field. `license` preserves the explicit legal or
+permission statement, while `license_status` is intentionally a small domain.
+Unknown or arbitrary statuses fail validation. Asset files with `.svg`, `.png`,
+or `.pdf` extensions in the folder must be listed; unlisted assets fail before
+export.
 
-Every figure MUST have traceable metadata before insertion into a report. A figure with no `source` or no `section`/`intended_section` must not be included in the final PDF/DOCX.
+## Section compatibility
 
-## Example
+`section` is canonical. `intended_section` remains a legacy alias: an entry may
+provide either field, or both when their trimmed values are identical. Missing
+both fields fails. Conflicting non-blank values fail; the validator never
+silently chooses one.
+
+## Valid example
 
 ```yaml
 figures:
-  - file: diagrama-estados.svg
-    source: "Derivado del caso de uso CU012 y modelo de dominio"
-    renderer: "Custom PIL renderer"
-    title: "Diagrama de estado: Comprobante de pago"
-    caption: "Estados principales del comprobante de pago: pendiente, aprobado y rechazado."
-    section: "Diseño de comportamiento - Diagrama de estados"
-```
-
-### Legacy example (still valid)
-
-```yaml
-figures:
-  - file: proceso-vm.svg
-    source: "Clase 5 — Máquinas virtuales"
-    renderer: "Mermaid"
-    title: "Proceso de creación de VM"
-    caption: "Flujo de creación de una máquina virtual en VirtualBox."
-    intended_section: "Virtualización - Procesos"
+  - file: process.svg
+    title: Process lifecycle
+    caption: Main states in the process lifecycle.
+    source: Original work derived from requirement REQ-012
+    renderer: Custom SVG renderer
+    section: Process model
+    request_id: req-012-visual
+    result_id: render-012-v1
+    content_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    license: Original work created for this report
+    license_status: original
+    alt_text: Flow from intake to completion through three process states.
 ```
 
 ## Validation checklist
 
-Before export, verify:
-
-- [ ] Every figure listed in `figures.yml` exists at the declared `file` path
-- [ ] `title` is short and descriptive
-- [ ] `caption` is meaningful without surrounding report text
-- [ ] `source` is non-empty and traces back to a requirement, spec, or domain source
-- [ ] `renderer` matches the tool used (so regeneration is reproducible)
-- [ ] `section` (or `intended_section` for legacy entries) exists in the current report outline
-- [ ] No figure references remain in the report body without a matching `figures.yml` entry
+- [ ] Required fields are present and non-blank.
+- [ ] Request and result IDs are unique.
+- [ ] Hash syntax is valid and matches raw asset bytes when available.
+- [ ] Section aliases are compatible.
+- [ ] Every listed asset exists and every asset in the folder is listed.
+- [ ] Caption, provenance, license text, status, and accessibility text are retained.

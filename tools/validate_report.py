@@ -9,8 +9,6 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
 from report_config import ROOT as AUTOMATION_ROOT
 from report_config import (
     ACADEMIC_ONLY_METADATA,
@@ -24,6 +22,7 @@ from report_config import (
 )
 from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_path
 from validate_ieee_refs import ValidationResult, validate_ieee
+from visual_metadata import validate_visual_manifest
 
 # Visual PDF auditor integration — optional dependency
 try:
@@ -574,29 +573,12 @@ def visual_validation(config: ReportConfig) -> ValidationResult:
     if not figures_yml.exists():
         result.warnings.append("Trabajo visual sin figures.yml; no se pudo validar captions/fuentes de figuras")
         return result
-    data = yaml.safe_load(figures_yml.read_text(encoding="utf-8")) or {}
-    figures = data.get("figures") if isinstance(data, dict) else data
-    if not isinstance(figures, list) or not figures:
-        result.errors.append("figures.yml no contiene lista de figuras")
-        return result
-    for idx, fig in enumerate(figures, start=1):
-        if not isinstance(fig, dict):
-            result.errors.append(f"Figura {idx} inválida en figures.yml")
-            continue
-        for key in ("file", "title", "caption", "source", "renderer"):
-            if not fig.get(key):
-                result.errors.append(f"Figura {idx} sin {key}")
-        if not fig.get("section") and not fig.get("intended_section"):
-            result.errors.append(f"Figura {idx} sin section ni intended_section")
-        file_value = fig.get("file") or ""
-        if file_value:
-            file_path = Path(file_value)
-            if not file_path.is_absolute():
-                file_path = config.folder / file_path
-            if not file_path.exists():
-                result.errors.append(f"Figura {idx} no existe: {file_path}")
-            elif file_path.stat().st_size < 4_000:
-                result.warnings.append(f"Figura {idx} parece demasiado pequeña: {file_path}")
+    metadata_result = validate_visual_manifest(figures_yml.parent, figures_yml)
+    result.errors.extend(metadata_result.errors)
+    result.warnings.extend(metadata_result.warnings)
+    for figure_path in figures_yml.parent.rglob("*"):
+        if figure_path.is_file() and figure_path.suffix.lower() in {".svg", ".png", ".pdf"} and figure_path.stat().st_size < 4_000:
+            result.warnings.append(f"Figura parece demasiado pequeña: {figure_path}")
     return result
 
 

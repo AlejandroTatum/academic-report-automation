@@ -20,9 +20,8 @@ import tempfile
 from pathlib import Path
 from textwrap import dedent
 
-import yaml
-
 from report_config import CONTENT_ROOT
+from visual_metadata import validate_visual_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 # Toolchain: node_modules is reinstalled with the code, so it stays CODE.
@@ -361,23 +360,7 @@ def validate_image(path: Path) -> list[str]:
 
 def metadata_errors(folder: Path) -> list[str]:
     meta = folder / "figures.yml"
-    if not meta.exists():
-        return [f"falta metadata: {meta}"]
-    data = yaml.safe_load(meta.read_text(encoding="utf-8")) or {}
-    figures = data.get("figures") if isinstance(data, dict) else data
-    if not isinstance(figures, list) or not figures:
-        return [f"figures.yml no contiene lista de figuras"]
-    errors: list[str] = []
-    for idx, fig in enumerate(figures, start=1):
-        if not isinstance(fig, dict):
-            errors.append(f"Figura {idx} inválida en figures.yml")
-            continue
-        for key in ("file", "title", "caption", "source", "renderer"):
-            if not fig.get(key):
-                errors.append(f"Figura {idx} sin {key}")
-        if not fig.get("section") and not fig.get("intended_section"):
-            errors.append(f"Figura {idx} sin section ni intended_section")
-    return errors
+    return validate_visual_manifest(folder, meta).errors
 
 
 def command_validate(args: argparse.Namespace) -> int:

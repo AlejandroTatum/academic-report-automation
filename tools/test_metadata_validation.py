@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,23 @@ def touch_svg(folder: Path, name: str) -> Path:
     return path
 
 
+def visual_metadata(path: Path, *, request_id: str = "request-1", result_id: str = "result-1") -> dict:
+    return {
+        "file": path.name,
+        "title": "Test diagram",
+        "caption": "A test caption",
+        "source": "Original work from the validated visual specification",
+        "renderer": "An intentionally open-ended renderer name",
+        "section": "Introduction",
+        "request_id": request_id,
+        "result_id": result_id,
+        "content_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "license": "Original work; no external license required",
+        "license_status": "original",
+        "alt_text": "A diagram showing the validated test flow",
+    }
+
+
 def make_report_yml(folder: Path) -> Path:
     data = {
         "type": "visual",
@@ -81,16 +99,7 @@ def full_valid_setup(temp_visual_folder):
     folder = temp_visual_folder
     make_report_yml(folder)
     svg = touch_svg(folder, "diagram.svg")
-    make_figures_yml(folder, [
-        {
-            "file": svg.name,
-            "title": "Test diagram",
-            "caption": "A test caption",
-            "source": "Lecture notes",
-            "renderer": "Mermaid",
-            "section": "Introduction",
-        },
-    ])
+    make_figures_yml(folder, [visual_metadata(svg)])
     return folder
 
 
@@ -141,35 +150,22 @@ class TestVisualBuilderMetadataErrors:
     def test_intended_section_works_as_alias(self, temp_visual_folder):
         folder = temp_visual_folder
         make_report_yml(folder)
-        touch_svg(folder, "fig.svg")
-        make_figures_yml(folder, [
-            {
-                "file": "fig.svg",
-                "title": "Legacy entry",
-                "caption": "Uses intended_section",
-                "source": "X",
-                "renderer": "Mermaid",
-                "intended_section": "Legacy section",
-            },
-        ])
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry.pop("section")
+        entry["intended_section"] = "Legacy section"
+        make_figures_yml(folder, [entry])
         errors = metadata_errors(folder)
         assert errors == []
 
     def test_both_section_and_intended_section_pass(self, temp_visual_folder):
         folder = temp_visual_folder
         make_report_yml(folder)
-        touch_svg(folder, "fig.svg")
-        make_figures_yml(folder, [
-            {
-                "file": "fig.svg",
-                "title": "Both fields",
-                "caption": "Has both section fields",
-                "source": "X",
-                "renderer": "Mermaid",
-                "section": "Canonical",
-                "intended_section": "Alias",
-            },
-        ])
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry["section"] = "Canonical"
+        entry["intended_section"] = "Canonical"
+        make_figures_yml(folder, [entry])
         errors = metadata_errors(folder)
         assert errors == []
 
@@ -220,6 +216,94 @@ class TestVisualBuilderMetadataErrors:
         errors = metadata_errors(folder)
         assert any("sin file" in e.lower() for e in errors)
 
+    @pytest.mark.parametrize(
+        "field",
+        (
+            "file", "title", "caption", "source", "renderer", "section",
+            "request_id", "result_id", "content_sha256", "license",
+            "license_status", "alt_text",
+        ),
+    )
+    def test_required_contract_field_cannot_be_blank(self, temp_visual_folder, field):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry[field] = "   "
+        make_figures_yml(folder, [entry])
+
+        errors = metadata_errors(folder)
+
+        assert any(field in error.lower() for error in errors), errors
+
+    def test_duplicate_request_or_result_ids_are_rejected(self, temp_visual_folder):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        first = touch_svg(folder, "first.svg")
+        second = touch_svg(folder, "second.svg")
+        entries = [
+            visual_metadata(first, request_id="same-request", result_id="result-1"),
+            visual_metadata(second, request_id="same-request", result_id="result-1"),
+        ]
+        make_figures_yml(folder, entries)
+
+        errors = metadata_errors(folder)
+
+        assert any("request_id" in error and "duplic" in error.lower() for error in errors)
+        assert any("result_id" in error and "duplic" in error.lower() for error in errors)
+
+    @pytest.mark.parametrize("hash_value", ["not-a-sha", "0" * 64])
+    def test_malformed_or_mismatched_hash_is_rejected(self, temp_visual_folder, hash_value):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry["content_sha256"] = hash_value
+        make_figures_yml(folder, [entry])
+
+        errors = metadata_errors(folder)
+
+        assert any("content_sha256" in error for error in errors), errors
+
+    def test_conflicting_section_aliases_are_rejected(self, temp_visual_folder):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry["intended_section"] = "Different section"
+        make_figures_yml(folder, [entry])
+
+        errors = metadata_errors(folder)
+
+        assert any("section" in error.lower() and "conflict" in error.lower() for error in errors)
+
+    def test_custom_renderer_is_open_ended(self, full_valid_setup):
+        errors = metadata_errors(full_valid_setup)
+        assert errors == []
+
+    def test_unknown_license_status_is_rejected(self, temp_visual_folder):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry["license_status"] = "maybe"
+        make_figures_yml(folder, [entry])
+
+        errors = metadata_errors(folder)
+
+        assert any("license_status" in error for error in errors), errors
+
+    def test_unlisted_asset_is_rejected(self, temp_visual_folder):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        listed = touch_svg(folder, "listed.svg")
+        touch_svg(folder, "unlisted.svg")
+        make_figures_yml(folder, [visual_metadata(listed)])
+
+        errors = metadata_errors(folder)
+
+        assert any("unlisted.svg" in error for error in errors), errors
+
 
 # ---------------------------------------------------------------------------
 # validate_report.visual_validation tests
@@ -237,6 +321,30 @@ class TestValidateReportVisualValidation:
     def test_valid_entry_passes(self, full_valid_setup):
         errors = self._errors(full_valid_setup)
         assert errors == []
+
+    def test_shared_contract_rejects_hash_mismatch(self, temp_visual_folder):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry["content_sha256"] = hashlib.sha256(b"different bytes").hexdigest()
+        make_figures_yml(folder, [entry])
+
+        errors = self._errors(folder)
+
+        assert any("content_sha256" in error and "coincide" in error for error in errors)
+
+    def test_shared_contract_rejects_conflicting_section_aliases(self, temp_visual_folder):
+        folder = temp_visual_folder
+        make_report_yml(folder)
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry["intended_section"] = "Other section"
+        make_figures_yml(folder, [entry])
+
+        errors = self._errors(folder)
+
+        assert any("conflict" in error.lower() for error in errors)
 
     def test_missing_title_is_error(self, temp_visual_folder):
         folder = temp_visual_folder
@@ -273,17 +381,11 @@ class TestValidateReportVisualValidation:
     def test_intended_section_works_as_alias(self, temp_visual_folder):
         folder = temp_visual_folder
         make_report_yml(folder)
-        touch_svg(folder, "fig.svg")
-        make_figures_yml(folder, [
-            {
-                "file": "fig.svg",
-                "title": "Legacy entry",
-                "caption": "Uses intended_section",
-                "source": "X",
-                "renderer": "Mermaid",
-                "intended_section": "Legacy section",
-            },
-        ])
+        svg = touch_svg(folder, "fig.svg")
+        entry = visual_metadata(svg)
+        entry.pop("section")
+        entry["intended_section"] = "Legacy section"
+        make_figures_yml(folder, [entry])
         errors = self._errors(folder)
         assert errors == []
 
