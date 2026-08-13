@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 from docx.shared import Cm
 
 TOOLS_DIR = str(Path(__file__).resolve().parent)
@@ -81,6 +82,26 @@ def styles_used(document: Document) -> list[str]:
     return [p.style.name for p in document.paragraphs]
 
 
+def start_override_values(document: Document) -> dict[int, int]:
+    """Map each ``w:numId`` to its explicit ``w:startOverride`` value, if any.
+
+    A cloned numbering definition restarts its list at the override value; a
+    plain clone that merely reuses the shared abstract definition has none.
+    """
+    numbering = document.part.numbering_part.element
+    overrides: dict[int, int] = {}
+    for num in numbering.findall(qn("w:num")):
+        num_id = num.get(qn("w:numId"))
+        if num_id is None:
+            continue
+        for level in num.findall(qn("w:lvlOverride")):
+            for start in level.findall(qn("w:startOverride")):
+                value = start.get(qn("w:val"))
+                if value is not None:
+                    overrides[int(num_id)] = int(value)
+    return overrides
+
+
 # ---------------------------------------------------------------------------
 # Page setup and typography — the academic_format.yml contract
 # ---------------------------------------------------------------------------
@@ -142,6 +163,91 @@ def test_inline_bold_italic_and_code(tmp_path: Path) -> None:
     assert any(run.text == "codigo_inline" and run.font.name == builder.MONO_FONT for run in runs)
 
 
+# ---------------------------------------------------------------------------
+# Nested inline semantics (#6) — shared DOCX/LaTeX fixture
+# ---------------------------------------------------------------------------
+
+# Each entry: (markdown, inner text, expected flags on the inner run, LaTeX fragment).
+# Both backends must render the same visible text with no leftover markers:
+# DOCX segments carry the outer flag merged with the inner rule's mono flag,
+# and LaTeX nests \texttt / math / \cite inside the emphasis command.
+NESTED_INLINE_FIXTURES = [
+    (
+        "**Label (`fieldName`, extra):** value.",
+        "fieldName",
+        {"bold": True, "mono": True},
+        r"\texttt{fieldName}",
+    ),
+    (
+        "**Energía $E = mc^2$ total**",
+        "E = mc^2",
+        {"bold": True, "mono": True},
+        r"$E = mc^2$",
+    ),
+    (
+        "*El archivo `config.yml` manda*",
+        "config.yml",
+        {"italic": True, "mono": True},
+        r"\texttt{config.yml}",
+    ),
+    (
+        "**Ver [@torres2024]**",
+        "[1]",
+        {"bold": True},
+        r"\cite{torres2024}",
+    ),
+]
+
+
+def test_inline_code_inside_bold_merges_mono_flag() -> None:
+    """Inline code inside a bold span must keep both flags and drop the backticks."""
+    segments = builder.inline_segments("**Label (`fieldName`, extra):** value.")
+    assert "".join(segment.text for segment in segments) == "Label (fieldName, extra): value."
+    assert not any("`" in segment.text for segment in segments)
+    code_segments = [segment for segment in segments if segment.text == "fieldName"]
+    assert code_segments, "el código anidado debe ser un segmento propio, no backticks literales"
+    assert code_segments[0].bold is True
+    assert code_segments[0].mono is True
+
+
+@pytest.mark.parametrize(
+    "markdown,inner_text,expected_flags,_latex_fragment",
+    NESTED_INLINE_FIXTURES,
+)
+def test_nested_inline_segments_merge_outer_and_inner_flags(
+    markdown: str, inner_text: str, expected_flags: dict[str, bool], _latex_fragment: str
+) -> None:
+    segments = builder.inline_segments(markdown, {"torres2024": 1})
+    assert "".join(segment.text for segment in segments) != markdown
+    assert not any(
+        marker in segment.text for segment in segments for marker in ("`", "$", "[@", "*")
+    )
+    inner = [segment for segment in segments if segment.text == inner_text]
+    assert inner, f"segmento interno {inner_text!r} ausente en {markdown!r}"
+    segment = inner[0]
+    assert segment.bold is expected_flags.get("bold", False)
+    assert segment.italic is expected_flags.get("italic", False)
+    assert segment.mono is expected_flags.get("mono", False)
+
+
+def test_nested_inline_docx_and_latex_agree_on_shared_fixture() -> None:
+    """Both backends render the same fixture with no leftover Markdown markers."""
+    import build_latex_report
+
+    for markdown, _inner_text, _expected_flags, latex_fragment in NESTED_INLINE_FIXTURES:
+        segments = builder.inline_segments(markdown, {"torres2024": 1})
+        assert not any(
+            marker in segment.text for segment in segments for marker in ("`", "$", "[@", "*")
+        )
+        latex = build_latex_report.convert_inline(markdown)
+        assert "`" not in latex
+        assert "[@" not in latex
+        assert "**" not in latex
+        # \allowbreak{} is a zero-width line-break penalty, not a glyph; strip
+        # it so the fragment check reads the visually rendered LaTeX.
+        assert latex_fragment in latex.replace(r"\allowbreak{}", "")
+
+
 def test_bullet_and_ordered_lists(tmp_path: Path) -> None:
     body = "# T\n\n- alfa\n- beta\n\nTexto.\n\n1. primero\n2. segundo\n"
     document = build_and_open(make_report(tmp_path, body, route="technical"))
@@ -153,7 +259,12 @@ def test_bullet_and_ordered_lists(tmp_path: Path) -> None:
 
 
 def test_ordered_lists_restart_their_numbering(tmp_path: Path) -> None:
-    """Two procedures must both start at 1, not continue 1..4."""
+    """Two procedures must both start at 1, not continue 1..4.
+
+    Distinct ``w:numId`` values alone do not restart a list: both clones point
+    at the same abstract definition, so Word keeps counting unless each clone
+    carries an explicit ``w:lvlOverride``/``w:startOverride val="1"``.
+    """
     body = "# T\n\n1. uno\n2. dos\n\nTexto intermedio.\n\n1) otro uno\n2) otro dos\n"
     document = build_and_open(make_report(tmp_path, body, route="technical"))
     num_ids = [
@@ -166,6 +277,10 @@ def test_ordered_lists_restart_their_numbering(tmp_path: Path) -> None:
     assert num_ids[0] == num_ids[1]
     assert num_ids[2] == num_ids[3]
     assert num_ids[0] != num_ids[2]
+    # Each cloned list definition must restart its own counter at 1.
+    overrides = start_override_values(document)
+    assert set(overrides) == set(num_ids)
+    assert all(value == 1 for value in overrides.values())
 
 
 def test_pipe_table_keeps_header_and_cells(tmp_path: Path) -> None:
