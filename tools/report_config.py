@@ -318,6 +318,7 @@ class ReportConfig:
             "date": ["date", "fecha"],
             "career": ["career", "carrera"],
             "parallel": ["parallel", "paralelo"],
+            "members": ["members", "integrantes", "miembros"],
         }
         for canonical, keys in aliases.items():
             if canonical in meta and meta[canonical]:
@@ -327,6 +328,10 @@ class ReportConfig:
                 if value:
                     meta[canonical] = value
                     break
+        # Paralelo is data, not a question (#8): the intake never asks for it,
+        # renderers default to A, and an explicit assignment value in report.yml
+        # (metadata.parallel/metadata.paralelo) overrides the default.
+        meta.setdefault("parallel", "A")
         return meta
 
     @property

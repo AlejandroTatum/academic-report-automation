@@ -27,7 +27,9 @@ Default cover structure:
 
 Student default:
 - Alejandro Emanuel Padilla Espinoza
-- Paralelo: A, unless assignment says otherwise.
+- Paralelo: A por defecto. Nunca se pregunta al usuario; si el encargo fija otro
+  paralelo, se declara en `metadata.parallel` de report.yml y ese valor explícito
+  prevalece sobre A.
 
 Period default when no override is given:
 - Marzo – Agosto 2026
