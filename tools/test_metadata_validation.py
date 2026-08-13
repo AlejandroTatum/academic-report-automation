@@ -21,7 +21,12 @@ if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
 from report_config import ReportConfig, load_report_config, DEFAULT_FORMAT  # noqa: E402
-from validate_report import common_validation, pdf_layout_validation, visual_validation  # noqa: E402
+from validate_report import (  # noqa: E402
+    common_validation,
+    metadata_validation,
+    pdf_layout_validation,
+    visual_validation,
+)
 from validate_ieee_refs import ValidationResult  # noqa: E402
 from visual_builder import metadata_errors  # noqa: E402
 
@@ -583,3 +588,206 @@ class TestCommonValidationAcademicFormat:
         assert "cover" in data
         assert "logo_required" in data.get("cover", {})
         assert "required" in data.get("cover", {})
+
+
+# ---------------------------------------------------------------------------
+# C1 #8 — academic identity validation (metadata_validation)
+# ---------------------------------------------------------------------------
+
+
+def write_academic_report(folder: Path, metadata: dict) -> Path:
+    """Write a Route A report.yml with the given metadata and load its config."""
+    data = {"type": "essay", "route": "academic", "metadata": metadata}
+    path = folder / "report.yml"
+    path.write_text(yaml.dump(data), encoding="utf-8")
+    return path
+
+
+class TestIntakeIdentityValidation:
+    """Spec scenarios for #8: identity must be complete and concrete."""
+
+    def test_intake_placeholder_identity_rejected(self, temp_report_folder) -> None:
+        """A bracket placeholder like `[Nombre del estudiante]` is not identity."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "[Nombre del estudiante]",
+            "date": "2026-01-01",
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert any("student" in e and "ejemplo" in e for e in result.errors), (
+            f"placeholder student must be rejected, got: {result.errors}"
+        )
+
+    def test_intake_placeholder_rejected_on_any_identity_field(
+        self, temp_report_folder,
+    ) -> None:
+        """The bracket rejection is not hardcoded to the student field."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe",
+            "subject": "Sistemas Operativos",
+            "teacher": "[Nombre del docente]",
+            "student": "Alejandro Padilla",
+            "date": "2026-01-01",
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert any("teacher" in e and "ejemplo" in e for e in result.errors), (
+            f"placeholder teacher must be rejected, got: {result.errors}"
+        )
+
+    def test_concrete_identity_passes(self, temp_report_folder) -> None:
+        """Concrete values in every identity field produce no errors."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Alejandro Padilla",
+            "date": "2026-01-01",
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert result.errors == []
+
+
+class TestGroupIntakeValidation:
+    """Spec scenario 2 for #8: a group report needs complete membership."""
+
+    def test_group_intake_requires_complete_membership(self, temp_report_folder) -> None:
+        """A group report whose members list is empty fails, naming the gap."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe grupal",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Ana García",
+            "date": "2026-01-01",
+            "members": [],
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert any("members" in e and ("falt" in e or "nómina" in e) for e in result.errors), (
+            f"empty membership must fail naming the members list, got: {result.errors}"
+        )
+
+    def test_group_flag_without_members_also_fails(self, temp_report_folder) -> None:
+        """Group mode selected with no members list at all is still incomplete."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe grupal",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Ana García",
+            "date": "2026-01-01",
+            "group": True,
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert any("members" in e and ("falt" in e or "nómina" in e) for e in result.errors), (
+            f"group mode without a members list must fail, got: {result.errors}"
+        )
+
+    def test_group_membership_with_placeholder_entry_is_rejected(
+        self, temp_report_folder,
+    ) -> None:
+        """Every member must be concrete; placeholders are listed by value."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe grupal",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Ana García",
+            "date": "2026-01-01",
+            "members": ["Ana García", "[Nombre 2]"],
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert any("members" in e and "Nombre 2" in e for e in result.errors), (
+            f"placeholder member must be named, got: {result.errors}"
+        )
+
+    def test_complete_concrete_membership_passes(self, temp_report_folder) -> None:
+        """A full roster of concrete names is a valid group report."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe grupal",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Ana García",
+            "date": "2026-01-01",
+            "members": ["Ana García", "Luis Pérez"],
+        })
+        config = load_report_config(folder)
+
+        result = metadata_validation(config)
+
+        assert result.errors == []
+
+
+class TestParaleloDefaultValidation:
+    """Spec scenario 3 for #8: Paralelo is A by default and never prompted."""
+
+    def test_paralelo_defaults_to_A_without_prompt(self, temp_report_folder) -> None:
+        """A report that never declares a parallel resolves to A."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Alejandro Padilla",
+            "date": "2026-01-01",
+        })
+        config = load_report_config(folder)
+
+        assert config.metadata.get("parallel") == "A"
+
+    def test_explicit_assignment_parallel_overrides_default_A(
+        self, temp_report_folder,
+    ) -> None:
+        """Precedence: an explicit assignment value beats the A default."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Alejandro Padilla",
+            "date": "2026-01-01",
+            "parallel": "B",
+        })
+        config = load_report_config(folder)
+
+        assert config.metadata.get("parallel") == "B"
+
+    def test_spanish_paralelo_alias_sets_the_same_parallel(
+        self, temp_report_folder,
+    ) -> None:
+        """`paralelo:` (Spanish alias) resolves to the canonical parallel."""
+        folder = temp_report_folder
+        write_academic_report(folder, {
+            "title": "Informe",
+            "subject": "Sistemas Operativos",
+            "teacher": "Ing. Hernán",
+            "student": "Alejandro Padilla",
+            "date": "2026-01-01",
+            "paralelo": "C",
+        })
+        config = load_report_config(folder)
+
+        assert config.metadata.get("parallel") == "C"

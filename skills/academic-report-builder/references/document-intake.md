@@ -57,6 +57,20 @@ Rules:
 - A template applies ONLY when the user confirms it. A template that is merely mentioned, guessed, inherited from a previous document, or found in the repository does not apply.
 - If nothing is confirmed, record `Template/identity: none` and build without institutional shell, logo, or borrowed branding.
 
+## Identity confirmation
+
+Capture concrete author identity before generation:
+
+- Individual report: the author's full name.
+- Group report: the complete membership list — every member's full name.
+
+Placeholder values (bracket templates such as `[Nombre del estudiante]`) and
+blanks are rejected: they are instructions left in a template, not identity.
+Group membership missing from the metadata fails validation and names the
+missing members. The skill never prompts the user to choose a Paralelo: the
+academic route renders A by default, and only an explicit assignment value
+overrides it.
+
 ## Confirmation 4 — Delivery format
 
 Ask for PDF, DOCX, or both. Always confirmed, never inferred.
