@@ -27,6 +27,15 @@ Before the first build, `report.yml` must carry the resolved route as `route:` a
 
 Use `latex` for long textual/mixed reports, `visual` for concept maps, infographics, or design-heavy deliverables, and `docx` only for editable delivery or mandatory DOCX templates. Keep final visible PDF/DOCX files only in `outputs/<materia-slug>/`; keep intermediates in `build/`, `backups/`, or canonical generated-asset folders.
 
+### Clean delivery to the user's Documents folder
+
+After all gates pass, copy the approved final PDF/DOCX to the delivery folder
+chosen for this run — a dedicated user Documents destination, never the work
+paths. The destination is explicit and configurable per run (for example
+`~/Documents/Entregas_Academicas/<slug>/`); record the selected path in the run
+output. Only clean final documents may exist there: no manifests, sources,
+audits, or intermediates. See `clean-delivery.md`.
+
 `visual_pdf_auditor.py` is manual unless `report.yml` contains `validators: {visual_pdf: true}`. It produces `visual_qa.md` and `contact_sheet.png`; both are precheck evidence, not approval. Automatic execution inside `validate_report.py` does not change this authority boundary.
 
 Required flow:

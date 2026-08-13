@@ -9,7 +9,11 @@ REPORT_CONTENT_ROOT="/home/alejo/devwork/.projects/university/.reports-system/au
 
 Run commands from `REPORT_AUTOMATION_ROOT`. Final report PDFs belong in
 `outputs/<materia-slug>/`; visual assets are intermediate files in
-`assets/generated/<materia>/<tarea>/`.
+`assets/generated/<materia>/<tarea>/`. Visual assets, specs, manifests, and
+audits are working evidence and are never copied to the user's Documents
+delivery folder — only the assembled final PDF/DOCX from
+`academic-report-builder` is delivered there (see that skill's
+`references/clean-delivery.md`).
 
 ## Asset classes
 

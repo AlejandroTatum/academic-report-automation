@@ -21,6 +21,7 @@ ROUTING_MD = REFERENCES / "document-routing.md"
 VISUAL_MD = REFERENCES / "visual-directions.md"
 GATES_MD = REFERENCES / "quality-gates.md"
 UNL_MD = REFERENCES / "unl-shell.md"
+DELIVERY_MD = REFERENCES / "clean-delivery.md"
 
 ROUTE_SCOPED_FILES = (SKILL_MD, ROUTING_MD)
 
@@ -297,3 +298,47 @@ def test_diagrams_must_be_module_specific() -> None:
         assert role in gates.lower(), (
             f"diagrams must visually differentiate {role!r}"
         )
+
+
+# --------------------------------------------------------------------------
+# Clean-delivery contract
+# --------------------------------------------------------------------------
+
+
+def test_clean_delivery_reference_exists() -> None:
+    assert DELIVERY_MD.is_file(), "clean-delivery.md is required by the skill contract"
+
+
+def test_clean_delivery_keeps_evidence_out_of_delivery_folder() -> None:
+    text = read(DELIVERY_MD)
+    assert "only approved final documents" in text.lower(), (
+        "the delivery folder must be limited to clean finals"
+    )
+    for forbidden in ("manifest", "report.yml", "sources.bib", "audit"):
+        assert forbidden in text.lower(), (
+            f"clean-delivery.md must forbid {forbidden!r} in the delivery folder"
+        )
+
+
+def test_clean_delivery_destination_is_configurable_per_run() -> None:
+    text = read(DELIVERY_MD)
+    assert "configurable per run" in text.lower(), (
+        "the destination must be explicit per run, never a hardcoded default"
+    )
+    assert "hardcode" in text.lower(), (
+        "the contract must forbid hardcoding one guide path as the universal default"
+    )
+
+
+def test_skill_references_clean_delivery_contract(skill: str) -> None:
+    assert "clean-delivery.md" in skill, (
+        "SKILL.md must reference the clean-delivery contract"
+    )
+
+
+def test_automation_contract_documents_clean_delivery() -> None:
+    automation = read(REFERENCES / "automation-contract.md")
+    assert "Clean delivery" in automation, (
+        "automation-contract.md must document the clean-delivery step"
+    )
+    assert "Documents" in automation

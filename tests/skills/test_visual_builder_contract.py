@@ -81,3 +81,21 @@ def test_report_skill_keeps_visual_pass_owned_by_direct_semantic_inspection() ->
     assert "independent semantic inspection" in text
     assert "HUMAN_REVIEW" in text
     assert "READY_TO_SUBMIT" in text
+
+
+def test_visual_assets_never_reach_the_delivery_folder() -> None:
+    text = VISUAL_SKILL.read_text(encoding="utf-8")
+    assert "delivery folder" in text.lower(), (
+        "the visual skill must keep assets out of the user's delivery folder"
+    )
+    assert "clean-delivery.md" in text, (
+        "the visual skill must point at the report skill's clean-delivery contract"
+    )
+
+
+def test_visual_workflow_keeps_assets_in_repo_work_paths() -> None:
+    workflow = (VISUAL_ROOT / "references" / "visual-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    normalized = re.sub(r"\s+", " ", workflow.lower())
+    assert "never copied to the user's documents delivery folder" in normalized
