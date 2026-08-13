@@ -83,6 +83,12 @@ OVERFULL_LINE_RE = re.compile(r"at line (?P<start>\d+)\b")
 # as `[2026/01/01 v1.2]` are excluded by the lookahead.
 PAGE_SHIPOUT_RE = re.compile(r"(?:^|[\s)])\[(\d+)(?=[\]\s<{]|$)")
 
+# Intake placeholders: bracket templates such as `[Nombre del estudiante]` are
+# instructions left in a template, not identity. A value that is entirely
+# bracketed can never be a real name/title/date, so it fails identity
+# validation wherever route metadata requires a concrete value.
+PLACEHOLDER_RE = re.compile(r"^\[.*\]$")
+
 
 @dataclass(frozen=True)
 class OverfullBox:
@@ -272,6 +278,42 @@ def metadata_validation(config: ReportConfig) -> ValidationResult:
     missing = [key for key in config.required_metadata if not str(meta.get(key) or "").strip()]
     if missing:
         result.errors.append("Metadata incompleta en report.yml: " + ", ".join(missing))
+
+    placeholder = [
+        key
+        for key in config.required_metadata
+        if str(meta.get(key) or "").strip() and PLACEHOLDER_RE.match(str(meta.get(key)).strip())
+    ]
+    if placeholder:
+        result.errors.append(
+            "Metadata con valores de ejemplo en report.yml: " + ", ".join(placeholder)
+        )
+
+    # Group mode is declared by carrying a `members` list (any alias) or an
+    # explicit group flag. In group mode the membership must be complete and
+    # concrete; an absent, empty or placeholder-filled roster is rejected and
+    # the missing members are named.
+    members = meta.get("members")
+    if members is None:
+        members = meta.get("integrantes") or meta.get("miembros")
+    group_flag = str(meta.get("group") or meta.get("grupal") or "").strip().lower()
+    if members is not None or group_flag in {"true", "1", "yes", "si", "sí", "on"}:
+        if not isinstance(members, list) or not members:
+            result.errors.append(
+                "El reporte es grupal pero metadata.members no trae la nómina "
+                "completa de integrantes"
+            )
+        else:
+            missing_members = [
+                repr(str(member).strip())
+                for member in members
+                if not str(member or "").strip() or PLACEHOLDER_RE.match(str(member).strip())
+            ]
+            if missing_members:
+                result.errors.append(
+                    "Integrantes con valores vacíos o de ejemplo en metadata.members: "
+                    + ", ".join(missing_members)
+                )
 
     if config.route != "academic":
         declared = [key for key in ACADEMIC_ONLY_METADATA if str(meta.get(key) or "").strip()]

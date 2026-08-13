@@ -342,3 +342,44 @@ def test_automation_contract_documents_clean_delivery() -> None:
         "automation-contract.md must document the clean-delivery step"
     )
     assert "Documents" in automation
+
+
+# --------------------------------------------------------------------------
+# C1 #8 — identity contract
+# --------------------------------------------------------------------------
+
+
+def test_intake_requires_concrete_identity() -> None:
+    """Intake must collect concrete identity for individual or group reports."""
+    intake_text = plain(read(INTAKE_MD)).lower()
+    assert "identity confirmation" in intake_text, (
+        "intake must have an identity confirmation"
+    )
+    assert "placeholder" in intake_text, "intake must reject placeholder identity"
+    assert "individual" in intake_text, "intake must cover individual reports"
+    assert "group" in intake_text, "intake must cover group reports"
+    assert "complete membership" in intake_text, (
+        "group reports must carry the complete membership list"
+    )
+
+
+def test_intake_never_prompts_for_paralelo() -> None:
+    """The intake must state that Paralelo is data, never a question."""
+    intake_text = plain(read(INTAKE_MD)).lower()
+    assert "paralelo" in intake_text, "the no-prompt paralelo rule must be documented"
+    assert "never prompts" in intake_text, (
+        "the intake must state that paralelo is never a question"
+    )
+
+
+def test_unl_shell_paralelo_defaults_to_a_with_data_override() -> None:
+    """unl-shell.md: A is the default; explicit report.yml data overrides it."""
+    unl = plain(read(UNL_MD)).lower()
+    assert "paralelo" in unl
+    assert "por defecto" in unl, "A must be documented as the default value"
+    assert "metadata.parallel" in unl, (
+        "the explicit assignment override must be documented"
+    )
+    assert "unless assignment says otherwise" not in unl, (
+        "the old conditional fallback wording must be gone"
+    )
