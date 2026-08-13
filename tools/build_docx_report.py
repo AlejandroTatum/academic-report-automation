@@ -135,12 +135,36 @@ def cited_keys_in_order(markdown: str) -> list[str]:
     return ordered
 
 
+def _merge_flags(
+    segments: Iterable[Segment], *, bold: bool = False, italic: bool = False
+) -> list[Segment]:
+    """Re-emit segments carrying an outer flag merged onto their own flags.
+
+    The emphasis group in ``INLINE_RE`` cannot itself contain ``*``, so the
+    recursion inside a bold/italic span only ever meets code, math or citation
+    rules — nesting stays at depth one by construction.
+    """
+    return [
+        Segment(
+            segment.text,
+            bold=bold or segment.bold,
+            italic=italic or segment.italic,
+            mono=segment.mono,
+        )
+        for segment in segments
+    ]
+
+
 def inline_segments(text: str, citation_numbers: dict[str, int] | None = None) -> list[Segment]:
     """Split a line of Markdown into formatted runs.
 
     ``citation_numbers`` maps a BibTeX key to its IEEE number. A key missing
     from that map cannot happen — ``resolve_citations`` refuses the build first
     — so there is no branch here that emits a marker pointing at nothing.
+
+    Inner rules (code, math, cite) are re-parsed inside a bold or italic span
+    so the segment stream carries every applicable flag instead of literal
+    Markdown markers; the outer emphasis flag merges onto each inner segment.
     """
     numbers = citation_numbers or {}
     segments: list[Segment] = []
@@ -157,9 +181,13 @@ def inline_segments(text: str, citation_numbers: dict[str, int] | None = None) -
         elif match.group("code") is not None:
             segments.append(Segment(match.group("code"), mono=True))
         elif match.group("bold") is not None:
-            segments.append(Segment(match.group("bold"), bold=True))
+            segments.extend(
+                _merge_flags(inline_segments(match.group("bold"), numbers), bold=True)
+            )
         else:
-            segments.append(Segment(match.group("italic"), italic=True))
+            segments.extend(
+                _merge_flags(inline_segments(match.group("italic"), numbers), italic=True)
+            )
     if cursor < len(text):
         segments.append(Segment(text[cursor:]))
     return [segment for segment in segments if segment.text]
@@ -574,8 +602,10 @@ def new_numbering_id(document: Document, style_name: str = "List Number") -> int
 
     Word continues a numbering definition wherever it is reused, so two
     procedures in one document would run 1..2 then 3..4. Each ordered list gets
-    its own ``w:num`` pointing at the same abstract definition, which is the
-    restart mechanism OOXML actually offers.
+    its own ``w:num`` pointing at the same abstract definition, and an explicit
+    ``w:lvlOverride``/``w:startOverride val="1"`` forces that instance to start
+    counting again — the restart mechanism OOXML actually offers. The override
+    must follow ``w:abstractNumId`` to satisfy the ``CT_Num`` sequence.
     """
     numbering = document.part.numbering_part.element
     base_num_id = _style_num_id(document, style_name)
@@ -600,6 +630,12 @@ def new_numbering_id(document: Document, style_name: str = "List Number") -> int
     abstract = OxmlElement("w:abstractNumId")
     abstract.set(qn("w:val"), abstract_id)
     num.append(abstract)
+    level_override = OxmlElement("w:lvlOverride")
+    level_override.set(qn("w:ilvl"), "0")
+    start_override = OxmlElement("w:startOverride")
+    start_override.set(qn("w:val"), "1")
+    level_override.append(start_override)
+    num.append(level_override)
     numbering.append(num)
     return next_id
 
