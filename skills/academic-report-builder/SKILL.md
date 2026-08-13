@@ -28,6 +28,7 @@ the run; there is no default document type or academic fallback.
 ## Hard Rules
 
 - Validate inputs, source binding, intermediate output, export, and final PDF/DOCX; stop at the earliest failed gate.
+- Deliver only clean finals: copy the approved final PDF/DOCX to the Documents delivery folder declared for the run; sources, manifests, audits, and intermediates stay in their repo-defined work paths and never enter the delivery folder. See `references/clean-delivery.md`.
 - No script, validator, or auditor ever grants `VISUAL_PASS`. `visual_pdf_auditor.py` PASS is only `AUDITOR_PRECHECK` evidence.
 - Only independent semantic inspection of the assembled report may grant report-level `VISUAL_PASS`; human review after immutable hashes is required for `READY_TO_SUBMIT`.
 - Never ghostwrite a final submission or expose final paths before semantic inspection and approval. Preserve privacy, provenance, citations, and consent boundaries.
@@ -69,6 +70,7 @@ manifest, and review assumptions. Return final paths only after approval.
 
 ## References
 
+- `references/clean-delivery.md` — delivery-folder contract: only clean finals, configurable per run.
 - `references/document-intake.md` — mandatory confirmations and contract block.
 - `references/document-routing.md` — routes and route-specific loading.
 - `references/automation-contract.md` — canonical commands, evidence gates, and readiness receipts.

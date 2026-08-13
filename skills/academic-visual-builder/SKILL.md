@@ -17,6 +17,7 @@ assets only; `academic-report-builder` owns prose, assembly, and report readines
 ## Hard Rules
 
 - Prefer original, editable SVG visuals. Keep specs and generated assets in the paths defined by `references/visual-workflow.md`.
+- Visual assets, specs, manifests, and audits are working evidence: they live in the repo-defined work paths and are never copied to the user's Documents delivery folder. Only the final assembled PDF/DOCX produced by `academic-report-builder` reaches that folder; see `references/clean-delivery.md` in that skill.
 - Every manifest must follow `references/figures-yml-schema.md`. Require stable unique `request_id`/`result_id`, raw-byte SHA-256, source/provenance, explicit license text and status, canonical section, caption, and `alt_text` accessibility text.
 - Treat `section` as canonical; accept `intended_section` only when section is absent or identical after trimming. Reject conflicts and integrity mismatches; never silently crop, substitute, overwrite, or accept unknown licensing.
 - Validate asset existence, listed/unlisted assets, metadata, readability, clipping, and photo rules before insertion. Stop on missing metadata, duplicate identity, missing/unreadable/mutated assets, or unavailable dependencies. Renderer values remain open-ended; unsupported dependencies fail explicitly.
