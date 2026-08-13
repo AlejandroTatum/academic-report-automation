@@ -46,22 +46,24 @@ so in a warning banner instead of rendering it. The Quick Start below uses it
 because it is the shortest path to a visible result, not because it is the
 recommended way to produce a report.
 
-### Markdown compatibility note: `---` means two different things
+### Markdown compatibility note: `---` means different things
 
-The two pipelines read the same character sequence differently, and a `body.md`
-written for one can be misread by the other:
+The three Markdown backends read the same character sequence differently, and a
+`body.md` written for one can be misread by another:
 
 - **LaTeX branch** (`build_latex_report.py`): a line matching `^-{3,}$` becomes
   a `\newpage`, i.e. a page break, anywhere in the document.
+- **DOCX branch** (`build_docx_report.py`): the same `^-{3,}$` line inserts a
+  page break, matching the LaTeX branch.
 - **HTML branch** (`build_report.py`): a `---` on the **first** line opens a
   YAML front-matter block, which supplies the document metadata.
 
 `build_report.py` treats `---` as front-matter only when it opens the file *and*
 the block reads as `key: value` pairs. A `---` used as a page break — or any
 `---` further down the document — renders as an ordinary horizontal rule and is
-never mistaken for metadata. The LaTeX branch has no equivalent guard, so a
-front-matter block written for the HTML branch will turn into page breaks there.
-Keep a `body.md` bound to one backend.
+never mistaken for metadata. The LaTeX and DOCX branches have no equivalent
+guard, so a front-matter block written for the HTML branch will turn into page
+breaks there. Keep a `body.md` bound to one backend.
 
 ## Tech Stack
 
