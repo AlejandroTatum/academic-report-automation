@@ -403,6 +403,31 @@ class TestMain:
         # Externally-visible: output_format property reflects the mutation
         assert mutated_config.output_format == "tex"
 
+    def test_tex_only_announces_pdf_layout_disabled(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--tex-only must print an explicit notice that pdf_layout is off.
+
+        The mutation must not be silent: a user running --tex-only needs to see
+        that the layout audit is skipped for this run, before any validation
+        result is printed.
+        """
+        self._run_main(backend="latex", extra_args=["--tex-only"])
+
+        captured = capsys.readouterr()
+        assert "tex-only" in captured.out
+        assert "pdf_layout" in captured.out
+        assert "desactivado" in captured.out
+
+    def test_tex_only_disclosure_absent_without_flag(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Without --tex-only, no pdf_layout disclosure is printed."""
+        self._run_main(backend="latex")
+
+        captured = capsys.readouterr()
+        assert "pdf_layout" not in captured.out
+
     # -- Unsupported backend normal mode (no --validate-only) ------------------
 
     @pytest.mark.parametrize(

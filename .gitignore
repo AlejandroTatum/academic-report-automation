@@ -38,3 +38,6 @@ academic-sources/
 Thumbs.db
 .idea/
 .vscode/
+
+# CodeGraph index — machine-local, per-worktree, regenerable.
+.codegraph/

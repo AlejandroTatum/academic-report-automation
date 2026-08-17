@@ -96,8 +96,23 @@ def main() -> None:
         build_backend(config, args)
 
     if args.tex_only:
+        # --tex-only leaves no compiled PDF behind, so the post-build gates
+        # that inspect the PDF must not run. ReportConfig.validators defaults
+        # pdf_layout to ``output_format == "pdf" or pdf_path.exists()``
+        # (report_config.py), so without this adjustment the layout audit
+        # would either fail on a missing pdf_path or inspect a stale PDF from
+        # a previous full build. validate(config) is a shared contract with
+        # validate_report.py and takes no extra flag, so the only channel is
+        # mutating config.raw before the call: output "tex" makes
+        # output_format reflect the real artifact of this run, and
+        # validators.pdf_layout=False overrides the default. The user must
+        # see this adjustment, hence the explicit notice below.
         config.raw["output"] = "tex"
         config.raw.setdefault("validators", {})["pdf_layout"] = False
+        print(
+            "tex-only: output forzado a 'tex' y validador pdf_layout "
+            "desactivado (no se compila PDF en esta corrida)."
+        )
     result = validate(config)
     if result.errors:
         raise SystemExit("VALIDATION FAILED:\n- " + "\n- ".join(result.errors) + f"\n\nReporte: {config.quality_report_path}")
