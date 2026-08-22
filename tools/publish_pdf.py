@@ -55,6 +55,8 @@ def publish_validated_pdf(
     category: str,
     slug: str,
     documents_root: Path | None = None,
+    *,
+    expected_sha256: str | None = None,
 ) -> Publication:
     """Atomically publish a validated PDF, reusing identical hashes by version.
 
@@ -69,32 +71,43 @@ def publish_validated_pdf(
     root = Path.home() / "Documents" if documents_root is None else Path(documents_root)
     folder = root / category / slug
     source_hash = sha256_file(source)
-    existing = _existing_versions(folder, slug)
-    for _, path in existing:
-        if sha256_file(path) == source_hash:
-            return Publication(path=path, sha256=source_hash, created=False)
-
-    next_version = max((version for version, _ in existing), default=0) + 1
-    destination = folder / f"{slug}-v{next_version:03d}.pdf"
+    if expected_sha256 is not None and source_hash != expected_sha256:
+        raise PublicationError("El PDF cambió desde la validación técnica")
     folder.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb", prefix=f".{destination.name}.", suffix=".tmp", dir=folder, delete=False
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            with source.open("rb") as input_stream:
-                shutil.copyfileobj(input_stream, temporary)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        os.replace(temporary_path, destination)
-    except OSError as exc:
-        try:
-            temporary_path.unlink(missing_ok=True)
-        except (OSError, UnboundLocalError):
-            pass
-        raise PublicationError(f"No se pudo publicar el PDF en {destination}: {exc}") from exc
 
-    destination_hash = sha256_file(destination)
-    if destination_hash != source_hash:
-        raise PublicationError(f"SHA-256 no coincide después de publicar {destination}")
-    return Publication(path=destination, sha256=source_hash, created=True)
+    while True:
+        existing = _existing_versions(folder, slug)
+        for _, path in existing:
+            if sha256_file(path) == source_hash:
+                return Publication(path=path, sha256=source_hash, created=False)
+
+        next_version = max((version for version, _ in existing), default=0) + 1
+        destination = folder / f"{slug}-v{next_version:03d}.pdf"
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", prefix=f".{destination.name}.", suffix=".tmp", dir=folder, delete=False
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                with source.open("rb") as input_stream:
+                    shutil.copyfileobj(input_stream, temporary)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            # link(2) atomically claims the version and refuses to overwrite an
+            # already claimed name. A concurrent publisher therefore retries with
+            # a fresh version scan instead of replacing another artifact.
+            os.link(temporary_path, destination)
+            temporary_path.unlink()
+        except FileExistsError:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+            continue
+        except OSError as exc:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+            raise PublicationError(f"No se pudo publicar el PDF en {destination}: {exc}") from exc
+
+        destination_hash = sha256_file(destination)
+        if destination_hash != source_hash:
+            raise PublicationError(f"SHA-256 no coincide después de publicar {destination}")
+        return Publication(path=destination, sha256=source_hash, created=True)

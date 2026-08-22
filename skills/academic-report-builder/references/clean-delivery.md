@@ -20,9 +20,11 @@ not human approval.
 - The document slug is stable ASCII derived from the confirmed title (or confirmed
   document identity). The artifact path is
   `~/Documents/<category>/<slug>/<slug>-vNNN.pdf`.
-- The first unique validated artifact is `v001`. If its SHA-256 matches any existing
-  version for that document, report and reuse that version. Otherwise atomically
-  publish the next monotonic version and verify destination hash equality.
+- The first unique validated artifact is `v001`. Compare its hash before validation
+  with the hash immediately before publication; publish only when they match. If its
+  SHA-256 matches any existing version for that document, report and reuse that
+  version. Otherwise atomically claim the next monotonic version without overwriting
+  a concurrent publication, then verify destination hash equality.
 - Never publish after build, configuration, or configured technical-validation
   failure.
 - The document delivery folder contains PDFs only. Never copy manifests,

@@ -821,14 +821,13 @@ def write_quality_report(config: ReportConfig, validation: ReportValidation) -> 
 def validate(config: ReportConfig) -> ReportValidation:
     validators = config.validators
     validation = ReportValidation()
-    if validators.get("common", True):
-        validation.add("common", common_validation(config))
-    if (
-        validators.get("common", True)
-        and config.backend == "latex"
-    ):
+    # These gates are policy, not report.yml preferences. ReportConfig rejects
+    # attempts to disable them; keeping the dispatch unconditional prevents a
+    # future alternate config implementation from silently bypassing them.
+    validation.add("common", common_validation(config))
+    if config.backend == "latex":
         validation.add("assets", asset_validation(config))
-    if validators.get("pdf_layout", False):
+    if config.output_format == "pdf":
         validation.add("pdf_layout", pdf_layout_validation(config))
     if validators.get("ieee", True):
         validation.add("ieee", validate_ieee(config))

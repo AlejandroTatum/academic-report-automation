@@ -30,14 +30,16 @@ Use `latex` for long textual/mixed reports, `visual` for concept maps, infograph
 ### Clean delivery to the user's Documents folder
 
 After successful build and configured technical validation, `build_report_auto.py`
-automatically publishes the PDF at
+automatically publishes only the confirmed PDF output at
 `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`.
 No `delivery_pdf:` configuration or user-selected path is needed. Category derives
 from confirmed route (`technical -> Tecnicos`, `academic -> Academicos`, with
 project/professional/other equivalents); slug is stable ASCII from confirmed title
 or document identity. The first unique artifact is `v001`; matching SHA-256 reuses
 an existing version, while changed content atomically creates the next monotonic
-version and verifies hash equality. The delivery folder contains PDFs only: no
+version without overwriting a concurrent publisher and verifies hash equality. The
+PDF hash before validation must match the hash immediately before publication. The
+delivery folder contains PDFs only: no
 manifests, sources, audits, or intermediates. Publication is technical-copy status,
 not `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`. See `clean-delivery.md`.
 

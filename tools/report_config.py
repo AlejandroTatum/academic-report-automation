@@ -212,6 +212,13 @@ def dig(source: Any, keys: tuple[str, ...]) -> Any:
     return cursor
 
 
+def strict_bool(value: Any, field: str) -> bool:
+    """Accept only YAML booleans; never coerce strings or numeric values."""
+    if type(value) is not bool:
+        raise ValueError(f"{field} debe ser un booleano YAML (true o false)")
+    return value
+
+
 @dataclass
 class ReportConfig:
     folder: Path
@@ -283,7 +290,7 @@ class ReportConfig:
         false so the deliverable is not copied on top of itself.
         """
         if "publish_global" in self.raw:
-            return bool(self.raw.get("publish_global"))
+            return strict_bool(self.raw["publish_global"], "publish_global")
         return not self.folder.name.startswith("_")
 
     @property
@@ -363,7 +370,10 @@ class ReportConfig:
 
     @property
     def validators(self) -> dict[str, bool]:
-        configured = dict(self.raw.get("validators") or {})
+        configured_value = self.raw.get("validators", {})
+        if not isinstance(configured_value, dict):
+            raise ValueError("validators debe ser un mapa de booleanos YAML")
+        configured = dict(configured_value)
         validators = {
             "common": True,
             "ieee": True,
@@ -375,7 +385,15 @@ class ReportConfig:
             "docx": self.backend == "docx" or self.output_format == "docx",
         }
         for key, value in configured.items():
-            validators[str(key)] = bool(value)
+            name = str(key)
+            if name not in validators:
+                continue
+            enabled = strict_bool(value, f"validators.{name}")
+            if name == "common" and not enabled:
+                raise ValueError("validators.common es obligatorio y no puede desactivarse")
+            if name == "pdf_layout" and self.output_format == "pdf" and not enabled:
+                raise ValueError("validators.pdf_layout es obligatorio para salida PDF")
+            validators[name] = enabled
         return validators
 
     def academic_value(self, *keys: str, default: Any = None) -> Any:
@@ -482,6 +500,11 @@ def load_report_config(folder: Path) -> ReportConfig:
     declares_final_pdf = any(key in raw for key in ("pdf", "output_pdf"))
     if declares_final_pdf and targets_local_outputs(config):
         raise SystemExit(f"{LOCAL_OUTPUTS_ERROR}\nRuta configurada: {config.pdf_path}")
+    try:
+        _ = config.publish_global
+        _ = config.validators
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     return config
 

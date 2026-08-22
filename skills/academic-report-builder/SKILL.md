@@ -28,7 +28,7 @@ the run; there is no default document type or academic fallback.
 ## Hard Rules
 
 - Validate inputs, source binding, intermediate output, export, and final PDF/DOCX; stop at the earliest failed gate.
-- After configured technical validation passes, automatically publish the PDF at `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`; category comes from the confirmed route and slug from confirmed title. That folder contains PDFs only. Publication is not approval. See `references/clean-delivery.md`.
+- After configured technical validation passes, automatically publish only the confirmed PDF output at `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`; category comes from the confirmed route and slug from confirmed title. That folder contains PDFs only. Publication is not approval. See `references/clean-delivery.md`.
 - No script, validator, or auditor ever grants `VISUAL_PASS`. `visual_pdf_auditor.py` PASS is only `AUDITOR_PRECHECK` evidence.
 - Only independent semantic inspection of the assembled report may grant report-level `VISUAL_PASS`; human review after immutable hashes is required for `READY_TO_SUBMIT`.
 - Never ghostwrite a final submission. An automatically published technically validated PDF may be reported, but semantic inspection and human approval remain required for `VISUAL_PASS` and `READY_TO_SUBMIT`. Preserve privacy, provenance, citations, and consent boundaries.

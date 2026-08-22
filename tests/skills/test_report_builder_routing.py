@@ -342,6 +342,13 @@ def test_automation_contract_documents_clean_delivery() -> None:
     assert "Documents" in automation
 
 
+def test_automatic_documents_publication_requires_a_confirmed_pdf() -> None:
+    combined = "\n".join(read(path) for path in (SKILL_MD, DELIVERY_MD, REFERENCES / "automation-contract.md"))
+    assert "confirmed PDF output" in combined
+    assert "hash before validation" in combined
+    assert "immediately before publication" in combined
+
+
 # --------------------------------------------------------------------------
 # C1 #8 — identity contract
 # --------------------------------------------------------------------------

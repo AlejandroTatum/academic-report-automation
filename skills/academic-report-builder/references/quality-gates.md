@@ -7,7 +7,8 @@ These gates apply to every route. Route-conditional checks are marked as such.
 ## Evidence gates
 
 1. Record the artifact hash and page count before inspection.
-2. Run `validate_report.py` and `visual_pdf_auditor.py`; retain their reports and `contact_sheet.png` as precheck evidence.
+2. Run `validate_report.py`: `common` is mandatory, and PDF output also requires the mandatory `pdf_layout` gate. Only `--tex-only` may skip PDF layout because that run has no PDF output.
+3. Run `visual_pdf_auditor.py`; retain its report and `contact_sheet.png` as precheck evidence.
 3. Inspect every contact-sheet page directly. Do not infer success from `0 warnings`, `PASS`, or `visual_qa.md`.
 4. Read back rendered content: verify headings, paragraphs, captions, bibliography, tables, and figure labels are present, legible, and semantically equivalent to the intended source.
 5. Open every page containing diagrams, figures, captions, or tables at readable size and apply the checks below.

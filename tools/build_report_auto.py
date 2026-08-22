@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from publish_pdf import PublicationError, publish_validated_pdf
+from publish_pdf import PublicationError, publish_validated_pdf, sha256_file
 from report_config import load_report_config
 from validate_report import validate
 
@@ -114,6 +114,7 @@ def main() -> None:
             "tex-only: output forzado a 'tex' y validador pdf_layout "
             "desactivado (no se compila PDF en esta corrida)."
         )
+    validated_pdf_hash = sha256_file(config.pdf_path) if config.output_format == "pdf" else None
     result = validate(config)
     if result.errors:
         raise SystemExit("VALIDATION FAILED:\n- " + "\n- ".join(result.errors) + f"\n\nReporte: {config.quality_report_path}")
@@ -123,9 +124,16 @@ def main() -> None:
         print("VALIDATION PASSED")
 
     if config.output_format == "pdf":
+        if sha256_file(config.pdf_path) != validated_pdf_hash:
+            raise SystemExit(
+                "PDF PUBLICATION FAILED: el PDF cambió entre la validación y la publicación"
+            )
         try:
             publication = publish_validated_pdf(
-                config.pdf_path, config.publication_category, config.document_slug
+                config.pdf_path,
+                config.publication_category,
+                config.document_slug,
+                expected_sha256=validated_pdf_hash,
             )
         except PublicationError as exc:
             raise SystemExit(f"PDF PUBLICATION FAILED: {exc}") from exc

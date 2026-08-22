@@ -273,6 +273,7 @@ class TestMain:
             patch("build_report_auto.load_report_config", return_value=config),
             patch("build_report_auto.build_backend") as mock_build,
             patch("build_report_auto.validate", return_value=validation or FakeValidation()) as mock_validate,
+            patch("build_report_auto.sha256_file", return_value="validated-hash"),
             patch("build_report_auto.publish_validated_pdf"),
         ):
             main()
@@ -349,15 +350,39 @@ class TestMain:
             patch("build_report_auto.load_report_config", return_value=config),
             patch("build_report_auto.build_backend", side_effect=lambda *_: events.append("build")),
             patch("build_report_auto.validate", side_effect=lambda _: events.append("validate") or FakeValidation()),
+            patch("build_report_auto.sha256_file", return_value="validated-hash"),
             patch(
                 "build_report_auto.publish_validated_pdf",
-                side_effect=lambda *_: events.append("publish") or MagicMock(created=True, path=Path("/tmp/published.pdf"), sha256="hash"),
+                side_effect=lambda *_, **__: events.append("publish") or MagicMock(created=True, path=Path("/tmp/published.pdf"), sha256="hash"),
             ) as publish,
         ):
             main()
 
-        publish.assert_called_once_with(config.pdf_path, config.publication_category, config.document_slug)
+        publish.assert_called_once_with(
+            config.pdf_path,
+            config.publication_category,
+            config.document_slug,
+            expected_sha256="validated-hash",
+        )
         assert events == ["build", "validate", "publish"]
+
+    def test_pdf_hash_must_not_change_between_validation_and_publication(self) -> None:
+        config = FakeReportConfig(backend="latex")
+        argv = ["build_report_auto.py", "/tmp/fake-report"]
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("build_report_auto.load_report_config", return_value=config),
+            patch("build_report_auto.build_backend"),
+            patch("build_report_auto.sha256_file", side_effect=["before-validation", "before-publication"]),
+            patch("build_report_auto.validate", return_value=FakeValidation()) as validate,
+            patch("build_report_auto.publish_validated_pdf") as publish,
+        ):
+            with pytest.raises(SystemExit, match="cambió"):
+                main()
+
+        validate.assert_called_once_with(config)
+        publish.assert_not_called()
 
     def test_publication_never_runs_after_validation_failure(self) -> None:
         config = FakeReportConfig(backend="latex")
@@ -368,6 +393,7 @@ class TestMain:
             patch("build_report_auto.load_report_config", return_value=config),
             patch("build_report_auto.build_backend"),
             patch("build_report_auto.validate", return_value=FakeValidation(errors=["falló"])),
+            patch("build_report_auto.sha256_file", return_value="validated-hash"),
             patch("build_report_auto.publish_validated_pdf") as publish,
         ):
             with pytest.raises(SystemExit):

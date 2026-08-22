@@ -153,6 +153,31 @@ def test_changed_hash_publishes_next_monotonic_version(tmp_path: Path) -> None:
     assert {path.name for path in published.path.parent.iterdir()} == {"informe-v001.pdf", "informe-v002.pdf"}
 
 
+def test_concurrent_version_claim_retries_without_overwriting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = _validated_pdf(tmp_path, b"%PDF-1.7\nsecond publisher\n")
+    documents = tmp_path / "Documents"
+    folder = documents / "Tecnicos" / "informe"
+    folder.mkdir(parents=True)
+    (folder / "informe-v001.pdf").write_bytes(b"%PDF-1.7\nfirst publisher\n")
+    real_link = publish_pdf.os.link
+    calls = 0
+
+    def collision_once(source_path, destination_path):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            Path(destination_path).write_bytes(b"%PDF-1.7\nconcurrent publisher\n")
+            raise FileExistsError
+        return real_link(source_path, destination_path)
+
+    monkeypatch.setattr(publish_pdf.os, "link", collision_once)
+
+    published = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+
+    assert published.path.name == "informe-v003.pdf"
+    assert (folder / "informe-v002.pdf").read_bytes() == b"%PDF-1.7\nconcurrent publisher\n"
+
+
 def test_publication_rejects_non_pdf_source_and_non_pdf_output_folder_contents(tmp_path: Path) -> None:
     source = tmp_path / "validated.docx"
     source.write_bytes(b"not a pdf")

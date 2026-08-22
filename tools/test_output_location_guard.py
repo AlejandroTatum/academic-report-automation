@@ -241,3 +241,42 @@ def test_publish_global_written_down_overrides_the_prefix_guess(tmp_path):
 
     assert load_report_config(scratch).publish_global is True
     assert load_report_config(ordinary).publish_global is False
+
+
+@pytest.mark.parametrize("value", ["true", "false", 1, 0, None])
+def test_publish_global_rejects_non_boolean_values(tmp_path, value):
+    config = ReportConfig(folder=tmp_path, raw={"publish_global": value}, academic_format={})
+
+    with pytest.raises(ValueError, match="publish_global"):
+        _ = config.publish_global
+
+
+@pytest.mark.parametrize(
+    ("output", "validators", "message"),
+    [
+        ("pdf", {"common": False}, "common"),
+        ("pdf", {"pdf_layout": False}, "pdf_layout"),
+        ("pdf", {"common": "false"}, "common"),
+        ("tex", {"common": False}, "common"),
+    ],
+)
+def test_mandatory_validators_cannot_be_disabled_or_mistyped(tmp_path, output, validators, message):
+    config = ReportConfig(
+        folder=tmp_path,
+        raw={"output": output, "validators": validators},
+        academic_format={},
+    )
+
+    with pytest.raises(ValueError, match=message):
+        _ = config.validators
+
+
+def test_tex_output_can_skip_pdf_layout_only(tmp_path):
+    config = ReportConfig(
+        folder=tmp_path,
+        raw={"output": "tex", "validators": {"pdf_layout": False}},
+        academic_format={},
+    )
+
+    assert config.validators["common"] is True
+    assert config.validators["pdf_layout"] is False
