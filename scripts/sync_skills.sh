@@ -20,6 +20,7 @@ TARGETS=(
 SKILLS=(
   academic-report-builder
   academic-visual-builder
+  research-workflow
 )
 
 APPLY=0

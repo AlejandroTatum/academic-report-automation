@@ -33,6 +33,7 @@ the run; there is no default document type or academic fallback.
 - Only independent semantic inspection of the assembled report may grant report-level `VISUAL_PASS`; human review after immutable hashes is required for `READY_TO_SUBMIT`.
 - Never ghostwrite a final submission. An automatically published technically validated PDF may be reported, but semantic inspection and human approval remain required for `VISUAL_PASS` and `READY_TO_SUBMIT`. Preserve privacy, provenance, citations, and consent boundaries.
 - Use `academic-visual-builder` for figures, then inspect them again in the assembled report. Confirm the visual direction changes hierarchy and composition, not only decoration.
+- When supplied a research-workflow evidence package, preserve claim-to-source traceability, limitations, and unresolved questions. Do not treat the package as confirmed document intake; this skill still owns intake, citation-style confirmation, composition, and document creation.
 
 ### Academic Route Only
 
@@ -56,11 +57,12 @@ style, and validate the rendered bibliography.
 ## Execution Steps
 
 1. Load `automation-contract.md`, `document-intake.md`, `document-routing.md`, and `quality-gates.md`; run and confirm intake, then load only the resolved route references.
-2. Bind sections, claims, citations, tables, and figures to the confirmed contract and preserve provenance.
-3. Build with the canonical commands; record immutable artifact hash and page count.
-4. Retain validator/auditor outputs as precheck evidence. Read back rendered content and inspect every contact-sheet page plus applicable full-size pages directly.
-5. After any correction, rebuild the complete artifact, rerun validators/readback/inspection, compare pagination, and explain material changes.
-6. Report `VISUAL_PASS` only after semantic inspection; record `HUMAN_REVIEW` against hashes before `READY_TO_SUBMIT`.
+2. If a research-workflow evidence package is supplied, validate its claim/source links and carry forward its confidence, limitations, conflicts, and unresolved questions without converting them into unsupported report claims.
+3. Bind sections, claims, citations, tables, and figures to the confirmed contract and preserve provenance.
+4. Build with the canonical commands; record immutable artifact hash and page count.
+5. Retain validator/auditor outputs as precheck evidence. Read back rendered content and inspect every contact-sheet page plus applicable full-size pages directly.
+6. After any correction, rebuild the complete artifact, rerun validators/readback/inspection, compare pagination, and explain material changes.
+7. Report `VISUAL_PASS` only after semantic inspection; record `HUMAN_REVIEW` against hashes before `READY_TO_SUBMIT`.
 
 ## Output Contract
 
