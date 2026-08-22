@@ -24,6 +24,8 @@ when that environment variable is set, otherwise from ``DEFAULT_CONTENT_ROOT``.
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -117,6 +119,21 @@ ROUTE_ALIASES = {
     "d": "technical",
     "e": "other",
 }
+
+PUBLICATION_CATEGORIES = {
+    "academic": "Academicos",
+    "project": "Proyectos",
+    "business": "Profesionales",
+    "technical": "Tecnicos",
+    "other": "Otros",
+}
+
+
+def ascii_slug(value: object) -> str:
+    """Return a stable filesystem-safe ASCII slug for a confirmed identity."""
+    normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+    return slug or "documento"
 
 # Metadata report.yml must carry, per route. Only Route A may demand the
 # academic machinery (`subject`, `teacher`); the other routes are forbidden by
@@ -268,6 +285,16 @@ class ReportConfig:
         if "publish_global" in self.raw:
             return bool(self.raw.get("publish_global"))
         return not self.folder.name.startswith("_")
+
+    @property
+    def publication_category(self) -> str:
+        """Documents category derived only from the confirmed route."""
+        return PUBLICATION_CATEGORIES[self.route]
+
+    @property
+    def document_slug(self) -> str:
+        """Stable ASCII identity derived from the confirmed report title."""
+        return ascii_slug(self.metadata.get("title") or self.folder.name)
 
     @property
     def body_path(self) -> Path:

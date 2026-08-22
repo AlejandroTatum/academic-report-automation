@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from publish_pdf import PublicationError, publish_validated_pdf
 from report_config import load_report_config
 from validate_report import validate
 
@@ -120,6 +121,19 @@ def main() -> None:
         print("VALIDATION PASSED WITH WARNINGS:\n- " + "\n- ".join(result.warnings))
     else:
         print("VALIDATION PASSED")
+
+    if config.output_format == "pdf":
+        try:
+            publication = publish_validated_pdf(
+                config.pdf_path, config.publication_category, config.document_slug
+            )
+        except PublicationError as exc:
+            raise SystemExit(f"PDF PUBLICATION FAILED: {exc}") from exc
+        action = "PUBLICADO" if publication.created else "REUTILIZADO"
+        print(
+            f"PDF_{action}: {publication.path} (SHA-256: {publication.sha256}; "
+            "copia técnicamente validada, sin VISUAL_PASS, HUMAN_REVIEW ni READY_TO_SUBMIT)"
+        )
     print(f"Reporte: {config.quality_report_path}")
 
 

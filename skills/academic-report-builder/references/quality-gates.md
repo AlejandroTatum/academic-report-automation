@@ -174,4 +174,4 @@ Reject:
 - Visible evidence overrides automation. Any visible blocking defect produces `VISUAL_FAIL`, even when all scripts report PASS or zero warnings.
 - After any correction, rebuild the whole artifact and rerun validators, readback, contact-sheet inspection, and applicable full-size checks. Never validate only changed pages.
 - Compare page count before and after correction. Investigate every material increase or decrease for table reflow, orphan headings, blank/semivacant pages, lost content, or altered section boundaries; record the explanation.
-- Grant `VISUAL_PASS` only when all applicable checks pass on the same immutable artifact. If inspection is incomplete, report `REVIEW_REQUIRED` without visual approval and do not expose final delivery paths.
+- Grant `VISUAL_PASS` only when all applicable checks pass on the same immutable artifact. If inspection is incomplete, report `REVIEW_REQUIRED` without visual approval. A prior automatic versioned PDF publication may be reported as a technically validated copy, never as human-approved final delivery.

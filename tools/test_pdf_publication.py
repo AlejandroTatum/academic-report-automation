@@ -10,10 +10,13 @@ the build output itself became the obvious thing to write — and
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 import types
 from pathlib import Path
+
+import publish_pdf
 
 import pytest
 
@@ -103,6 +106,67 @@ def test_distinct_destination_still_receives_a_copy(
     assert config.pdf_path.exists()
     assert config.pdf_path != build_dir / "main.pdf"
     assert config.pdf_path.read_bytes() == (build_dir / "main.pdf").read_bytes()
+
+
+def _validated_pdf(tmp_path: Path, content: bytes = b"%PDF-1.7\nvalidated content\n") -> Path:
+    source = tmp_path / "work" / "validated.pdf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(content)
+    return source
+
+
+def test_first_publication_is_v001_pdf_only_and_hash_verified(tmp_path: Path) -> None:
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+
+    published = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+
+    assert published.path == documents / "Tecnicos" / "informe" / "informe-v001.pdf"
+    assert published.created is True
+    assert published.path.exists()
+    assert published.sha256 == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert list(published.path.parent.iterdir()) == [published.path]
+
+
+def test_unchanged_hash_reuses_existing_version(tmp_path: Path) -> None:
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+    first = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+
+    reused = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+
+    assert reused.path == first.path
+    assert reused.created is False
+    assert list(first.path.parent.glob("*.pdf")) == [first.path]
+
+
+def test_changed_hash_publishes_next_monotonic_version(tmp_path: Path) -> None:
+    source = _validated_pdf(tmp_path, b"%PDF-1.7\nfirst\n")
+    documents = tmp_path / "Documents"
+    publish_pdf.publish_validated_pdf(source, "Academicos", "informe", documents)
+    source.write_bytes(b"%PDF-1.7\nsecond\n")
+
+    published = publish_pdf.publish_validated_pdf(source, "Academicos", "informe", documents)
+
+    assert published.path.name == "informe-v002.pdf"
+    assert published.path.read_bytes() == source.read_bytes()
+    assert {path.name for path in published.path.parent.iterdir()} == {"informe-v001.pdf", "informe-v002.pdf"}
+
+
+def test_publication_rejects_non_pdf_source_and_non_pdf_output_folder_contents(tmp_path: Path) -> None:
+    source = tmp_path / "validated.docx"
+    source.write_bytes(b"not a pdf")
+    documents = tmp_path / "Documents"
+
+    with pytest.raises(publish_pdf.PublicationError):
+        publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+
+    source = _validated_pdf(tmp_path)
+    destination = documents / "Tecnicos" / "informe"
+    destination.mkdir(parents=True)
+    (destination / "audit.txt").write_text("not a PDF", encoding="utf-8")
+    with pytest.raises(publish_pdf.PublicationError):
+        publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
 
 
 def test_global_publication_still_runs_when_the_pdf_is_the_build_output(

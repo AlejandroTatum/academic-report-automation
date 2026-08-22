@@ -51,6 +51,9 @@ class FakeReportConfig:
         self.raw = raw or {}
         self.type = self.raw.get("type", "essay")
         self.quality_report_path = self.folder / "backups" / "quality_report.md"
+        self.pdf_path = self.folder / "outputs" / "report.pdf"
+        self.publication_category = "Tecnicos"
+        self.document_slug = "informe"
 
     @property
     def output_format(self) -> str:
@@ -270,6 +273,7 @@ class TestMain:
             patch("build_report_auto.load_report_config", return_value=config),
             patch("build_report_auto.build_backend") as mock_build,
             patch("build_report_auto.validate", return_value=validation or FakeValidation()) as mock_validate,
+            patch("build_report_auto.publish_validated_pdf"),
         ):
             main()
 
@@ -334,6 +338,42 @@ class TestMain:
         assert mutated_config.output_format == "tex"
 
     # -- Validation errors ---------------------------------------------------
+
+    def test_publication_runs_after_build_and_validation_pass(self) -> None:
+        config = FakeReportConfig(backend="latex")
+        argv = ["build_report_auto.py", "/tmp/fake-report"]
+        events: list[str] = []
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("build_report_auto.load_report_config", return_value=config),
+            patch("build_report_auto.build_backend", side_effect=lambda *_: events.append("build")),
+            patch("build_report_auto.validate", side_effect=lambda _: events.append("validate") or FakeValidation()),
+            patch(
+                "build_report_auto.publish_validated_pdf",
+                side_effect=lambda *_: events.append("publish") or MagicMock(created=True, path=Path("/tmp/published.pdf"), sha256="hash"),
+            ) as publish,
+        ):
+            main()
+
+        publish.assert_called_once_with(config.pdf_path, config.publication_category, config.document_slug)
+        assert events == ["build", "validate", "publish"]
+
+    def test_publication_never_runs_after_validation_failure(self) -> None:
+        config = FakeReportConfig(backend="latex")
+        argv = ["build_report_auto.py", "/tmp/fake-report"]
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("build_report_auto.load_report_config", return_value=config),
+            patch("build_report_auto.build_backend"),
+            patch("build_report_auto.validate", return_value=FakeValidation(errors=["falló"])),
+            patch("build_report_auto.publish_validated_pdf") as publish,
+        ):
+            with pytest.raises(SystemExit):
+                main()
+
+        publish.assert_not_called()
 
     def test_validation_errors_cause_systemexit(self) -> None:
         """When validate returns errors, main() raises SystemExit with a failure message."""

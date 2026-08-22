@@ -29,16 +29,23 @@ Use `latex` for long textual/mixed reports, `visual` for concept maps, infograph
 
 ### Clean delivery to the user's Documents folder
 
-After all gates pass, copy the approved final PDF/DOCX to the delivery folder
-chosen for this run — a dedicated user Documents destination, never the work
-paths. The destination is explicit and configurable per run (for example
-`~/Documents/Entregas_Academicas/<slug>/`); record the selected path in the run
-output. Only clean final documents may exist there: no manifests, sources,
-audits, or intermediates. See `clean-delivery.md`.
+After successful build and configured technical validation, `build_report_auto.py`
+automatically publishes the PDF at
+`~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`.
+No `delivery_pdf:` configuration or user-selected path is needed. Category derives
+from confirmed route (`technical -> Tecnicos`, `academic -> Academicos`, with
+project/professional/other equivalents); slug is stable ASCII from confirmed title
+or document identity. The first unique artifact is `v001`; matching SHA-256 reuses
+an existing version, while changed content atomically creates the next monotonic
+version and verifies hash equality. The delivery folder contains PDFs only: no
+manifests, sources, audits, or intermediates. Publication is technical-copy status,
+not `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`. See `clean-delivery.md`.
 
 `visual_pdf_auditor.py` is manual unless `report.yml` contains `validators: {visual_pdf: true}`. It produces `visual_qa.md` and `contact_sheet.png`; both are precheck evidence, not approval. Automatic execution inside `validate_report.py` does not change this authority boundary.
 
 Required flow:
+
+`BUILD_PASS -> VALIDATION_PASS -> VERSIONED_PDF_PUBLISHED_OR_REUSED`
 
 `BUILD_PASS -> VALIDATION_PASS -> AUDITOR_PRECHECK -> RENDERED_READBACK -> SEMANTIC_VISUAL_INSPECTION -> VISUAL_PASS -> HUMAN_REVIEW -> READY_TO_SUBMIT`
 
@@ -60,6 +67,7 @@ The checked-in `config/academic-pipeline.yml` is only a backend/capability templ
 | --- | --- |
 | `BUILD_PASS` | Compilation/export completed without errors. |
 | `VALIDATION_PASS` | Active validators pass; rendered semantics and layout remain unproven. |
+| `VERSIONED_PDF_PUBLISHED_OR_REUSED` | The automatic PDF-only Documents version was atomically published (or hash-matched and reused) after technical validation; it is not approval. |
 | `VISUAL_PASS` | Automated prechecks, rendered readback, direct contact-sheet inspection, and applicable full-size checks pass on one immutable artifact. |
 | `HUMAN_REVIEW` | Reviewer identity, APPROVE decision, UTC timestamp, gate receipt IDs, and artifact hashes are recorded. |
 | `READY_TO_SUBMIT` | Every previous gate passes and approved artifacts remain unchanged. |

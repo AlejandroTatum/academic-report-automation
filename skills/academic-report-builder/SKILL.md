@@ -28,10 +28,10 @@ the run; there is no default document type or academic fallback.
 ## Hard Rules
 
 - Validate inputs, source binding, intermediate output, export, and final PDF/DOCX; stop at the earliest failed gate.
-- Deliver only clean finals: copy the approved final PDF/DOCX to the Documents delivery folder declared for the run; sources, manifests, audits, and intermediates stay in their repo-defined work paths and never enter the delivery folder. See `references/clean-delivery.md`.
+- After configured technical validation passes, automatically publish the PDF at `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`; category comes from the confirmed route and slug from confirmed title. That folder contains PDFs only. Publication is not approval. See `references/clean-delivery.md`.
 - No script, validator, or auditor ever grants `VISUAL_PASS`. `visual_pdf_auditor.py` PASS is only `AUDITOR_PRECHECK` evidence.
 - Only independent semantic inspection of the assembled report may grant report-level `VISUAL_PASS`; human review after immutable hashes is required for `READY_TO_SUBMIT`.
-- Never ghostwrite a final submission or expose final paths before semantic inspection and approval. Preserve privacy, provenance, citations, and consent boundaries.
+- Never ghostwrite a final submission. An automatically published technically validated PDF may be reported, but semantic inspection and human approval remain required for `VISUAL_PASS` and `READY_TO_SUBMIT`. Preserve privacy, provenance, citations, and consent boundaries.
 - Use `academic-visual-builder` for figures, then inspect them again in the assembled report. Confirm the visual direction changes hierarchy and composition, not only decoration.
 
 ### Academic Route Only
@@ -51,7 +51,7 @@ style, and validate the rendered bibliography.
 | Visual-heavy section | Build and validate figures, then inspect the assembled report. |
 | Unsupported backend/output | Stop; never substitute silently. |
 | Script PASS contradicts visible evidence | Record `VISUAL_FAIL`, correct, rebuild, and repeat all gates. |
-| Inspection incomplete | Return `REVIEW_REQUIRED`, without `VISUAL_PASS` or final paths. |
+| Inspection incomplete | Return `REVIEW_REQUIRED`, without `VISUAL_PASS`; a prior automatic PDF publication remains technical-copy status only. |
 
 ## Execution Steps
 
@@ -66,11 +66,11 @@ style, and validate the rendered bibliography.
 
 Return the confirmed Document Contract, route, each gate, hashes, page-count delta,
 readback and direct-inspection evidence, defects, source/citation, privacy, visual
-manifest, and review assumptions. Return final paths only after approval.
+manifest, and review assumptions. The automatic versioned PDF path may be returned after technical validation; return `READY_TO_SUBMIT` only after approval.
 
 ## References
 
-- `references/clean-delivery.md` — delivery-folder contract: only clean finals, configurable per run.
+- `references/clean-delivery.md` — automatic versioned PDF publication contract.
 - `references/document-intake.md` — mandatory confirmations and contract block.
 - `references/document-routing.md` — routes and route-specific loading.
 - `references/automation-contract.md` — canonical commands, evidence gates, and readiness receipts.

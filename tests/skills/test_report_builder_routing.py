@@ -311,8 +311,8 @@ def test_clean_delivery_reference_exists() -> None:
 
 def test_clean_delivery_keeps_evidence_out_of_delivery_folder() -> None:
     text = read(DELIVERY_MD)
-    assert "only approved final documents" in text.lower(), (
-        "the delivery folder must be limited to clean finals"
+    assert "pdfs only" in text.lower(), (
+        "the delivery folder must be limited to clean PDFs"
     )
     for forbidden in ("manifest", "report.yml", "sources.bib", "audit"):
         assert forbidden in text.lower(), (
@@ -320,14 +320,12 @@ def test_clean_delivery_keeps_evidence_out_of_delivery_folder() -> None:
         )
 
 
-def test_clean_delivery_destination_is_configurable_per_run() -> None:
+def test_clean_delivery_destination_is_automatic_and_versioned() -> None:
     text = read(DELIVERY_MD)
-    assert "configurable per run" in text.lower(), (
-        "the destination must be explicit per run, never a hardcoded default"
-    )
-    assert "hardcode" in text.lower(), (
-        "the contract must forbid hardcoding one guide path as the universal default"
-    )
+    assert "no `delivery_pdf:`" in text.lower()
+    assert "~/documents/<automatic-category>/<document-slug>/" in text.lower()
+    assert "v001" in text.lower()
+    assert "sha-256" in text.lower()
 
 
 def test_skill_references_clean_delivery_contract(skill: str) -> None:
