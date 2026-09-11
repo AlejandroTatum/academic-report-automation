@@ -4,7 +4,8 @@ Every ``doc_status`` phase test starts from the same on-disk shapes, so the
 builders live here once instead of being copy-pasted per file. They are plain
 functions rather than fixtures: a test may call a builder as many times as its
 scenario needs. Slice 2a adds the intake/research/preview shapes; slice 2b-i adds
-the approval shape and its marker builder.
+the approval shape and its marker builder; slice 2b-ii adds the final-PDF builder
+and the timestamp helper its mtime comparison needs.
 
 The helpers never touch production code. ``doc_status`` stays a pure, read-only
 derivation; these functions only materialize the artifacts it reads and the
@@ -13,6 +14,7 @@ derivation; these functions only materialize the artifacts it reads and the
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 from report_config import ReportConfig, read_yaml
@@ -140,3 +142,37 @@ def _marker_text(folder: Path, text: str) -> Path:
     marker = folder / "approval.yml"
     marker.write_text(text, encoding="utf-8")
     return marker
+
+
+# ---------------------------------------------------------------------------
+# Late-phase builders (slice 2b-ii): generate
+# ---------------------------------------------------------------------------
+
+
+def _mtime(path: Path, value: float) -> Path:
+    """Pin ``path``'s modification time, so mtime ordering is explicit.
+
+    The generate phase compares the final PDF against ``approval.yml`` by mtime;
+    tests fix both sides instead of depending on wall-clock ordering or the
+    filesystem's timestamp resolution.
+    """
+    os.utime(path, (value, value))
+    return path
+
+
+def _pdf(folder: Path, *, path: str = "outputs/report.pdf", mtime: float | None = None) -> Path:
+    """Write the final PDF under ``folder`` and return its path.
+
+    ``path`` mirrors the ``pdf:`` key the derivation resolves through
+    ``ReportConfig``; it defaults to the same ``outputs/report.pdf`` the config
+    uses when the report declares nothing. ``mtime`` pins the timestamp the
+    generate phase compares against the approval marker.
+    """
+    target = Path(path)
+    if not target.is_absolute():
+        target = folder / target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    if mtime is not None:
+        _mtime(target, mtime)
+    return target

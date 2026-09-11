@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Derive the document-workflow phases from on-disk artifacts (read-only).
 
-Slice 2b-i of the status layer: the phase vocabulary, the two value dataclasses and
-the intake/research/preview/approval derivations. Each function answers for exactly
-one phase and returns a raw ``done|pending|blocked`` token; there is no composition,
-renderer or CLI yet, so no function here has to know what follows the phase it
-answers for. The route projection (``current``/``next``/``gate``) and the
-generate/validate/deliver phases arrive in slices 2b-ii/2b-iii/2c.
+Slice 2b-ii of the status layer: the phase vocabulary, the two value dataclasses and
+the intake/research/preview/approval/generate derivations. Each function answers for
+exactly one phase and returns a raw ``done|pending|blocked`` token; there is no
+composition, renderer or CLI yet, so no function here has to know what follows the
+phase it answers for. The route projection (``current``/``next``/``gate``) and the
+validate/deliver phases arrive in slices 2b-iii/2c.
 
 Approval delegates to ``approval_marker.approval_state`` -- the same predicate
 ``publish_validated_pdf`` enforces -- so routing and the irreversible publisher
@@ -103,3 +103,23 @@ def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path |
     if state.state == "absent":
         return PhaseState("approval", PENDING, state.detail)
     return PhaseState("approval", BLOCKED, state.detail, state.reason)
+
+
+def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Report whether the final PDF is the one the approval marker authorized.
+
+    Bounded to the mtime comparison the design specifies: the artifact is ``done``
+    when ``config.pdf_path`` exists and is not older than ``approval.yml``. A missing
+    PDF, a missing marker, or a PDF that predates the marker is ordinary progress --
+    generate is never ``blocked``; a stale build simply has to be redone. Only the
+    timestamps are read: nothing is written, hashed or repaired here.
+    """
+    pdf = config.pdf_path
+    if not pdf.is_file():
+        return PhaseState("generate", PENDING, "final PDF missing")
+    marker = folder / "approval.yml"
+    if not marker.is_file():
+        return PhaseState("generate", PENDING, "approval.yml missing")
+    if pdf.stat().st_mtime >= marker.stat().st_mtime:
+        return PhaseState("generate", DONE, f"final PDF {pdf.name} is not older than approval.yml")
+    return PhaseState("generate", PENDING, f"final PDF {pdf.name} older than approval.yml")
