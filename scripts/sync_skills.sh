@@ -15,12 +15,14 @@ SRC="$REPO_ROOT/skills"
 TARGETS=(
   "$HOME/.config/opencode/skills"
   "$HOME/.claude/skills"
+  "$HOME/.codex/skills"
 )
 
 SKILLS=(
   academic-report-builder
   academic-visual-builder
   research-workflow
+  document-workflow
 )
 
 APPLY=0
@@ -63,6 +65,15 @@ for target in "${TARGETS[@]}"; do
       "$SRC/$skill/" "$target/$skill/"
   done
 done
+
+# Refresh the Gentle AI skill registry so runtimes pick up the new skill list.
+# Optional tooling: the binary may be absent (or fail) on any machine running
+# the post-checkout hook, so probe first and never abort under `set -euo pipefail`.
+if [[ $APPLY -eq 1 ]]; then
+  command -v gentle-ai >/dev/null && {
+    gentle-ai skill-registry refresh || echo "!! skill-registry refresh failed (non-fatal)" >&2
+  }
+fi
 
 if [[ $APPLY -eq 0 ]]; then
   echo
