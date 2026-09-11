@@ -129,6 +129,46 @@ def test_referenced_paths_resolve() -> None:
     assert not unresolved, f"unresolved phase references: {', '.join(unresolved)}"
 
 
+def test_approval_reference_contract() -> None:
+    """Slice 3b-i owns `approval.md`: the human gate, its marker schema, and its refusal to infer consent.
+
+    The reference must exist on disk, name the three marker keys, and state that
+    silence or an agent-side inference never produces `approval.yml`.
+    """
+    path = SKILL_ROOT / "references" / "approval.md"
+    assert path.is_file(), f"missing required contract file: {path}"
+    text = read(path)
+    for key in ("preview_sha256", "approved_at", "approved_by"):
+        assert key in text, f"approval.md must name the marker key {key}"
+    assert "approval.yml" in text, "approval.md must name the marker file"
+    flat = re.sub(r"\s+", " ", text).lower()
+    for phrase in ("silence", "inferred yes", "agent decision"):
+        assert phrase in flat, f"approval.md must name `{phrase}` as a non-consent signal"
+    assert re.search(r"never (?:produce|produces|writes|creates)[^.]*approval\.yml", flat), (
+        "approval.md must state that a non-explicit answer never produces approval.yml"
+    )
+    assert "human gate" in flat, "approval.md must identify the human gate"
+    assert "lossless" in flat, "approval.md must name the lossless prompt contract"
+    assert not re.search(r"^Executor:", text, re.MULTILINE), (
+        "approval.md is the human gate: it must declare no executor"
+    )
+
+
+def test_generate_reference_forbids_unapproved_build() -> None:
+    """Slice 3b-i extends `generate.md` with the approval-done precondition.
+
+    Generation is the first phase that spends build effort on approved bytes, so the
+    reference must state the precondition and forbid acting before it holds.
+    """
+    text = read(SKILL_ROOT / "references" / "generate.md")
+    flat = re.sub(r"\s+", " ", text).lower()
+    assert "approval: done" in flat, "generate.md must name the `approval: done` precondition"
+    assert "preview_sha256" in flat, "generate.md must name the hash the approval binds to"
+    assert re.search(r"(?:never|must not|do not|does not) build (?:before|until)", flat), (
+        "generate.md must forbid building before approval is done"
+    )
+
+
 def test_phase_references_name_executor_and_single_artifact() -> None:
     """Each owned reference declares one executor and exactly one artifact.
 

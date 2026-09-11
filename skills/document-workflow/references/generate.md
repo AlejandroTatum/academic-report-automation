@@ -7,6 +7,16 @@ Load this reference only when `doc_status` returns `next: generate`. The executo
 `academic-report-builder`, using its own `references/automation-contract.md` for the
 canonical build and validation commands; this skill never builds the document itself.
 
+## Precondition
+
+Generation runs only when the routed block reports `approval: done` for the work
+folder: `approval.yml` exists and its `preview_sha256` matches the current
+`preview.md`. An absent, stale, or malformed marker keeps `approval` `pending` or
+`blocked`, so `doc_status` never returns `next: generate` and this reference must not
+be loaded or acted on. Never build before approval is `done`: a build made on an
+unapproved preview is discarded at publication, where the publisher re-checks the
+marker and refuses to deliver anything.
+
 ## Contract
 
 Generation exists to turn the confirmed report content into the single final PDF the
@@ -32,6 +42,8 @@ the publisher belongs to `references/deliver.md`, and approval state is derived 
 ## Never
 
 - Do not publish, copy, or version the PDF: generate produces exactly one artifact.
+- Do not build before approval is `done`; an unapproved preview never produces the
+  final PDF.
 - Do not write `approval.yml`. No process creates, repairs, or refreshes a marker.
 - Do not claim `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT` from a build or a
   validator exit code.
