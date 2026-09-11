@@ -1,0 +1,30 @@
+schema: gentle-ai.sdd-preproposal/v1
+change: document-workflow-skill
+revision: 2
+exploration:
+  outcome: done
+  reference: openspec/changes/document-workflow-skill/exploration.md
+research:
+  selected: true
+  request: terminal-facing status presentation (route, phase, next, gate, handoff)
+  classes: [documentation, open-web]
+  admission: granted
+  outcome: done
+  reference: openspec/changes/document-workflow-skill/research.md
+  revision: 1
+evidence_references:
+  openspec:
+    - openspec/changes/document-workflow-skill/exploration.md
+    - openspec/changes/document-workflow-skill/research.md
+  engram:
+    - architecture/document-workflow-phases
+    - product/document-workflow-approval-gate
+    - sdd/document-workflow-skill/research-scope
+product_decisions:
+  approval_gate: confirmed  # single confirmation after content preview (option A)
+  pdf_aesthetics: deferred  # out of scope, future change
+  status_structure: confirmed  # flat gh-style sections: route line + flat bullets + Next + Gate; no tables, no nested headers
+  status_symbols: confirmed  # ASCII tokens done|current|pending|blocked
+  status_progress: confirmed  # full route line with current phase in [brackets]
+  status_gate_visibility: confirmed  # gate/handoff line front-loaded before the summary
+proposal_ready: true

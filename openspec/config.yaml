@@ -1,0 +1,68 @@
+# OpenSpec SDD configuration — academic-report-automation
+# Initialized in linked worktree `pi`. No product implementation performed.
+
+project:
+  name: academic-report-automation
+  description: >-
+    Python academic report automation toolkit: Markdown/YAML report content,
+    canonical LaTeX pipeline (tools/build_report_auto.py) and preview HTML/WeasyPrint
+    pipeline (tools/build_report.py), DOCX generation, IEEE reference validation,
+    visual asset builder, and agent skills (academic-report-builder,
+    academic-visual-builder, research-workflow).
+  repository_layout:
+    tools/: build pipelines + pytest suites (test_*.py)
+    tests/skills/: skill contract and routing tests
+    skills/: agent skills (do not modify without explicit scope)
+    templates/, assets/, examples/: existing deliverable assets — preserve all
+    scripts/sync_skills.sh: skill runtime sync (uncommitted fix, preserve)
+
+session_preflight:  # canonical, parent-resolved; not inferred
+  execution: auto
+  artifact_store: openspec
+  delivery_strategy: auto-chain
+  review_budget_lines: 400
+  chain_strategy: feature-branch-chain
+  model_routing: saved-confirmed
+
+strict_tdd: true
+testing:
+  runner: pytest
+  command: /home/alejo/devwork/.projects/apps/academic-report-automation/.venv/bin/python -m pytest tools/ tests/
+  interpreter_note: >-
+    Worktree has no .venv; use the original checkout's interpreter at
+    /home/alejo/devwork/.projects/apps/academic-report-automation/.venv/bin/python.
+  conventions:
+    - Tests live beside code in tools/test_*.py and in tests/.
+    - Strict TDD phases: RED, GREEN, TRIANGULATE, REFACTOR; record evidence.
+    - Never invent or report unexecuted test runs.
+
+conventions:
+  language: Technical artifacts in English; UI/template Spanish content is legacy domain data.
+  python: Python 3, stdlib + requirements.txt (markdown, weasyprint, python-docx, pandas, matplotlib, altair, vl-convert-python, plotly, PyYAML, etc.).
+  node_optional: Mermaid/Playwright/ECharts via package.json for visual assets only.
+  routing: >-
+    Two Markdown pipelines are NOT interchangeable; build_report_auto.py is
+    canonical for deliverables (covers, bibliography, validation gates).
+  university_scope: >-
+    University-first (UNL assets/templates) but not exclusive: personal and
+    programming/technical documents are retained routes. University identity
+    (logos, covers, ensayo_unl templates) must not leak into other routes.
+
+active_change:
+  id: document-workflow-orchestrator
+  summary: >-
+    University-first but not exclusive document workflow; preserve ALL existing
+    assets/logos/covers/templates/profiles; adaptive intake asks missing
+    consequential questions from known input/config; optional need-driven
+    research with traced evidence; generation, semantic/rendered review,
+    clean delivery.
+  constraints:
+    - No redesign implementation before planning gates.
+    - University identity must not leak into non-university routes.
+    - Preserve uncommitted sync fix (scripts/sync_skills.sh, tests/skills/test_sync_skills.py).
+  status: tasks-authored  # proposal/spec/design/tasks authored; documentation-only metadata, never runtime authority
+
+phase_rules:
+  - Human-controlled gates preserved: consent, security, destructive/publishing, ambiguous scope, size:exception.
+  - ask-on-risk pauses for delivery decisions at review-budget risk; no inferred chains or exceptions.
+  - Single-threaded writes; parent owns delegation; child subagents do not spawn subagents.
