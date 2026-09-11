@@ -100,7 +100,7 @@ Must leave green: full suite; no skill or script touched; `doc_status` never she
 
 Files: `skills/document-workflow/SKILL.md` (new), `tests/skills/test_document_workflow_contract.py` (new). Recalibrated forecast ~280 lines at observed density — pre-split from 3a at the skeleton/references seam because the recalibrated whole-slice forecast (~560) exceeds the hard 400 budget. Staging: only this slice's hunks of `tests/skills/test_document_workflow_contract.py` are staged (`git add -p` if needed).
 
-- [ ] 3.1 RED `tests/skills/test_document_workflow_contract.py::test_required_files_and_frontmatter` — `SKILL.md` + 7 references exist; frontmatter has `name`, `description` with `Trigger:`, `license: Apache-2.0`, `metadata.{author,version,scope}`.
+- [ ] 3.1 RED `tests/skills/test_document_workflow_contract.py::test_required_files_and_frontmatter` — `SKILL.md` exists; frontmatter has `name`, `description` with `Trigger:`, `license: Apache-2.0`, `metadata.{author,version,scope}`. Reference-file existence is verified in the slice that owns each reference.
 - [ ] 3.2 GREEN `skills/document-workflow/SKILL.md` — frontmatter and the `doc_status -> next -> reference -> delegate -> re-run` loop with the phase/reference/executor routing table.
 - [ ] 3.3 RED `tests/skills/test_document_workflow_contract.py::test_status_template_contract` — the fenced human-block template has no markdown tables, no nested headers, one route line with `[current]`, ASCII-only tokens.
 - [ ] 3.4 GREEN `skills/document-workflow/SKILL.md` — embed the exact fenced human-block template (Gate/Route/Summary/Next) from design.
@@ -111,7 +111,7 @@ Must leave green: new contract test plus every existing test, unchanged.
 
 Files: `skills/document-workflow/references/{intake,research,preview,generate,deliver}.md` (new), `tests/skills/test_document_workflow_contract.py`. Recalibrated forecast ~280 lines at observed density. Staging: only this slice's hunks of `tests/skills/test_document_workflow_contract.py` are staged (`git add -p` if needed).
 
-- [ ] 3.5 RED `tests/skills/test_document_workflow_contract.py::test_referenced_paths_resolve` — every executor path named in `SKILL.md` resolves on disk.
+- [ ] 3.5 RED `tests/skills/test_document_workflow_contract.py::test_referenced_paths_resolve` — the five executor references owned by Slice 3a-ii (`intake`, `research`, `preview`, `generate`, `deliver`) resolve on disk; `approval` and `validate` existence is verified by their owning contract tests in Slices 3b-i and 3b-ii.
 - [ ] 3.6 GREEN `skills/document-workflow/references/{intake,research,preview,generate,deliver}.md` — each names its executor and the single artifact it must produce.
 
 Must leave green: new contract test plus every existing test, unchanged.
