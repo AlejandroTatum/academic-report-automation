@@ -169,6 +169,53 @@ def test_generate_reference_forbids_unapproved_build() -> None:
     )
 
 
+def test_validate_reference_both_branches() -> None:
+    """Slice 3b-ii owns `validate.md`: both validation branches behind one gate set.
+
+    The reference must exist on disk, name the read-only RDD probe
+    (`gentle-ai review mode status`) and its `mode: rdd` receipt, name the fallback
+    rendered chain with `mode: fallback`, and route the `unknown` status to that
+    fallback without lowering the shared gate set.
+    """
+    path = SKILL_ROOT / "references" / "validate.md"
+    assert path.is_file(), f"missing required contract file: {path}"
+    text = read(path)
+    flat = re.sub(r"\s+", " ", text).lower()
+
+    assert re.search(r"^Artifact: `reports/<wf>/validation\.yml`$", text, re.MULTILINE), (
+        "validate.md must declare its single artifact `reports/<wf>/validation.yml`"
+    )
+    assert "gentle-ai review mode status" in flat, (
+        "validate.md must name the read-only RDD probe `gentle-ai review mode status`"
+    )
+    assert "mode: rdd" in flat, "validate.md must label the RDD branch `mode: rdd`"
+    assert "mode: fallback" in flat, (
+        "validate.md must label the fallback branch `mode: fallback`"
+    )
+    for step in ("validate_report.py", "visual_pdf_auditor.py", "semantic"):
+        assert step in flat, f"validate.md must name the fallback step `{step}`"
+    gates = ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW", "READY_TO_SUBMIT")
+    for gate in gates:
+        assert gate in text, f"validate.md must name the shared gate {gate}"
+    assert re.search(r"unknown[^.]{0,200}fallback", flat), (
+        "validate.md must route an unknown RDD status to the fallback chain"
+    )
+    assert re.search(r"never (?:enable|enables|activate|activates|turn on|turns on)[^.]*rdd", flat), (
+        "validate.md must state that RDD is never enabled on the user's behalf"
+    )
+    assert "backups/quality_report.md" in flat, (
+        "validate.md must name the fallback evidence path"
+    )
+    assert "next: validate" in flat, "validate.md must state the phase it owns"
+    assert "identical gate set" in flat, (
+        "validate.md must state that both branches enforce the identical gate set"
+    )
+    assert "read-only" in flat, "validate.md must state that the RDD probe is read-only"
+    assert re.search(r"mode: fallback[^.]*backups/quality_report\.md", flat), (
+        "validate.md must couple the fallback receipt mode to its evidence path"
+    )
+
+
 def test_phase_references_name_executor_and_single_artifact() -> None:
     """Each owned reference declares one executor and exactly one artifact.
 
