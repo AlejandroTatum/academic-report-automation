@@ -1,3 +1,57 @@
+```yaml
+schema: gentle-ai.verify-result/v1
+evidence_revision: sha256:8be2e340f3bd18865a02cc783bae61239ae4cbd13562ca438ee10f47cac03ace
+verdict: pass
+blockers: 0
+critical_findings: 0
+requirements: 9/9
+scenarios: 28/28
+test_command: .venv/bin/python -m pytest tools/ tests/ -q
+test_exit_code: 0
+test_output_hash: sha256:8b32b1f537f04f850f2b52e744ed55bcb79bc5ec6757f878aac3572b88a965b1
+build_command: .venv/bin/python -m compileall -q tools/
+build_exit_code: 0
+build_output_hash: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+## Verification Report
+
+**Change**: `document-workflow-skill`
+**Version**: N/A
+**Mode**: Strict TDD
+
+### Envelope evidence
+
+| Field | Source |
+|-------|--------|
+| `evidence_revision` | `sha256sum` of `git diff 0d9c4df 39fd3fa` (the exact implementation diff verified below) |
+| `test_output_hash` | `sha256sum` of the captured stdout+stderr of `test_command` (800 passed, exit 0) |
+| `build_output_hash` | `sha256sum` of the captured (empty) output of `build_command` (exit 0) |
+| `requirements: 9/9` | 7 in `specs/document-workflow-orchestration/spec.md` + 2 in `specs/document-workflow/spec.md` |
+| `scenarios: 28/28` | 22 + 6 across the same two specs |
+
+### Completeness
+| Metric | Value |
+|--------|-------|
+| Tasks total | 58 |
+| Tasks complete | 58 |
+| Tasks incomplete | 0 |
+
+### Build & Tests Execution
+**Build**: ✅ Passed
+```text
+.venv/bin/python -m compileall -q tools/  → exit 0, no output
+```
+
+**Tests**: ✅ 800 passed / ❌ 0 failed / ⚠️ 0 skipped
+```text
+.venv/bin/python -m pytest tools/ tests/ -q  → 800 passed, exit 0
+```
+
+**Coverage**: ➖ Not available
+
+---
+
 # Verify Report: Document Workflow Orchestration Skill
 
 **Change**: `document-workflow-skill`
