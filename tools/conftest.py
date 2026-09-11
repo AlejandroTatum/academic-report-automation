@@ -5,7 +5,8 @@ builders live here once instead of being copy-pasted per file. They are plain
 functions rather than fixtures: a test may call a builder as many times as its
 scenario needs. Slice 2a adds the intake/research/preview shapes; slice 2b-i adds
 the approval shape and its marker builder; slice 2b-ii adds the final-PDF builder
-and the timestamp helper its mtime comparison needs.
+and the timestamp helper its mtime comparison needs; slice 2b-iii adds the
+validation receipt and the published-PDF builder the validate/deliver phases read.
 
 The helpers never touch production code. ``doc_status`` stays a pure, read-only
 derivation; these functions only materialize the artifacts it reads and the
@@ -22,6 +23,7 @@ from report_config import ReportConfig, read_yaml
 DEFAULT_PREVIEW = "# Content Preview: Informe\n\nCuerpo.\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
+VALIDATION_SCHEMA = "academic.doc-validation/v1"
 
 # Route-mandatory metadata for the default (academic) route the builders use.
 _DEFAULT_METADATA = {
@@ -175,4 +177,73 @@ def _pdf(folder: Path, *, path: str = "outputs/report.pdf", mtime: float | None 
     target.write_bytes(b"%PDF-1.4\n%%EOF\n")
     if mtime is not None:
         _mtime(target, mtime)
+    return target
+
+
+# ---------------------------------------------------------------------------
+# Late-phase builders (slice 2b-iii): validate + deliver
+# ---------------------------------------------------------------------------
+
+
+def _validation(
+    folder: Path,
+    *,
+    pdf: Path | None = None,
+    result: str = "pass",
+    artifact_sha256: str | None = None,
+    drop: tuple[str, ...] = (),
+    **fields: object,
+) -> Path:
+    """Write ``validation.yml`` under ``folder`` and return its path.
+
+    Defaults produce the pass receipt for the folder's configured final PDF:
+    ``artifact_sha256`` is recomputed from that PDF unless a test overrides it
+    (the mismatched-hash shape) or drops the key. ``result`` switches the receipt
+    between pass and fail, mirroring the two branches the validate phase reads.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    target = pdf if pdf is not None else folder / "outputs" / "report.pdf"
+    body: dict[str, object] = {
+        "schema": VALIDATION_SCHEMA,
+        "artifact_sha256": artifact_sha256 or _sha256(target),
+        "result": result,
+        "mode": "fallback",
+        "gates": ["BUILD_PASS", "VALIDATION_PASS"],
+        "recorded_at": "2026-09-10T15:00:00Z",
+        "evidence": "backups/quality_report.md",
+    }
+    body.update(fields)
+    for key in drop:
+        body.pop(key, None)
+    path = folder / "validation.yml"
+    path.write_text(_yaml(body), encoding="utf-8")
+    return path
+
+
+def _published(
+    root: Path,
+    *,
+    category: str,
+    slug: str,
+    source: Path | None = None,
+    content: bytes | None = None,
+    version: int = 1,
+    name: str | None = None,
+) -> Path:
+    """Write a versioned PDF into ``root/<category>/<slug>/`` and return its path.
+
+    The deliver phase hash-matches the final PDF against every ``<slug>-vNNN.pdf``
+    in that folder. ``source`` copies an existing PDF byte-for-byte (the hash-equal
+    shape), while ``content`` writes explicit bytes (the mismatched shape);
+    ``version``/``name`` place the file at any version.
+    """
+    directory = root / category / slug
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / (name or f"{slug}-v{version:03d}.pdf")
+    if content is not None:
+        target.write_bytes(content)
+    elif source is not None:
+        target.write_bytes(Path(source).read_bytes())
+    else:
+        target.write_bytes(b"%PDF-1.4\n%%EOF\n")
     return target
