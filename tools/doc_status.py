@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Derive the early document-workflow phases from on-disk artifacts (read-only).
+"""Derive the document-workflow phases from on-disk artifacts (read-only).
 
-Slice 2a of the status layer: the phase vocabulary, the two value dataclasses and
-the intake/research/preview derivations. Each function answers for exactly one
-phase and returns a raw ``done|pending|blocked`` token; there is no composition,
+Slice 2b-i of the status layer: the phase vocabulary, the two value dataclasses and
+the intake/research/preview/approval derivations. Each function answers for exactly
+one phase and returns a raw ``done|pending|blocked`` token; there is no composition,
 renderer or CLI yet, so no function here has to know what follows the phase it
-answers for. The route projection (``current``/``next``/``gate``) and the late
-phases arrive in slices 2b/2c.
+answers for. The route projection (``current``/``next``/``gate``) and the
+generate/validate/deliver phases arrive in slices 2b-ii/2b-iii/2c.
+
+Approval delegates to ``approval_marker.approval_state`` -- the same predicate
+``publish_validated_pdf`` enforces -- so routing and the irreversible publisher
+cannot disagree about which marker is current.
 
 The module is pure and read-only. ``_phase_intake`` builds ``ReportConfig``
 directly instead of calling ``load_report_config``, which raises ``SystemExit``
@@ -17,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from approval_marker import approval_state
 from report_config import ReportConfig
 
 PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "deliver")
@@ -83,3 +88,18 @@ def _phase_preview(folder: Path, _config: ReportConfig, _documents_root: Path | 
     if not text.strip():
         return PhaseState("preview", PENDING, "preview.md empty")
     return PhaseState("preview", DONE, "preview.md present")
+
+
+def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Map the shared approval predicate onto one phase state.
+
+    Only ``current`` is ``done``: an absent marker stays ``pending`` so the route
+    waits at approval, and a stale or malformed marker is ``blocked`` with the
+    predicate's own bounded reason. The marker is never written here.
+    """
+    state = approval_state(folder)
+    if state.state == "current":
+        return PhaseState("approval", DONE, "approval.yml matches preview.md")
+    if state.state == "absent":
+        return PhaseState("approval", PENDING, state.detail)
+    return PhaseState("approval", BLOCKED, state.detail, state.reason)
