@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a defect in the pipeline, a skill contract, or the tooling.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report one root cause per issue. Group symptoms that share a root; do not open one issue per symptom.
+  - type: dropdown
+    id: root_class
+    attributes:
+      label: Root class
+      description: Which layer owns the defect.
+      options:
+        - Pipeline (tools/)
+        - Skill contract (skills/)
+        - Tooling (visual builder, auditor, validators)
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+      description: What was observed, stated as evidence, not as a diagnosis.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps or commands that reproduce the symptom.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What the contract, spec, or reference says should happen.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: File paths with line numbers, command output, hashes, or references to specs.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_fix
+    attributes:
+      label: Proposed fix
+      description: Optional. Prefer a fix that deletes or relaxes something over one that adds a state, flag, or gate.
+    validations:
+      required: false
