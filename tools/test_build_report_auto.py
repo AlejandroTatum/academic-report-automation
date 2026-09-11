@@ -338,6 +338,72 @@ class TestMain:
         assert mutated_config.raw.setdefault("validators", {})["pdf_layout"] is False
         assert mutated_config.output_format == "tex"
 
+    def test_validate_only_refuses_publication_pending_approval(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--validate-only still skips the build, but no longer publishes unapproved.
+
+        Reaching publication without a current approval marker must keep the
+        validation output that was already printed and fail with a message that
+        states both facts: validation passed, and publication waits on approval.
+        """
+        folder = tmp_path / "unapproved"
+        (folder / "outputs").mkdir(parents=True)
+        (folder / "outputs" / "report.pdf").write_bytes(b"%PDF-1.7\nbuilt content\n")
+        config = FakeReportConfig(backend="latex", folder=folder)
+        config.publication_category = "PytestGuardCat"
+        config.document_slug = "pytest-guard-slug"
+        argv = ["build_report_auto.py", str(folder), "--validate-only"]
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("build_report_auto.load_report_config", return_value=config),
+            patch("build_report_auto.build_backend") as mock_build,
+            patch("build_report_auto.validate", return_value=FakeValidation()),
+            patch("build_report_auto.sha256_file", return_value="validated-hash"),
+        ):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        mock_build.assert_not_called()
+        captured = capsys.readouterr()
+        assert "VALIDATION PASSED" in captured.out
+        message = str(exc.value.code)
+        assert "PDF PUBLICATION FAILED" in message
+        assert "validación técnica pasó" in message
+        assert "aprobación" in message
+        assert not (Path.home() / "Documents" / "PytestGuardCat").exists()
+
+    def test_validate_only_refuses_publication_with_warnings(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The same refusal holds when validation passes with warnings."""
+        folder = tmp_path / "unapproved-warned"
+        (folder / "outputs").mkdir(parents=True)
+        (folder / "outputs" / "report.pdf").write_bytes(b"%PDF-1.7\nbuilt content\n")
+        config = FakeReportConfig(backend="latex", folder=folder)
+        config.publication_category = "PytestGuardCat"
+        config.document_slug = "pytest-guard-slug-warned"
+        argv = ["build_report_auto.py", str(folder), "--validate-only"]
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("build_report_auto.load_report_config", return_value=config),
+            patch("build_report_auto.build_backend") as mock_build,
+            patch("build_report_auto.validate", return_value=FakeValidation(warnings=["aviso"])),
+            patch("build_report_auto.sha256_file", return_value="validated-hash"),
+        ):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        mock_build.assert_not_called()
+        captured = capsys.readouterr()
+        assert "VALIDATION PASSED WITH WARNINGS" in captured.out
+        message = str(exc.value.code)
+        assert "PDF PUBLICATION FAILED" in message
+        assert "aprobación" in message
+        assert not (Path.home() / "Documents" / "PytestGuardCat").exists()
+
     # -- Validation errors ---------------------------------------------------
 
     def test_publication_runs_after_build_and_validation_pass(self) -> None:
@@ -363,6 +429,7 @@ class TestMain:
             config.publication_category,
             config.document_slug,
             expected_sha256="validated-hash",
+            work_folder=config.folder,
         )
         assert events == ["build", "validate", "publish"]
 

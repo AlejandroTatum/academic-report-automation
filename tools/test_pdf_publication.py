@@ -115,11 +115,37 @@ def _validated_pdf(tmp_path: Path, content: bytes = b"%PDF-1.7\nvalidated conten
     return source
 
 
-def test_first_publication_is_v001_pdf_only_and_hash_verified(tmp_path: Path) -> None:
+@pytest.fixture
+def _approved_work_folder(tmp_path: Path) -> Path:
+    """A work folder whose approval.yml records the current preview.md hash.
+
+    Publication is gated on this marker, so every pre-existing publication
+    assertion proves the ordinary, approved path still behaves exactly as it did
+    before the guard existed.
+    """
+    folder = tmp_path / "approved"
+    folder.mkdir()
+    preview = folder / "preview.md"
+    preview.write_text("# Content Preview: Informe\n\nCuerpo.\n", encoding="utf-8")
+    (folder / "approval.yml").write_text(
+        "schema: academic.doc-approval/v1\n"
+        f"preview_sha256: {hashlib.sha256(preview.read_bytes()).hexdigest()}\n"
+        "approved_at: 2026-09-10T14:03:11Z\n"
+        "approved_by: Alejandro\n",
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_first_publication_is_v001_pdf_only_and_hash_verified(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
     source = _validated_pdf(tmp_path)
     documents = tmp_path / "Documents"
 
-    published = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+    published = publish_pdf.publish_validated_pdf(
+        source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+    )
 
     assert published.path == documents / "Tecnicos" / "informe" / "informe-v001.pdf"
     assert published.created is True
@@ -128,32 +154,46 @@ def test_first_publication_is_v001_pdf_only_and_hash_verified(tmp_path: Path) ->
     assert list(published.path.parent.iterdir()) == [published.path]
 
 
-def test_unchanged_hash_reuses_existing_version(tmp_path: Path) -> None:
+def test_unchanged_hash_reuses_existing_version(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
     source = _validated_pdf(tmp_path)
     documents = tmp_path / "Documents"
-    first = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+    first = publish_pdf.publish_validated_pdf(
+        source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+    )
 
-    reused = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+    reused = publish_pdf.publish_validated_pdf(
+        source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+    )
 
     assert reused.path == first.path
     assert reused.created is False
     assert list(first.path.parent.glob("*.pdf")) == [first.path]
 
 
-def test_changed_hash_publishes_next_monotonic_version(tmp_path: Path) -> None:
+def test_changed_hash_publishes_next_monotonic_version(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
     source = _validated_pdf(tmp_path, b"%PDF-1.7\nfirst\n")
     documents = tmp_path / "Documents"
-    publish_pdf.publish_validated_pdf(source, "Academicos", "informe", documents)
+    publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, work_folder=_approved_work_folder
+    )
     source.write_bytes(b"%PDF-1.7\nsecond\n")
 
-    published = publish_pdf.publish_validated_pdf(source, "Academicos", "informe", documents)
+    published = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, work_folder=_approved_work_folder
+    )
 
     assert published.path.name == "informe-v002.pdf"
     assert published.path.read_bytes() == source.read_bytes()
     assert {path.name for path in published.path.parent.iterdir()} == {"informe-v001.pdf", "informe-v002.pdf"}
 
 
-def test_concurrent_version_claim_retries_without_overwriting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_concurrent_version_claim_retries_without_overwriting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _approved_work_folder: Path
+) -> None:
     source = _validated_pdf(tmp_path, b"%PDF-1.7\nsecond publisher\n")
     documents = tmp_path / "Documents"
     folder = documents / "Tecnicos" / "informe"
@@ -172,26 +212,132 @@ def test_concurrent_version_claim_retries_without_overwriting(tmp_path: Path, mo
 
     monkeypatch.setattr(publish_pdf.os, "link", collision_once)
 
-    published = publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+    published = publish_pdf.publish_validated_pdf(
+        source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+    )
 
     assert published.path.name == "informe-v003.pdf"
     assert (folder / "informe-v002.pdf").read_bytes() == b"%PDF-1.7\nconcurrent publisher\n"
 
 
-def test_publication_rejects_non_pdf_source_and_non_pdf_output_folder_contents(tmp_path: Path) -> None:
+def test_publication_rejects_non_pdf_source_and_non_pdf_output_folder_contents(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
     source = tmp_path / "validated.docx"
     source.write_bytes(b"not a pdf")
     documents = tmp_path / "Documents"
 
     with pytest.raises(publish_pdf.PublicationError):
-        publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
 
     source = _validated_pdf(tmp_path)
     destination = documents / "Tecnicos" / "informe"
     destination.mkdir(parents=True)
     (destination / "audit.txt").write_text("not a PDF", encoding="utf-8")
     with pytest.raises(publish_pdf.PublicationError):
-        publish_pdf.publish_validated_pdf(source, "Tecnicos", "informe", documents)
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+
+
+def test_publish_refuses_absent_stale_malformed_marker(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """Publication is fail-closed: without a current marker nothing is created.
+
+    The guard must run before sha256_file, folder.mkdir and any temp file, so a
+    refused publication leaves no directory and no partial copy anywhere.
+    """
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+
+    # absent — a work folder that never went through the approval phase
+    absent = tmp_path / "absent"
+    absent.mkdir()
+    with pytest.raises(publish_pdf.PublicationError, match="Falta la aprobación humana"):
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=absent
+        )
+    assert not documents.exists()
+
+    # stale — the preview changed after the human approved it
+    (_approved_work_folder / "preview.md").write_text(
+        "# Content Preview: edited after approval\n", encoding="utf-8"
+    )
+    with pytest.raises(publish_pdf.PublicationError, match="obsoleta"):
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+    assert not documents.exists()
+
+    # malformed — the marker cannot be read as a valid approval record
+    malformed = tmp_path / "malformed"
+    malformed.mkdir()
+    (malformed / "preview.md").write_text("# Content Preview: Informe\n", encoding="utf-8")
+    (malformed / "approval.yml").write_text("preview_sha256: [unclosed\n", encoding="utf-8")
+    with pytest.raises(publish_pdf.PublicationError, match="inválido"):
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=malformed
+        )
+    assert not documents.exists()
+
+
+def test_refusal_messages_match_design_verbatim(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """The three Spanish refusals are a fixed contract, not ad-hoc prose.
+
+    ``build_report_auto.py`` prefixes them with ``PDF PUBLICATION FAILED:``; the
+    wording must stay stable so the operator sees the same diagnosis at every
+    entry point.
+    """
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+
+    absent = tmp_path / "absent-message"
+    absent.mkdir()
+    with pytest.raises(publish_pdf.PublicationError) as exc:
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=absent
+        )
+    # The absent message keeps the design sentence verbatim and appends the
+    # minimal clause 1.11 sanctions, so a --validate-only run states that
+    # validation passed before publication was refused for lack of approval.
+    absent_message = str(exc.value)
+    assert absent_message.startswith(
+        "Falta la aprobación humana: no existe approval.yml en "
+        f"{absent}. Ejecutá la fase de aprobación después de revisar preview.md; "
+        "no se publica nada."
+    )
+    assert absent_message.endswith(
+        "La validación técnica pasó; falta únicamente la aprobación humana."
+    )
+
+    (_approved_work_folder / "preview.md").write_text("edited\n", encoding="utf-8")
+    with pytest.raises(publish_pdf.PublicationError) as exc:
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+    assert str(exc.value) == (
+        "La aprobación está obsoleta: preview_sha256 de approval.yml no coincide "
+        f"con preview.md en {_approved_work_folder}. Volvé a aprobar el preview actual; "
+        "no se publica nada."
+    )
+
+    malformed = tmp_path / "malformed-message"
+    malformed.mkdir()
+    (malformed / "preview.md").write_text("# Content Preview: Informe\n", encoding="utf-8")
+    (malformed / "approval.yml").write_text("preview_sha256: [unclosed\n", encoding="utf-8")
+    with pytest.raises(publish_pdf.PublicationError) as exc:
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=malformed
+        )
+    assert str(exc.value) == (
+        f"approval.yml es inválido en {malformed}: approval.yml is not valid YAML. "
+        "No se publica nada y el marcador nunca se repara automáticamente."
+    )
 
 
 def test_global_publication_still_runs_when_the_pdf_is_the_build_output(

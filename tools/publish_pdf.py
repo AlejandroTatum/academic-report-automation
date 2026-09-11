@@ -2,13 +2,14 @@
 """Publish validated PDFs into the user's versioned Documents library."""
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from approval_marker import ApprovalState, approval_state, sha256_file
 
 
 class PublicationError(RuntimeError):
@@ -22,17 +23,28 @@ class Publication:
     created: bool
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _require_pdf_file(path: Path) -> None:
     if path.suffix.lower() != ".pdf" or not path.is_file():
         raise PublicationError(f"El PDF validado no existe o no es un PDF: {path}")
+
+
+def _approval_refusal(state: ApprovalState, work_folder: Path) -> str:
+    """Map an approval state onto the user-facing refusal message."""
+    if state.state == "stale":
+        return (
+            "La aprobación está obsoleta: preview_sha256 de approval.yml no coincide "
+            f"con preview.md en {work_folder}. Volvé a aprobar el preview actual; no se publica nada."
+        )
+    if state.state == "malformed":
+        return (
+            f"approval.yml es inválido en {work_folder}: {state.detail}. "
+            "No se publica nada y el marcador nunca se repara automáticamente."
+        )
+    return (
+        "Falta la aprobación humana: no existe approval.yml en "
+        f"{work_folder}. Ejecutá la fase de aprobación después de revisar preview.md; "
+        "no se publica nada. La validación técnica pasó; falta únicamente la aprobación humana."
+    )
 
 
 def _existing_versions(folder: Path, slug: str) -> list[tuple[int, Path]]:
@@ -56,17 +68,29 @@ def publish_validated_pdf(
     slug: str,
     documents_root: Path | None = None,
     *,
+    work_folder: Path,
     expected_sha256: str | None = None,
 ) -> Publication:
     """Atomically publish a validated PDF, reusing identical hashes by version.
 
-    Publication is deliberately a technical-copy operation: callers invoke it only
-    after configured validation has passed; it never grants visual or human review.
+    Publication requires both configured technical validation AND a current human
+    approval marker: ``work_folder/approval.yml`` must hash the exact bytes of
+    ``work_folder/preview.md``. ``work_folder`` is required keyword-only, so a
+    caller cannot skip the guard by omission. The check runs before any hash,
+    directory or temporary file, so a refused publication creates nothing.
+
+    It remains a technical-copy operation: it never grants ``VISUAL_PASS``,
+    ``HUMAN_REVIEW``, or ``READY_TO_SUBMIT``.
     """
     source = Path(source)
+    work_folder = Path(work_folder)
     _require_pdf_file(source)
     if not category or not slug:
         raise PublicationError("La categoría y el slug del documento son obligatorios")
+
+    state = approval_state(work_folder)
+    if state.state != "current":
+        raise PublicationError(_approval_refusal(state, work_folder))
 
     root = Path.home() / "Documents" if documents_root is None else Path(documents_root)
     folder = root / category / slug

@@ -133,6 +133,7 @@ def main() -> None:
                 config.pdf_path,
                 config.publication_category,
                 config.document_slug,
+                work_folder=config.folder,
                 expected_sha256=validated_pdf_hash,
             )
         except PublicationError as exc:
