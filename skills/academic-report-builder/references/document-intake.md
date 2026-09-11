@@ -96,10 +96,11 @@ The chosen direction must materially change typography, composition, tables, cha
 - Length, depth, page count, or extension MUST NOT be asked as a mandatory question. Derive them from audience, purpose, and route; ask only when the user raises them or the route genuinely cannot resolve them.
 - No additional permanent questions may be introduced into this intake without explicit approval. Ad-hoc clarifications stay ad-hoc.
 - Ask the confirmations compactly; do not turn the intake into an interrogation.
+- Intake MAY ask one targeted clarification per missing route-mandatory field, drawn from the known input and configuration. Adaptivity is about data only: it never adds, duplicates, removes, or relocates the single confirmation gate.
 
 ## Document Contract
 
-Render this block with the confirmed values before generating anything:
+Render this block with the confirmed values. It is a data record of the intake answers: it is written to `report.yml` and does not authorize generation.
 
 ```
 Document Contract
@@ -112,4 +113,6 @@ Outputs: PDF and DOCX
 Visual direction: Technical
 ```
 
-Generation begins only after the user confirms this block. Any change to a confirmed field re-renders the block and requires confirmation again.
+Any change to a recorded field re-renders the block and overwrites the record.
+
+The single confirmation gate does not live here. Intake records data only and never asks for approval to generate. Generation starts only after the one post-preview confirmation in `document-workflow/references/approval.md`.

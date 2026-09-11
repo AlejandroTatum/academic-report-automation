@@ -23,6 +23,12 @@ GATES_MD = REFERENCES / "quality-gates.md"
 UNL_MD = REFERENCES / "unl-shell.md"
 DELIVERY_MD = REFERENCES / "clean-delivery.md"
 
+RESEARCH_ROOT = Path(__file__).resolve().parents[2] / "skills" / "research-workflow"
+RESEARCH_MD = RESEARCH_ROOT / "references" / "research-protocol.md"
+
+# The one human confirmation gate lives in the orchestrator skill, not in intake.
+APPROVAL_REFERENCE = "document-workflow/references/approval.md"
+
 ROUTE_SCOPED_FILES = (SKILL_MD, ROUTING_MD)
 
 # Files that must never mention the UNL shell, because they are loaded on
@@ -165,7 +171,14 @@ def test_confirmation_is_required_on_every_execution(skill: str, intake: str) ->
     combined = plain(skill + intake).lower()
     assert "every execution" in combined or "every run" in combined
     assert "even when the prompt appears to already contain" in combined, (
-        "a prompt that looks complete must still be confirmed"
+        "a prompt that looks complete must still be confirmed as intake data"
+    )
+    # The intake confirmation is a data record, never an approval to generate.
+    assert "does not authorize generation" in combined, (
+        "intake must state that recording the contract authorizes no generation"
+    )
+    assert "generation begins only after the user confirms this block" not in combined, (
+        "the intake-time approval-to-generate sentence must be gone"
     )
 
 
@@ -173,6 +186,125 @@ def test_document_contract_block_is_specified(intake: str) -> None:
     assert "Document Contract" in intake
     for field in ("Type:", "Audience:", "Purpose:", "Outputs:", "Visual direction:"):
         assert field in intake, f"Document Contract block must render {field!r}"
+    data_record = plain(intake).lower()
+    assert "data record" in data_record, (
+        "the Document Contract must be described as a data record, not an approval"
+    )
+    assert "report.yml" in plain(intake), (
+        "the Document Contract record must be written to report.yml"
+    )
+
+
+def test_single_confirmation_is_post_preview_and_traceable(intake: str) -> None:
+    """Exactly one confirmation gate exists in the route, and intake defers to it.
+
+    Intake records data only; the single gate is the post-preview approval
+    defined in document-workflow/references/approval.md.
+    """
+    data = plain(intake)
+    lowered = data.lower()
+    assert data.count(APPROVAL_REFERENCE) == 1, (
+        "intake must forward-reference the approval gate exactly once"
+    )
+    assert "post-preview" in lowered or "after the preview" in lowered, (
+        "intake must state that the single confirmation is post-preview"
+    )
+    assert "generation starts only after the one post-preview confirmation" in lowered, (
+        "intake must defer the single confirmation to the approval reference"
+    )
+    assert "never asks for approval" in lowered, (
+        "intake must explicitly refuse to be the approval gate"
+    )
+
+
+@pytest.mark.parametrize("path", ROUTE_AGNOSTIC_FILES, ids=lambda p: p.name)
+def test_no_route_agnostic_reference_authorizes_intake_time_generation(path: Path) -> None:
+    """The removed sentence must not relocate into another always-loaded reference."""
+    lowered = plain(read(path)).lower()
+    assert "generation begins only after the user confirms this block" not in lowered
+    assert "confirm this block to generate" not in lowered
+
+
+def test_intake_may_ask_one_targeted_clarification_per_missing_field(intake: str) -> None:
+    lowered = plain(intake).lower()
+    assert "one targeted clarification" in lowered, (
+        "adaptivity must be bounded to one clarification per missing field"
+    )
+    assert "route-mandatory" in lowered, (
+        "the clarification must be scoped to missing route-mandatory fields"
+    )
+
+
+# --------------------------------------------------------------------------
+# SKILL.md — intake records data; the single gate is post-preview approval
+# --------------------------------------------------------------------------
+
+
+def test_skill_defers_single_confirmation_to_post_preview_approval(skill: str) -> None:
+    """SKILL.md must record intake data and never authorize generation at intake.
+
+    The only confirmation gate is the post-preview approval owned by
+    `document-workflow/references/approval.md`.
+    """
+    assert APPROVAL_REFERENCE in skill, (
+        "SKILL.md must forward-reference the single post-preview approval gate"
+    )
+    lowered = re.sub(r"\s+", " ", plain(skill)).lower()
+    assert "data record" in lowered, (
+        "SKILL.md must describe the Document Contract as a data record"
+    )
+    assert "does not authorize generation" in lowered, (
+        "SKILL.md must state that recording the contract authorizes no generation"
+    )
+    assert "post-preview" in lowered or "after the preview" in lowered, (
+        "SKILL.md must place the single confirmation after the preview"
+    )
+    for stale in (
+        "wait for explicit confirmation before generation",
+        "generation begins only after the user confirms this block",
+    ):
+        assert stale not in lowered, (
+            f"stale intake-time approval wording must be gone: {stale!r}"
+        )
+
+
+def test_skill_publication_requires_current_approval(skill: str) -> None:
+    """Publication is gated on APPROVAL_CURRENT, not merely technical validation."""
+    lowered = re.sub(r"\s+", " ", skill).lower()
+    assert "approval_current" in lowered, (
+        "SKILL.md must name APPROVAL_CURRENT as the publication precondition"
+    )
+    assert "automatically publish" not in lowered, (
+        "technical validation alone must not read as automatic publication"
+    )
+    publication_lines = [
+        line for line in skill.splitlines() if "~/Documents" in line
+    ]
+    assert publication_lines, (
+        "SKILL.md must keep the automatic versioned PDF delivery path"
+    )
+    assert any("APPROVAL_CURRENT" in line for line in publication_lines), (
+        "the Documents publication rule must be conditioned on APPROVAL_CURRENT"
+    )
+
+
+def test_skill_preserves_authority_and_visual_gates(skill: str) -> None:
+    """The intake/publication rewrite must not weaken the other gates."""
+    for token in (
+        "VISUAL_PASS",
+        "AUDITOR_PRECHECK",
+        "READY_TO_SUBMIT",
+        "REVIEW_REQUIRED",
+        "VISUAL_FAIL",
+    ):
+        assert token in skill, f"SKILL.md must preserve the {token} gate"
+    lowered = re.sub(r"\s+", " ", plain(skill)).lower()
+    assert "visual direction changes hierarchy and composition" in lowered, (
+        "visual semantics must survive the repurposed intake confirmation"
+    )
+    assert "never fall back to route a" in lowered or "no default document type" in lowered, (
+        "the document-type gate must survive the repurposed intake confirmation"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -347,6 +479,53 @@ def test_automatic_documents_publication_requires_a_confirmed_pdf() -> None:
     assert "confirmed PDF output" in combined
     assert "hash before validation" in combined
     assert "immediately before publication" in combined
+
+
+def test_publication_gated_on_approval() -> None:
+    automation = read(REFERENCES / "automation-contract.md")
+    readiness = sections(automation)["Readiness and command scope"]
+    gate_rows = [
+        line
+        for line in readiness.splitlines()
+        if "VERSIONED_PDF_PUBLISHED_OR_REUSED" in line
+    ]
+    assert gate_rows, (
+        "the readiness table must keep the VERSIONED_PDF_PUBLISHED_OR_REUSED gate"
+    )
+    assert any("APPROVAL_CURRENT" in row for row in gate_rows), (
+        "VERSIONED_PDF_PUBLISHED_OR_REUSED must list APPROVAL_CURRENT as a precondition"
+    )
+    # Independent signal: the clean-delivery prose must also name the marker gate.
+    delivery = sections(automation)["Clean delivery to the user's Documents folder"]
+    assert "APPROVAL_CURRENT" in delivery, (
+        "the clean-delivery prose must name the APPROVAL_CURRENT precondition"
+    )
+    assert "approval.yml" in delivery, (
+        "the clean-delivery prose must name the approval marker"
+    )
+
+
+# --------------------------------------------------------------------------
+# Cross-skill references
+# --------------------------------------------------------------------------
+
+
+def test_research_protocol_names_evidence_path() -> None:
+    handoff = sections(read(RESEARCH_MD))["5. Package the handoff"]
+    assert (
+        "$REPORT_CONTENT_ROOT/reports/<work-folder>/research/evidence-matrix.md"
+        in handoff
+    ), "§5 must name the evidence-matrix artifact path"
+    lowered = plain(handoff).lower()
+    assert "pre-document evidence" in lowered, (
+        "the research package must be labeled pre-document evidence"
+    )
+    assert "never confirmed intake" in lowered, (
+        "the research package must never be described as confirmed intake"
+    )
+    assert "confirmed document intake" not in lowered, (
+        "§5 must drop the old confirmed-intake phrasing"
+    )
 
 
 # --------------------------------------------------------------------------

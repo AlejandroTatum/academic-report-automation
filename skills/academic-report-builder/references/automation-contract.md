@@ -2,7 +2,7 @@
 
 This contract applies to every document type: academic work, project documentation, professional/business reports, and technical documents. The commands, gates, and readiness receipts are identical across routes.
 
-Route selection precedes the build. Complete the intake in `document-intake.md`, confirm the Document Contract, and resolve the route in `document-routing.md` before running any command below. Never start a build to "see how it looks" before the route is confirmed.
+Route selection precedes the build. Complete the intake in `document-intake.md`, resolve the route in `document-routing.md`, and have a current human approval marker (`APPROVAL_CURRENT`) before running any command below. The Document Contract is recorded data, not the approval gate. Never start a build to "see how it looks" before the route is confirmed.
 
 ## Canonical automation
 
@@ -29,7 +29,8 @@ Use `latex` for long textual/mixed reports, `visual` for concept maps, infograph
 
 ### Clean delivery to the user's Documents folder
 
-After successful build and configured technical validation, `build_report_auto.py`
+After successful build and configured technical validation, and only with a
+current `approval.yml` marker (`APPROVAL_CURRENT`), `build_report_auto.py`
 automatically publishes only the confirmed PDF output at
 `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`.
 No `delivery_pdf:` configuration or user-selected path is needed. Category derives
@@ -49,6 +50,10 @@ Required flow:
 
 `BUILD_PASS -> VALIDATION_PASS -> VERSIONED_PDF_PUBLISHED_OR_REUSED`
 
+Preconditions: `APPROVAL_CURRENT` (a current `approval.yml` whose `preview_sha256`
+matches the exact preview bytes) before the build, and unchanged artifact hashes
+across validation.
+
 `BUILD_PASS -> VALIDATION_PASS -> AUDITOR_PRECHECK -> RENDERED_READBACK -> SEMANTIC_VISUAL_INSPECTION -> VISUAL_PASS -> HUMAN_REVIEW -> READY_TO_SUBMIT`
 
 ## Typed pipeline integration
@@ -67,9 +72,10 @@ The checked-in `config/academic-pipeline.yml` is only a backend/capability templ
 
 | Gate | Proof |
 | --- | --- |
+| `APPROVAL_CURRENT` | A current `approval.yml` exists: its `preview_sha256` matches the exact `preview.md` bytes and no later preview edit has staled it. |
 | `BUILD_PASS` | Compilation/export completed without errors. |
 | `VALIDATION_PASS` | Active validators pass; rendered semantics and layout remain unproven. |
-| `VERSIONED_PDF_PUBLISHED_OR_REUSED` | The automatic PDF-only Documents version was atomically published (or hash-matched and reused) after technical validation; it is not approval. |
+| `VERSIONED_PDF_PUBLISHED_OR_REUSED` | Precondition `APPROVAL_CURRENT`: the automatic PDF-only Documents version was atomically published (or hash-matched and reused) after technical validation and a current approval marker; it is not approval. |
 | `VISUAL_PASS` | Automated prechecks, rendered readback, direct contact-sheet inspection, and applicable full-size checks pass on one immutable artifact. |
 | `HUMAN_REVIEW` | Reviewer identity, APPROVE decision, UTC timestamp, gate receipt IDs, and artifact hashes are recorded. |
 | `READY_TO_SUBMIT` | Every previous gate passes and approved artifacts remain unchanged. |

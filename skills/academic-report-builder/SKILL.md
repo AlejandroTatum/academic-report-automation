@@ -16,9 +16,11 @@ format, prompt, files, or history.
 
 ### Mandatory Intake
 
-Load `references/document-intake.md` on every execution. Confirm document type,
+Load `references/document-intake.md` on every execution. Record document type,
 audience, purpose, template/identity, delivery format, and visual direction.
-Render the Document Contract and wait for explicit confirmation before generation.
+Render the Document Contract as a data record written to `report.yml`; it does not
+authorize generation. The single confirmation gate is post-preview and lives in
+`document-workflow/references/approval.md`; intake never asks for approval.
 
 ### Prohibition On Inferring Document Type
 
@@ -28,10 +30,10 @@ the run; there is no default document type or academic fallback.
 ## Hard Rules
 
 - Validate inputs, source binding, intermediate output, export, and final PDF/DOCX; stop at the earliest failed gate.
-- After configured technical validation passes, automatically publish only the confirmed PDF output at `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`; category comes from the confirmed route and slug from confirmed title. That folder contains PDFs only. Publication is not approval. See `references/clean-delivery.md`.
+- Publish only the confirmed PDF output at `~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`, and only when a current `APPROVAL_CURRENT` marker exists; category comes from the confirmed route and slug from confirmed title. That folder contains PDFs only. Technical validation alone never triggers publication, and publication is not approval. See `references/clean-delivery.md`.
 - No script, validator, or auditor ever grants `VISUAL_PASS`. `visual_pdf_auditor.py` PASS is only `AUDITOR_PRECHECK` evidence.
 - Only independent semantic inspection of the assembled report may grant report-level `VISUAL_PASS`; human review after immutable hashes is required for `READY_TO_SUBMIT`.
-- Never ghostwrite a final submission. An automatically published technically validated PDF may be reported, but semantic inspection and human approval remain required for `VISUAL_PASS` and `READY_TO_SUBMIT`. Preserve privacy, provenance, citations, and consent boundaries.
+- Never ghostwrite a final submission. A technically validated PDF published under a current `APPROVAL_CURRENT` marker may be reported, but semantic inspection and human approval remain required for `VISUAL_PASS` and `READY_TO_SUBMIT`. Preserve privacy, provenance, citations, and consent boundaries.
 - Use `academic-visual-builder` for figures, then inspect them again in the assembled report. Confirm the visual direction changes hierarchy and composition, not only decoration.
 - When supplied a research-workflow evidence package, preserve claim-to-source traceability, limitations, and unresolved questions. Do not treat the package as confirmed document intake; this skill still owns intake, citation-style confirmation, composition, and document creation.
 
@@ -46,7 +48,8 @@ style, and validate the rendered bibliography.
 
 | Situation | Action |
 |---|---|
-| Intake or confirmation missing | Stop and ask; render the contract. |
+| Intake data missing or ambiguous | Stop and ask; render the contract record; recording it is never approval. |
+| Approval marker absent or stale | Block generation and publication; request the single post-preview confirmation. |
 | Type ambiguous or non-academic | Recommend/resolve a route; never fall back to Route A. |
 | Template or rubric confirmed | Mirror its sections, formatting, and criteria. |
 | Visual-heavy section | Build and validate figures, then inspect the assembled report. |
@@ -56,7 +59,7 @@ style, and validate the rendered bibliography.
 
 ## Execution Steps
 
-1. Load `automation-contract.md`, `document-intake.md`, `document-routing.md`, and `quality-gates.md`; run and confirm intake, then load only the resolved route references.
+1. Load `automation-contract.md`, `document-intake.md`, `document-routing.md`, and `quality-gates.md`; run intake and record it as data, then load only the resolved route references.
 2. If a research-workflow evidence package is supplied, validate its claim/source links and carry forward its confidence, limitations, conflicts, and unresolved questions without converting them into unsupported report claims.
 3. Bind sections, claims, citations, tables, and figures to the confirmed contract and preserve provenance.
 4. Build with the canonical commands; record immutable artifact hash and page count.
@@ -66,16 +69,19 @@ style, and validate the rendered bibliography.
 
 ## Output Contract
 
-Return the confirmed Document Contract, route, each gate, hashes, page-count delta,
+Return the recorded Document Contract, route, each gate, hashes, page-count delta,
 readback and direct-inspection evidence, defects, source/citation, privacy, visual
-manifest, and review assumptions. The automatic versioned PDF path may be returned after technical validation; return `READY_TO_SUBMIT` only after approval.
+manifest, and review assumptions. The automatic versioned PDF path may be returned
+only after technical validation under a current `APPROVAL_CURRENT` marker; return
+`READY_TO_SUBMIT` only after approval.
 
 ## References
 
 - `references/clean-delivery.md` — automatic versioned PDF publication contract.
-- `references/document-intake.md` — mandatory confirmations and contract block.
+- `references/document-intake.md` — mandatory intake fields and the Document Contract data record.
 - `references/document-routing.md` — routes and route-specific loading.
 - `references/automation-contract.md` — canonical commands, evidence gates, and readiness receipts.
+- `document-workflow/references/approval.md` — the single post-preview human confirmation gate.
 - `references/quality-gates.md` — rendered readback and semantic inspection rules.
 - `templates/academic_format.yml` — format and validator contract.
 - `references/unl-shell.md` and `references/profiles/` — Route A only.
