@@ -6,9 +6,9 @@ the seven per-phase derivations, and the ``derive``/``main`` composition on top 
 them. Each ``_phase_*`` function answers for exactly one phase and returns a raw
 ``done|pending|blocked`` token; ``derive`` runs them in order, wraps an unexpected
 exception as ``blocked``, locks every phase after the first incomplete one to
-``pending``, and projects the route (``current``/``next``/``gate``). ``main`` only
-validates its work-folder argument in this slice -- the renderers arrive in slice
-2c-ii.
+``pending``, and projects the route (``current``/``next``/``gate``). ``render_human``
+and ``render_machine`` project that value: the portable human block and the
+``academic.doc-status/v1`` markdown shape. ``main`` renders both on every invocation.
 
 Approval delegates to ``approval_marker.approval_state`` -- the same predicate
 ``publish_validated_pdf`` enforces -- so routing and the irreversible publisher
@@ -20,6 +20,7 @@ on an unknown route -- a status tool reports what it finds, it never exits.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -32,6 +33,23 @@ from report_config import ReportConfig, read_yaml
 PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "deliver")
 DONE, CURRENT, PENDING, BLOCKED = "done", "current", "pending", "blocked"
 STATE_TOKENS = (DONE, CURRENT, PENDING, BLOCKED)
+SCHEMA_NAME = "academic.doc-status"
+SCHEMA_VERSION = 1
+
+# One action sentence per phase: the closing ``**Next**`` line for the routed token,
+# and the front-loaded gate's consequence for the phase that still waits.
+_GUIDANCE = {
+    "intake": "complete reports/{wf}/report.yml, then re-run doc_status",
+    "research": (
+        "write reports/{wf}/research/evidence-matrix.md or record research: skipped, "
+        "then re-run doc_status"
+    ),
+    "preview": "draft reports/{wf}/preview.md, then re-run doc_status",
+    "approval": "generation runs only after you approve reports/{wf}/preview.md",
+    "generate": "build the final PDF, then re-run doc_status",
+    "validate": "record reports/{wf}/validation.yml for the final PDF, then re-run doc_status",
+    "deliver": "publish the validated PDF, then re-run doc_status",
+}
 
 
 @dataclass(frozen=True)
@@ -250,6 +268,98 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
     return DocStatus(folder, tuple(phases), current, next_token, gate, blocked_reasons)
 
 
+def _guidance(phase_name: str, work_folder: Path) -> str:
+    """Action sentence for ``phase_name``, bound to the real work-folder name."""
+    template = _GUIDANCE.get(phase_name)
+    return "" if template is None else template.format(wf=Path(work_folder).name)
+
+
+def _payload(status: DocStatus) -> dict[str, object]:
+    """The ``academic.doc-status/v1`` JSON projection of a derived ``DocStatus``."""
+    return {
+        "schemaName": SCHEMA_NAME,
+        "schemaVersion": SCHEMA_VERSION,
+        "workFolder": str(status.work_folder),
+        "phases": [
+            {"name": p.name, "state": p.state, "detail": p.detail, "blockedReason": p.blocked_reason}
+            for p in status.phases
+        ],
+        "current": status.current,
+        "next": status.next_token,
+        "gate": status.gate,
+        "blockedReasons": list(status.blocked_reasons),
+    }
+
+
+def _route(status: DocStatus) -> str:
+    """The one route line, always bracketing exactly the current token."""
+    names = [phase.name for phase in status.phases]
+    if status.current in names:
+        tokens = [f"[{name}]" if name == status.current else name for name in names]
+    else:  # route complete: the bracket advances past the last phase to `done`
+        tokens = [*names, f"[{status.current}]"]
+    return " > ".join(tokens)
+
+
+def _gate(status: DocStatus) -> str:
+    """Front-loaded gate text: approval until it passes, else the waiting focus."""
+    focus = next((phase for phase in status.phases if phase.state != DONE), None)
+    if focus is None:
+        return ""
+    approval = next((phase for phase in status.phases if phase.name == "approval"), None)
+    gate_phase = approval if approval is not None and approval.state != DONE else focus
+    return f"{gate_phase.name} {gate_phase.state} - {_guidance(gate_phase.name, status.work_folder)}"
+
+
+def _summary_lines(status: DocStatus) -> list[str]:
+    """Flat summary bullets; ``pending`` phases stay terse because they only wait."""
+    return [
+        f"- {phase.name}: {phase.state}"
+        + (f" - {phase.detail}" if phase.state != PENDING and phase.detail else "")
+        for phase in status.phases
+    ]
+
+
+def render_human(status: DocStatus) -> str:
+    """Render the portable human block: optional gate, one bracketed route line,
+    a flat ``**Summary**``, and a closing ``**Next**`` -- ASCII only, no tables."""
+    lines: list[str] = []
+    gate = _gate(status)
+    if gate:
+        lines.append(f"**Gate**: {gate}")
+    lines.append(f"Route: {_route(status)}")
+    lines.extend(["", "**Summary**", *_summary_lines(status), ""])
+    next_line = f"**Next**: {status.next_token}"
+    if status.next_token in PHASES:
+        next_line += f" - {_guidance(status.next_token, status.work_folder)}"
+    lines.append(next_line)
+    return "\n".join(lines) + "\n"
+
+
+def render_machine(status: DocStatus) -> str:
+    """Render the ``academic.doc-status/v1`` machine block (sdd-status shape)."""
+    payload = _payload(status)
+    reasons = [f"- {reason}" for reason in status.blocked_reasons] or ["- none"]
+    lines = [
+        "## Document Workflow Status",
+        "",
+        f"schema: {SCHEMA_NAME}/v{SCHEMA_VERSION}",
+        f"next: {status.next_token}",
+        "",
+        "### Summary",
+        *[f"- {phase.name}: {phase.state}" for phase in status.phases],
+        "",
+        "### Blocked Reasons",
+        *reasons,
+        "",
+        "### JSON",
+        "```json",
+        json.dumps(payload, indent=2),
+        "```",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def _is_readable_dir(folder: Path) -> bool:
     """True when ``folder`` is an existing, listable directory."""
     try:
@@ -259,24 +369,29 @@ def _is_readable_dir(folder: Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point: ``python tools/doc_status.py <work-folder>``.
+    """CLI entry point: ``python tools/doc_status.py <work-folder> [--json]``.
 
-    Exits 2 with a message when the single argument is missing, not a directory
-    or unreadable -- and creates nothing. Any derivable folder exits 0, even
-    when a phase is blocked, because blocked is data rather than process
-    failure. The human/machine blocks arrive in slice 2c-ii; this slice proves
-    only the argument path and prints the projected focus.
+    Exit 2 for a missing, non-directory or unreadable folder (creating nothing); exit
+    0 for any derivable folder. Both blocks render every time: human then machine on
+    stdout, and under ``--json`` machine on stdout with human on stderr.
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 1:
-        print("usage: doc_status.py <work-folder>", file=sys.stderr)
+    json_mode = "--json" in args
+    positional = [arg for arg in args if arg != "--json"]
+    if len(positional) != 1:
+        print("usage: doc_status.py <work-folder> [--json]", file=sys.stderr)
         return 2
-    folder = Path(args[0])
+    folder = Path(positional[0])
     if not _is_readable_dir(folder):
         print(f"work folder missing, not a directory, or unreadable: {folder}", file=sys.stderr)
         return 2
     status = derive(folder)
-    print(f"{status.work_folder}: current={status.current} next={status.next_token}")
+    if json_mode:
+        sys.stdout.write(render_machine(status))
+        sys.stderr.write(render_human(status))
+    else:
+        sys.stdout.write(render_human(status))
+        sys.stdout.write(render_machine(status))
     return 0
 
 
