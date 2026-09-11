@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Derive the document-workflow phases from on-disk artifacts (read-only).
 
-Slice 2b-iii of the status layer: the phase vocabulary, the two value dataclasses
-and the intake/research/preview/approval/generate/validate/deliver derivations. Each
-function answers for exactly one phase and returns a raw ``done|pending|blocked``
-token; there is no composition, renderer or CLI yet, so no function here has to know
-what follows the phase it answers for. The route projection (``current``/``next``/
-``gate``) and the renderers arrive in slice 2c.
+Slice 2c-i of the status layer: the phase vocabulary, the two value dataclasses,
+the seven per-phase derivations, and the ``derive``/``main`` composition on top of
+them. Each ``_phase_*`` function answers for exactly one phase and returns a raw
+``done|pending|blocked`` token; ``derive`` runs them in order, wraps an unexpected
+exception as ``blocked``, locks every phase after the first incomplete one to
+``pending``, and projects the route (``current``/``next``/``gate``). ``main`` only
+validates its work-folder argument in this slice -- the renderers arrive in slice
+2c-ii.
 
 Approval delegates to ``approval_marker.approval_state`` -- the same predicate
 ``publish_validated_pdf`` enforces -- so routing and the irreversible publisher
@@ -18,8 +20,10 @@ on an unknown route -- a status tool reports what it finds, it never exits.
 """
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from approval_marker import approval_state, sha256_file
@@ -194,3 +198,87 @@ def _phase_deliver(folder: Path, config: ReportConfig, documents_root: Path | No
         except OSError:
             continue
     return PhaseState("deliver", PENDING, f"no published {slug}-vNNN.pdf matches the final PDF")
+
+
+def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
+    """Compose every phase derivation into one route projection.
+
+    The handlers run in ``PHASES`` order and each one is wrapped: an unexpected
+    exception becomes that phase's ``blocked`` state with a ``derivation_error``
+    reason, so a status call never crashes and never claims a phase ``done`` by
+    accident. Once a phase is not ``done`` the route locks: every later phase is
+    reported ``pending`` regardless of the artifacts on disk, because nothing
+    downstream has been authorized. The first incomplete phase becomes
+    ``current`` and is also the ``next`` token; an all-done route reports
+    ``done``. The whole derivation is read-only.
+    """
+    folder = Path(folder)
+    config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    handlers = (
+        _phase_intake,
+        _phase_research,
+        _phase_preview,
+        _phase_approval,
+        _phase_generate,
+        _phase_validate,
+        _phase_deliver,
+    )
+    phases: list[PhaseState] = []
+    locked = False
+    for name, handler in zip(PHASES, handlers):
+        try:
+            phase = handler(folder, config, documents_root)
+        except Exception as exc:  # one phase must never abort the whole status
+            phase = PhaseState(name, BLOCKED, f"derivation error: {exc}", "derivation_error")
+        if locked:
+            phase = PhaseState(name, PENDING, "waiting for an earlier phase")
+        elif phase.state != DONE:
+            locked = True
+        phases.append(phase)
+
+    focus = next((phase for phase in phases if phase.state != DONE), None)
+    if focus is None:
+        current, next_token, gate = DONE, DONE, ""
+    else:
+        current = next_token = focus.name
+        gate = f"{focus.name} {focus.state}"
+        if focus.state == PENDING:
+            phases[PHASES.index(focus.name)] = replace(focus, state=CURRENT)
+    blocked_reasons = tuple(
+        phase.blocked_reason for phase in phases if phase.state == BLOCKED and phase.blocked_reason
+    )
+    return DocStatus(folder, tuple(phases), current, next_token, gate, blocked_reasons)
+
+
+def _is_readable_dir(folder: Path) -> bool:
+    """True when ``folder`` is an existing, listable directory."""
+    try:
+        return folder.is_dir() and os.access(folder, os.R_OK | os.X_OK)
+    except OSError:
+        return False
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: ``python tools/doc_status.py <work-folder>``.
+
+    Exits 2 with a message when the single argument is missing, not a directory
+    or unreadable -- and creates nothing. Any derivable folder exits 0, even
+    when a phase is blocked, because blocked is data rather than process
+    failure. The human/machine blocks arrive in slice 2c-ii; this slice proves
+    only the argument path and prints the projected focus.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 1:
+        print("usage: doc_status.py <work-folder>", file=sys.stderr)
+        return 2
+    folder = Path(args[0])
+    if not _is_readable_dir(folder):
+        print(f"work folder missing, not a directory, or unreadable: {folder}", file=sys.stderr)
+        return 2
+    status = derive(folder)
+    print(f"{status.work_folder}: current={status.current} next={status.next_token}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised through main()
+    raise SystemExit(main())
