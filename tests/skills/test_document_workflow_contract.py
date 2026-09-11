@@ -19,6 +19,26 @@ PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "
 STATE_TOKENS = ("done", "current", "pending", "blocked")
 EXECUTORS = ("academic-report-builder", "research-workflow")
 
+# Slice 3a-ii owns the five executor references below. `approval.md` and
+# `validate.md` belong to Slices 3b-i and 3b-ii and are asserted by their own
+# contract tests, never here.
+OWNED_REFERENCES = ("intake", "research", "preview", "generate", "deliver")
+REFERENCE_EXECUTOR = {
+    "intake": "academic-report-builder",
+    "research": "research-workflow",
+    "preview": "academic-report-builder",
+    "generate": "academic-report-builder",
+    "deliver": "academic-report-builder",
+}
+# The single artifact each phase must produce, exactly as its reference declares it.
+REFERENCE_ARTIFACT = {
+    "intake": "reports/<wf>/report.yml",
+    "research": "reports/<wf>/research/evidence-matrix.md",
+    "preview": "reports/<wf>/preview.md",
+    "generate": "outputs/<materia>/<final>.pdf",
+    "deliver": "~/Documents/<category>/<slug>/<slug>-vNNN.pdf",
+}
+
 
 def read(path: Path) -> str:
     assert path.is_file(), f"missing required contract file: {path}"
@@ -92,3 +112,40 @@ def test_status_template_contract() -> None:
     assert {state for _, state in bullets} <= set(STATE_TOKENS)
 
     assert re.search(r"^\*\*Next\*\*: [a-z]+", block, re.MULTILINE), "closing Next line missing"
+
+
+def test_referenced_paths_resolve() -> None:
+    """Every executor reference owned by Slice 3a-ii resolves on disk.
+
+    `approval.md` and `validate.md` are deliberately absent from this list: Slice
+    3b-i and Slice 3b-ii own those paths and verify them in their own contract
+    tests, so a missing path here names only a Slice 3a-ii regression.
+    """
+    unresolved = [
+        f"references/{phase}.md"
+        for phase in OWNED_REFERENCES
+        if not (SKILL_ROOT / "references" / f"{phase}.md").is_file()
+    ]
+    assert not unresolved, f"unresolved phase references: {', '.join(unresolved)}"
+
+
+def test_phase_references_name_executor_and_single_artifact() -> None:
+    """Each owned reference declares one executor and exactly one artifact.
+
+    The declaration is a labelled line contract, so a reference can never claim two
+    artifacts or fall back to an implicit executor, and `doc_status` derivation
+    keeps reading exactly the path each phase promises.
+    """
+    for phase in OWNED_REFERENCES:
+        text = read(SKILL_ROOT / "references" / f"{phase}.md")
+        executors = re.findall(r"^Executor: (.+?)\s*$", text, re.MULTILINE)
+        artifacts = re.findall(r"^Artifact: (.+?)\s*$", text, re.MULTILINE)
+        assert executors == [REFERENCE_EXECUTOR[phase]], (
+            f"references/{phase}.md must declare exactly Executor: {REFERENCE_EXECUTOR[phase]}"
+        )
+        assert artifacts == [f"`{REFERENCE_ARTIFACT[phase]}`"], (
+            f"references/{phase}.md must declare exactly Artifact: `{REFERENCE_ARTIFACT[phase]}`"
+        )
+        assert REFERENCE_EXECUTOR[phase] in text, (
+            f"references/{phase}.md must name its executor in prose too"
+        )
