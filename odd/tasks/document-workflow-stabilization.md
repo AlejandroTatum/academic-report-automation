@@ -121,7 +121,17 @@ Task numbers are not the commit axis because T2/T3/T7 and T4/T5 share files. Gro
 - Staging is by explicit path only; `git add .` / `git add -A` are forbidden so `outputs/` and any stray artifact stay out.
 - Commit ordering follows dependency: lifecycle -> render -> status -> visual -> docs. Intermediate commits are preservation checkpoints; the green-suite evidence is asserted at final HEAD, not per checkpoint, because the surfaces interlock through shared behavior.
 - Rollback for T9 is `git reset --soft <base>`; it changes no file content.
-- Deferred by decision: the T8 legibility blocker, the Pi runtime skill sync, and the `@@LATEX_KEEP_0@@` base-only leak.
+
+#### Native review status — BLOCKED (not a candidate defect)
+The RDD preflight ran on this candidate after the commits. The Pi-side facade first returned `stop`/`managed_assets_outdated`; `gentle-ai.real sync --agent pi` updated 1 managed file and the preflight then returned `ready`. Do not misread that first `stop` as a store or candidate problem: it was stale Pi managed assets, and its projection was stale too (its `base_tree` was the tree of the pre-cleanup `68ae295`, listing 55 paths no commit here touched).
+
+Lineage `review-a4a39fd064f7225b` was started with `baseRef=9c9790d` + `committedOnly: true`, which scoped the candidate to exactly this work: tier `high`, 39 files, 2834 lines, lenses risk/resilience/readability/reliability. Three lenses were admitted; `review-readability` was refused three times at admission.
+
+Root cause verified independently, not inferred: the preserved payloads under `<git-common-dir>/gentle-ai/rejected-results/review-a4a39fd064f7225b/` are valid binary wrappers whose inner `raw` field contains **11 `[` and 10 `]`** — an unclosed array. A local scan reproduced the provider's numbers exactly (6/6 objects, 11/10 arrays, scan end at byte 7678 of a 7677-byte `raw`), so the refusal is correct and not a false positive. Admitted lenses were 1929/4916/5278 bytes; refused attempts were 5722/5356/7678 bytes, always the longest and always cut at the last array. The relay prompt is ~219 KB, so this reads as a host-relay output ceiling on the longest lens. `gentle-ai review --help` exposes no token/budget/timeout flag, so it cannot be raised from gentle-ai.
+
+Two operational facts worth keeping: a refusal does **not** consume the lens slot (`submitted_reviewers: 0`, `mutation_performed: false`), and per-slot capture is the correct isolation move — `gentle_review_capture` admitted `review-reliability` on the first attempt after two group runs had failed, because `readability` is submitted first and blocks everything behind it. Total cost: 8 model runs for 3 admitted lenses.
+
+Status: lineage left in `reviewing`, reoffering only the `review-readability` (order 2) slot. The missing lens result was never fabricated and the authority store was never touched. The user decided (2026-09-18) to leave this pending rather than retry or abandon. This is a bounded review-transport defect, not a defect of the committed candidate: the candidate tree stayed constant throughout, and `git diff HEAD` is empty.
 
 ## Unresolved / out-of-scope (no fixes authorized here)
 - Pi runtime has no `document-workflow` copy and a stale `academic-report-builder`; `scripts/sync_skills.sh` targets only opencode/claude/codex.
