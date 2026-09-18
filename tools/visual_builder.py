@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -225,6 +226,12 @@ def command_mermaid(args: argparse.Namespace) -> int:
         "-b", args.background,
         "-p", str(puppeteer_config()),
     ]
+    if args.scale is not None:
+        if not math.isfinite(args.scale) or args.scale <= 0:
+            raise SystemExit(
+                f"--scale inválido: {args.scale}. Usá un número finito mayor que 0."
+            )
+        cmd.extend(["-s", str(args.scale)])
     if args.css_file:
         cmd.extend(["-C", str(resolve_path(args.css_file))])
     if args.theme:
@@ -394,6 +401,12 @@ def build_parser() -> argparse.ArgumentParser:
     mermaid.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     mermaid.add_argument("--background", default="white")
     mermaid.add_argument("--theme", default="neutral")
+    mermaid.add_argument(
+        "--scale",
+        type=float,
+        default=None,
+        help="Raster scale factor passed to mermaid (-s); omit for the native default",
+    )
     mermaid.add_argument("--css-file", help="CSS file to style Mermaid output")
     mermaid.set_defaults(func=command_mermaid)
 
