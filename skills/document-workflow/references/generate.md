@@ -20,16 +20,24 @@ marker and refuses to deliver anything.
 ## Contract
 
 Generation exists to turn the confirmed report content into the single final PDF the
-later phases read. The executor runs the canonical pipeline
-(`python tools/build_report_auto.py ...`), which builds from the confirmed
-`report.yml` plus its content, runs the configured technical validation, and records
-the artifact hash and page count. The phase produces exactly one artifact: the final
-PDF under `outputs/<materia>/<final>.pdf`.
+later phases read. The executor runs the canonical pipeline, which builds from the
+confirmed `report.yml` plus its content, runs the configured technical validation,
+and records the artifact hash and page count:
+
+```bash
+"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/build_report_auto.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"
+```
+
+Every path is absolute, so the command runs from any working directory; the
+interpreter is the one selected in `automation-contract.md` (`REPORT_PYTHON`), which
+may live outside a worktree's own source root. The phase
+produces exactly one artifact: the final PDF under `outputs/<materia>/<final>.pdf`.
 
 Done means that final PDF exists and is not older than `approval.yml`, so a PDF that
 predates the marker is `pending` and the build simply reruns. Generate is never
 `blocked`: a missing or stale PDF is ordinary progress. The phase does not publish;
-the publisher belongs to `references/deliver.md`, and approval state is derived by
+the deliver entrypoint (`tools/deliver_report.py`, see `references/deliver.md`) is
+the only publication route, and approval state is derived by
 `tools/doc_status.py` and re-checked by the publisher.
 
 ## Steps

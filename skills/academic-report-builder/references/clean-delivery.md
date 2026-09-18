@@ -1,8 +1,17 @@
 # Clean-delivery contract
 
-After successful configured technical validation, the final PDF is automatically
-published in the user's Documents library. Publication is a technical-copy status,
-not human approval.
+Generation never publishes. The build ends at the validated final PDF under
+`outputs/<materia-slug>/` and reports its SHA-256; it writes nothing into
+`~/Documents`. Delivery is a separate, explicit step run through
+`tools/deliver_report.py`, which is the only publication route.
+
+Delivery requires a current `approval.yml` marker (`APPROVAL_CURRENT`) and a
+`validation.yml` receipt recording `result: pass` for the exact final PDF bytes.
+`deliver_report.py` re-checks the receipt against the current bytes and the
+publisher re-checks the marker; a missing or stale marker, or a receipt bound to
+other bytes, refuses delivery before anything is created. When both hold, the
+validated artifact is published in the user's Documents library. Publication is a
+technical-copy status, not human approval.
 
 ## Two spaces, never mixed
 

@@ -10,8 +10,14 @@ orchestrates publication and never copies or versions the PDF itself.
 ## Contract
 
 Delivery exists to place the validated PDF in the confirmed delivery folder. The
-executor calls the existing publisher, which re-checks the approval marker itself and
-refuses an absent, stale, or malformed `approval.yml` before it creates anything. The
+executor runs the deliver entrypoint, `"$REPORT_AUTOMATION_ROOT/tools/deliver_report.py"`
+over `"$REPORT_CONTENT_ROOT/reports/<work-folder>/"`, which is a thin gate-checker
+over the existing publisher:
+it requires a `validation.yml` receipt recording `result: pass` for the exact final
+PDF bytes (`artifact_sha256` match), then calls the publisher, which re-checks the
+approval marker itself and refuses an absent, stale, or malformed `approval.yml`
+before it creates anything. Generation never publishes; this entrypoint is the only
+publication route. The
 phase produces exactly one artifact: a versioned
 `<slug>-vNNN.pdf` under `~/Documents/<category>/<slug>/`, where the category comes
 from the confirmed route and the slug from the confirmed title. That folder holds
@@ -30,7 +36,12 @@ review against immutable hashes.
 ## Steps
 
 1. Confirm the routed block reports the validate phase `done` for the final PDF.
-2. Run the publication step from `clean-delivery.md`.
+2. Run the publication entrypoint (the step `clean-delivery.md` defines); every path
+   is absolute, so the working directory is irrelevant:
+
+   ```bash
+   "$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/deliver_report.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"
+   ```
 3. Report the published path and its version, and state that approval receipts are
    unchanged.
 4. Re-run `doc_status`; an all-`done` route reports `next: done`.

@@ -11,22 +11,26 @@ orchestrates the phase and never composes the preview itself.
 
 The preview exists to be the object the human approves, so it must show enough
 content for a decision before any PDF is built. The executor produces exactly one
-artifact: `reports/<wf>/preview.md`, ASCII, with the fixed H2 sections
+artifact: `reports/<wf>/preview.md`, UTF-8, with the fixed H2 sections
 
     # Content Preview: <title>
     ## Contract Summary   - Route, Type, Audience, Purpose, Template/identity, Outputs, Visual direction
     ## Outline            - numbered sections, one-line intent each
-    ## Evidence           - "<section> - <claim id> -> <source locator>" or "none (no external claims)"
+    ## Evidence           - "<section> - <claim id> -> <source locator>" (evidence matrix, or the inspected local source when research was skipped)
     ## Output Type        - "Output type: PDF | DOCX | PDF+DOCX | VISUAL"
 
 The preview binds to the confirmed `report.yml` record and to the evidence matrix
 when the research phase produced one; it does not invent claims, sections, or a
-document type. It stays ASCII and non-empty.
+document type. It is UTF-8: the human headings and the content may be written in
+Spanish, accents included, and nothing in the preview is restricted to ASCII. It is
+never empty.
 
 Done means `preview.md` exists with non-whitespace content. A missing or empty file
 leaves the phase `pending`; an unreadable file is `blocked` (`preview_unreadable`).
 Editing a confirmed field re-renders the preview, which invalidates any earlier
-approval and presents the one gate again for the new bytes.
+approval and presents the one gate again for the new bytes. An approved preview is
+never rewritten: `approval.yml` records `preview_sha256` over its exact bytes, so
+rewriting the file without a fresh explicit approval would leave the marker stale.
 
 ## Steps
 

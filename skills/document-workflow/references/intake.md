@@ -10,11 +10,22 @@ this skill orchestrates and never re-implements intake.
 ## Contract
 
 Intake exists to turn a request into the one machine-readable record the whole route
-derives from: `reports/<wf>/report.yml`. It records the confirmed document type and
-route, the route-mandatory metadata (academic: `title`, `subject`, `teacher`,
-`student`, `date`; every other route: `title`, `student`, `date`), audience,
-purpose, template or identity, delivery format, visual direction, and
-`research: skipped` when the research trigger does not fire.
+derives from: `reports/<wf>/report.yml`. The record uses the keys the pipeline
+actually reads; the full shape and its semantics live in
+`academic-report-builder/references/document-intake.md`.
+
+- top-level `route:` (document type), `output:` (delivery format), `template:` when
+a template was confirmed, and `cover:` when the route default is overridden;
+- `metadata:` for identity and context: the route-mandatory fields (academic:
+`metadata.title`, `metadata.subject`, `metadata.teacher`, `metadata.student`,
+`metadata.date`; every other route: `metadata.title`, `metadata.student`,
+`metadata.date`), `metadata.members` for a group roster, and the recorded
+`metadata.audience`, `metadata.purpose`, and `metadata.visual_direction`;
+- top-level `research: skipped` when the research trigger does not fire.
+
+`cover:` is top-level: `report.yml`'s own `cover:` key is the only one read, so a
+nested `metadata.cover` would be ignored. Do not invent a parallel key for a meaning
+that already has one.
 
 Intake asks only the consequential fields that are still missing; supplied inputs are
 candidate answers, and each missing route-mandatory field may be clarified once. It

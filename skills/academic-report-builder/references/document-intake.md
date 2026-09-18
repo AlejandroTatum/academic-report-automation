@@ -115,4 +115,47 @@ Visual direction: Technical
 
 Any change to a recorded field re-renders the block and overwrites the record.
 
+## report.yml record
+
+The Document Contract is written to `reports/<work-folder>/report.yml` as this
+record. These are the keys the pipeline and the later phases actually read; do not
+invent a parallel key for a meaning that already has one:
+
+```yaml
+# reports/<work-folder>/report.yml — the one machine-readable record the route derives from.
+type: report                  # backend classification: essay | report | technical_report | visual | docx ...
+route: project                # academic | project | business | technical | other
+output: pdf                   # pdf | docx
+template: plain               # only when a template was confirmed; omit it otherwise
+
+metadata:
+  title: "Manual de despliegue"
+  student: "Nombre y apellido"         # author identity; author/nombre are accepted aliases
+  # members: ["Nombre 1", "Nombre 2"]  # group reports only: the complete roster
+  date: "2026-09-10"
+  audience: "Equipo tecnico"            # Confirmation 2
+  purpose: "Implementar el despliegue"  # Confirmation 2
+  visual_direction: "Technical"         # Confirmation 5
+
+cover:                        # top-level and optional: explicit values win over the route default
+  required: true
+  logo_required: true
+  body_starts_on_page: 2
+```
+
+- `route:` and `output:` are top-level. `metadata:` holds identity and the three
+  recorded context fields (`audience`, `purpose`, `visual_direction`); Route A adds
+  `subject` and `teacher`, and the other routes must not invent those.
+- `cover:` is top-level as well. `cover_value` only reads `report.yml`'s own
+  `cover:` key, so a nested `metadata.cover` is read nowhere and would silently
+  leave the route default in force.
+- Group reports declare the complete roster in `metadata.members` (aliases
+  `integrantes`, `miembros`); `metadata.paralelo` stays optional data the intake
+  never asks for.
+- Route-derived rendering defaults (template, cover, section numbering, list of
+  figures) resolve from the confirmed `route:` at build and validation time; an
+  explicitly written value always wins. See `document-routing.md`.
+- No other key is added for these meanings: there is no top-level `audience:`, no
+  `document_type:`, and no `visual_direction:` outside `metadata:`.
+
 The single confirmation gate does not live here. Intake records data only and never asks for approval to generate. Generation starts only after the one post-preview confirmation in `document-workflow/references/approval.md`.
