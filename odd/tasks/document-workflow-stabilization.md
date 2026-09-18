@@ -95,13 +95,16 @@ Make the document workflow generate, validate, and deliver a report without hidd
 - Pipeline: no receipt -> delivery refused exit 1, no publication; the validated PDF then a NEW SANDBOX TEST receipt on the existing schema (only BUILD_PASS + VALIDATION_PASS, hash-matching); guarded `deliver --documents-root <sandbox>` copied the same `7ecedb13...` bytes; rerun REUTILIZADO single file; stale original hash `3667dd07` refused. Isolated HOME/Documents used only for a `doc_status` readback (`next done`), never visual acceptance. Real Documents v001/v002/v003 and the original manifest unchanged. Route-default minimal fixture (1 page, no institution) passed 92 focused tests independently.
 - T7 prerequisites: end-to-end rerun in a new content folder, compiled-PDF inspection (route/cover, tables, references), and delivery strictly after validation were done; final-size figure legibility is the only failing item.
 
-### T9 — Preserve T2–T7 as work-unit commits — IN PROGRESS
+### T9 — Preserve T2–T7 as work-unit commits — DONE
 - [x] Record the commit plan and its boundaries in this document before staging anything.
-- [ ] Create one reviewable commit per review surface; no file is split across commits, so every commit is internally coherent.
-- [ ] Re-run the full suite from this worktree on the final HEAD.
-- [ ] Leave `outputs/` untouched (gitignored) and the root checkout on `main` clean.
+- [x] Create one reviewable commit per review surface; no file is split across commits, so every commit is internally coherent.
+- [x] Re-run the full suite from this worktree on the final HEAD.
+- [x] Leave `outputs/` untouched (gitignored) and the root checkout on `main` clean.
 - Acceptance: `git status` clean over source and this document; each commit is a coherent reviewable surface with its tests and docs alongside the behavior; suite green at final HEAD; no push, PR, issue closure, or review-authority mutation.
-- Rationale: 1268 tracked insertions plus 1197 untracked lines had stayed uncommitted by the earlier "no commits" constraint. That constraint is lifted for this branch only, because the verified work was at risk of loss.
+- Evidence (writer-executed, parent-verified): commits `a75394b` (lifecycle, 5 files) -> `2ab87cf` (render, 14) -> `f9edb44` (status, 4) -> `154da22` (visual, 3) -> `309ca81` (skills docs, 12) -> `cc1ebd3` (ODD, 1) = 39 files, 2603 insertions / 228 deletions vs `9c9790d`. Parent-observed: `git status --porcelain` empty, `git diff HEAD` empty (the commits captured the working tree exactly, so no behavior changed), `outputs/` absent from all 6 commits, root checkout still clean at `9c9790d` on `main`, branch unchanged and nothing pushed.
+- Suite: 936 passed in 18.40s on the committed HEAD (writer-observed). Because `git diff HEAD` is empty, this HEAD is byte-identical to the tree that had already passed 936 tests, so the result is not a new claim about changed content.
+- No prohibited Git operation was run, so no host skill sync was triggered: `core.hooksPath=.githooks` defines only `post-checkout`/`post-merge`/`post-rewrite`, and `git commit` fires none of them. The root checkout was never touched.
+- Deferred by decision: the T8 legibility blocker, the Pi runtime skill sync, and the `@@LATEX_KEEP_0@@` base-only leak.
 
 #### Commit plan (surface-based, no shared files)
 Task numbers are not the commit axis because T2/T3/T7 and T4/T5 share files. Grouping by surface keeps every commit self-consistent and avoids splitting hunks.
@@ -135,4 +138,4 @@ Task numbers are not the commit axis because T2/T3/T7 and T4/T5 share files. Gro
 ## Next step
 T2–T7 independently accepted. T8 stays PARTIAL: only final-size figure legibility fails (page08 labels ~2.6–4.6pt em). Its remedy is a report-visual redesign and approval decision (figure layout/font sizing) — not re-running or silently editing report/source; no automatic new-scope task.
 
-T9 is the user-selected next step (2026-09-18): preserve T2–T7 as work-unit commits on this branch. The T8 legibility blocker, the Pi runtime skill sync, and closing #22–#27 remain deferred and unauthorized.
+T9 is DONE (2026-09-18): the T2–T7 work is preserved as 6 work-unit commits (`a75394b`..`cc1ebd3`) on `fix/document-workflow-stabilization`, suite green at 936, working tree clean, nothing pushed. The T8 legibility blocker, the Pi runtime skill sync, and closing #22–#27 remain deferred and unauthorized. The next real decision is whether to push this branch and open a PR for human review.
