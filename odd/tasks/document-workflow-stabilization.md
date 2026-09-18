@@ -148,4 +148,8 @@ Status: lineage left in `reviewing`, reoffering only the `review-readability` (o
 ## Next step
 T2–T7 independently accepted. T8 stays PARTIAL: only final-size figure legibility fails (page08 labels ~2.6–4.6pt em). Its remedy is a report-visual redesign and approval decision (figure layout/font sizing) — not re-running or silently editing report/source; no automatic new-scope task.
 
-T9 is DONE (2026-09-18): the T2–T7 work is preserved as 6 work-unit commits (`a75394b`..`cc1ebd3`) on `fix/document-workflow-stabilization`, suite green at 936, working tree clean, nothing pushed. The T8 legibility blocker, the Pi runtime skill sync, and closing #22–#27 remain deferred and unauthorized. The next real decision is whether to push this branch and open a PR for human review.
+T9 is DONE (2026-09-18): the T2–T7 work is preserved as 6 work-unit commits (`a75394b`..`cc1ebd3`) on `fix/document-workflow-stabilization`, suite green at 936, working tree clean.
+
+Delivery (2026-09-18, user-authorized): local `main` was fast-forwarded on the remote (`68ae295..9c9790d`) so the PR range is exactly this work, the branch was pushed, and PR **#28** was opened against `main` — 8 commits, 39 files, +2616/-228, `MERGEABLE`/`CLEAN`, no `outputs/` paths, issues referenced with `Refs` (not an auto-closing keyword) because #22–#27 remain open and unapproved. No CI checks exist in this repo (no `.github/workflows/`), and no `type:*` or `status:*` labels exist either, so the `branch-pr` skill's label and issue-approval gates have no enforcing infrastructure here; labels were left untouched because that taxonomy is maintainer-owned.
+
+The T8 legibility blocker, the Pi runtime skill sync, the blocked `readability` lens, and closing #22–#27 remain deferred and unauthorized. Merge is the user's decision.
