@@ -7,13 +7,11 @@ plain template numbered sections unconditionally, so a technical document came
 out as `1. Propósito`, `2. Alcance`, ... `11. Referencias` with no way to turn
 it off.
 
-`section_numbering:` in report.yml now controls it. Absence of the key means
-numbered, exactly as before — the ~31 existing reports declare nothing about
-numbering and must render byte-for-byte the same.
-
-The switch is deliberately independent of `route:`: it is an explicit
-typographic decision, and coupling it to routing would make one key silently
-change the look of a document.
+`section_numbering:` in report.yml now controls it. With the key absent the default is
+ROUTE-derived (#23): numbered for the academic route (every existing
+route-omitted report), unnumbered for Routes B–D, which the routing contract
+forbids from auto-including academic numbering. An explicit key overrides the
+route default in either direction.
 """
 
 from __future__ import annotations
@@ -99,9 +97,10 @@ def test_heading_spacing_machinery_is_untouched(template: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_absent_key_means_numbered() -> None:
-    """The default is the historical behaviour, for every existing report."""
+def test_absent_key_means_numbered_on_the_academic_route() -> None:
+    """The default for route-omitted reports stays the historical behaviour."""
     assert build_latex_report.section_numbering_enabled({}) is True
+    assert build_latex_report.section_numbering_enabled({"route": "academic"}) is True
 
 
 @pytest.mark.parametrize("value", [True, "true", "True", "yes", "on", "si", "sí"])
@@ -129,15 +128,17 @@ def test_unrecognised_value_fails_loudly() -> None:
     assert build_latex_report.SECTION_NUMBERING_KEY in message
 
 
-def test_switch_is_not_derived_from_the_route() -> None:
-    """`route:` must not move the numbering default on its own.
+def test_route_moves_the_default_and_explicit_choice_wins() -> None:
+    """Routes B–D forbid auto-included academic numbering (#23).
 
-    The routing key is owned elsewhere and is still in flight; a report that
-    declares a non-academic route but says nothing about numbering keeps the
-    behaviour it has today.
+    The absent key now derives from the route; an explicit key overrides the
+    route default in either direction.
     """
-    for route in ("academic", "project", "business", "technical"):
-        assert build_latex_report.section_numbering_enabled({"route": route}) is True
+    key = build_latex_report.SECTION_NUMBERING_KEY
+    for route in ("project", "business", "technical", "other"):
+        assert build_latex_report.section_numbering_enabled({"route": route}) is False
+        assert build_latex_report.section_numbering_enabled({"route": route, key: True}) is True
+    assert build_latex_report.section_numbering_enabled({"route": "academic", key: False}) is False
 
 
 # ---------------------------------------------------------------------------

@@ -39,6 +39,21 @@ TWO_COLUMNS_MD = """\
 | DTO | Objeto de transferencia de datos |
 """
 
+# Cata Club defect (#26): a long sentence in a two-column `c` cell cannot wrap,
+# so LaTeX reports "Overfull \\hbox" and the text runs past the page edge.
+LONG_CELL_MD = """\
+| Termino | Definicion |
+| --- | --- |
+| API | Interfaz de programacion de aplicaciones que expone un conjunto de operaciones y tipos de datos para ser consumida por otros programas sin conocer su implementacion interna |
+| DTO | Objeto de transferencia de datos que encapsula atributos para transportarlos entre capas de la aplicacion |
+"""
+
+ONE_COLUMN_MD = """\
+| Paso |
+| --- |
+| Primero se compila el documento fuente y despues se valida el resultado |
+"""
+
 
 def _tex_for(markdown: str) -> str:
     return build_latex_report.markdown_to_latex(markdown)
@@ -60,11 +75,31 @@ def test_more_than_two_columns_emits_xltabular() -> None:
     assert r"\begin{tabularx}" not in tex
 
 
-def test_two_or_fewer_columns_emits_longtable() -> None:
-    tex = _tex_for(TWO_COLUMNS_MD)
-    assert r"\begin{longtable}{| c | c |}" in tex
+def test_two_or_fewer_columns_emit_wrapping_paragraph_cells() -> None:
+    """One/two-column tables must wrap long cell text (#26).
+
+    Fixed-width `c` columns overflow on long sentences. The columns now use
+    centered `p{...}` paragraphs sized from \\textwidth, keeping the longtable
+    environment, the visible grid, the small font and the header repeat.
+    """
+    tex = _tex_for(LONG_CELL_MD)
+    assert r"\begin{longtable}{|" in tex
+    assert r">{\centering\arraybackslash}p{" in tex
     assert r"\begin{table}[H]" not in tex
     assert r"\centering" not in tex.splitlines()
+
+
+def test_wrapping_columns_are_derived_from_textwidth_per_column_count() -> None:
+    for markdown, columns in [(LONG_CELL_MD, 2), (ONE_COLUMN_MD, 1)]:
+        tex = _tex_for(markdown)
+        expected = rf"p{{\dimexpr(\textwidth-{8 * columns}pt)/{columns}\relax}}"
+        assert expected in tex, f"colspec must size each of {columns} column(s) as {expected}"
+
+
+def test_one_column_table_also_wraps() -> None:
+    tex = _tex_for(ONE_COLUMN_MD)
+    assert r">{\centering\arraybackslash}p{" in tex
+    assert r"| c |" not in tex
 
 
 # ---------------------------------------------------------------------------

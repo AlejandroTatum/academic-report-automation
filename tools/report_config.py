@@ -152,6 +152,21 @@ ROUTE_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
 # is a contract smell, not a build failure — hence a warning.
 ACADEMIC_ONLY_METADATA = ("subject", "teacher")
 
+# Cover defaults derived from the confirmed route (document-routing.md): the
+# non-academic routes default to no cover, no logo requirement and a body that
+# starts on page 1 — exactly what templates/plain-report.tex renders. These are
+# DEFAULTS, not a rewrite: an explicit `cover:` block in report.yml overrides
+# per key, and an absent (or academic) route keeps reading academic_format.yml
+# exactly as every historical report always has. Cover keys not listed here
+# (e.g. `full_first_page`, `source_model`) stay globally owned by
+# academic_format.yml for every route.
+ROUTE_COVER_DEFAULTS: dict[str, dict[str, Any]] = {
+    "project": {"required": False, "logo_required": False, "body_starts_on_page": 1},
+    "business": {"required": False, "logo_required": False, "body_starts_on_page": 1},
+    "technical": {"required": False, "logo_required": False, "body_starts_on_page": 1},
+    "other": {"required": False, "logo_required": False, "body_starts_on_page": 1},
+}
+
 
 def unknown_route_message(route: str) -> str:
     """Spanish guidance for a `route:` value no route table recognises."""
@@ -417,6 +432,37 @@ class ReportConfig:
                 return override
         value = dig(self.academic_format, keys)
         return default if value is MISSING else value
+
+    def cover_value(self, key: str, default: Any = None) -> Any:
+        """Resolve a cover value: report.yml -> route default -> format default.
+
+        The precedence here is the heart of the route contract: an explicit
+        `cover:` block in report.yml always wins (per key, so a partial block
+        never shadows the rest), a non-academic route derives its default from
+        the route table, and an academic (or unrecognised) route falls through
+        to the global academic_format.yml values — which is what every
+        route-omitted report has always read, including its own `cover:`
+        relaxation.
+        """
+        explicit = self.raw.get("cover")
+        if isinstance(explicit, dict) and key in explicit:
+            return explicit[key]
+        route_defaults = ROUTE_COVER_DEFAULTS.get(self.route)
+        if route_defaults is not None and key in route_defaults:
+            value = route_defaults[key]
+            if key != "required" and not self.cover_value("required", default=True):
+                return value
+            # Dependent coherence: an explicitly required cover carries the
+            # validation expectations that make "required" meaningful — the
+            # body cannot start on page 1 (the validator would compare the
+            # cover page with itself) and the cover needs its logo. Each stays
+            # explicitly overridable key by key.
+            if key == "body_starts_on_page" and value != 2:
+                return 2
+            if key == "logo_required" and not value:
+                return True
+            return value
+        return self.academic_value("cover", key, default=default)
 
     @classmethod
     def load(cls, folder: Path) -> "ReportConfig":

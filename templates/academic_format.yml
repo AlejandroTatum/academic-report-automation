@@ -38,10 +38,17 @@ body_text:
   line_spacing: 1.15                         # [GUIDANCE] set in .tex template
 
 cover:
-  required: true              # [ENFORCED] common_validation checks PDF has at least 2 pages (cover + body)
+  # Route-conditional since the routing fix (#23): these values govern the
+  # academic route (and reports written before `route:` existed). The
+  # non-academic routes derive no-institutional-cover defaults instead (no
+  # required cover, no logo expectation, body starts on page 1), and an
+  # explicit `cover: required: true` on a non-academic route upgrades the
+  # dependent expectations below (logo, body page 2) unless that key is
+  # explicitly overridden. See document-routing.md, derived rendering defaults.
+  required: true              # [ENFORCED] academic route: PDF must have at least 2 pages (cover + body)
   full_first_page: true       # [GUIDANCE] template layout, not validated
-  logo_required: true         # [ENFORCED] pdf_layout_validation checks for embedded images
-  body_starts_on_page: 2      # [ENFORCED] pdf_layout_validation checks body markers on page 2
+  logo_required: true         # [ENFORCED] academic route: pdf_layout_validation checks for embedded images
+  body_starts_on_page: 2      # [ENFORCED] academic route: pdf_layout_validation checks body markers on page 2
   source_model: academic-sources/sistemas-operativos/templates/modelos-ensayo/  # [GUIDANCE]
 
 figures:
