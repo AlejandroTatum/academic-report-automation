@@ -23,12 +23,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from approval_marker import approval_state, sha256_file
-from report_config import ReportConfig, read_yaml
+from report_config import ROOT, ReportConfig, read_yaml
 
 PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "deliver")
 DONE, CURRENT, PENDING, BLOCKED = "done", "current", "pending", "blocked"
@@ -37,18 +38,22 @@ SCHEMA_NAME = "academic.doc-status"
 SCHEMA_VERSION = 1
 
 # One action sentence per phase: the closing ``**Next**`` line for the routed token,
-# and the front-loaded gate's consequence for the phase that still waits.
+# and the front-loaded gate's consequence for the phase that still waits. Every
+# sentence names the absolute path it acts on -- the work folder exactly as the
+# caller passed it, and for the tool phases a complete, shell-quoted command built
+# from this interpreter and this code root's entrypoint -- so a fresh session can
+# paste the printed command from any working directory and have it run.
 _GUIDANCE = {
-    "intake": "complete reports/{wf}/report.yml, then re-run doc_status",
+    "intake": "complete {report_yml}, then re-run doc_status",
     "research": (
-        "write reports/{wf}/research/evidence-matrix.md or record research: skipped, "
+        "write {matrix} or record research: skipped, "
         "then re-run doc_status"
     ),
-    "preview": "draft reports/{wf}/preview.md, then re-run doc_status",
-    "approval": "generation runs only after you approve reports/{wf}/preview.md",
-    "generate": "build the final PDF, then re-run doc_status",
-    "validate": "record reports/{wf}/validation.yml for the final PDF, then re-run doc_status",
-    "deliver": "publish the validated PDF, then re-run doc_status",
+    "preview": "draft {preview}, then re-run doc_status",
+    "approval": "generation runs only after you approve {preview}",
+    "generate": "build with {build_command}, then re-run doc_status",
+    "validate": "record {validation} for the final PDF, then re-run doc_status",
+    "deliver": "publish with {deliver_command}, then re-run doc_status",
 }
 
 
@@ -152,10 +157,12 @@ def _phase_validate(folder: Path, config: ReportConfig, _documents_root: Path | 
     """Map the validation receipt onto one phase state.
 
     ``done`` requires both halves of the design's predicate: the receipt records
-    ``result: pass`` and its ``artifact_sha256`` equals the final PDF's bytes. A
-    recorded ``result: fail`` is the only ``blocked`` outcome the design names; a
-    missing, unreadable or mismatched receipt returns to ``pending`` so validation
-    simply reruns. The receipt is never written or repaired here.
+    ``result: pass`` and its ``artifact_sha256`` equals the final PDF's bytes.
+    Receipt identity is checked before the recorded outcome: a receipt bound to
+    other bytes is stale evidence -- a stale ``result: fail`` included -- and
+    returns to ``pending`` so the new build can revalidate. Only a fail bound to
+    the current bytes is the ``blocked`` ``validation_failed`` outcome. The
+    receipt is never written or repaired here.
     """
     receipt = folder / "validation.yml"
     if not receipt.is_file():
@@ -164,9 +171,6 @@ def _phase_validate(folder: Path, config: ReportConfig, _documents_root: Path | 
         data = read_yaml(receipt)
     except Exception:
         return PhaseState("validate", PENDING, "validation.yml unreadable")
-    result = str(data.get("result") or "").strip().lower()
-    if result == "fail":
-        return PhaseState("validate", BLOCKED, "validation.yml recorded result: fail", "validation_failed")
     pdf = config.pdf_path
     if not pdf.is_file():
         return PhaseState("validate", PENDING, "final PDF missing")
@@ -174,10 +178,16 @@ def _phase_validate(folder: Path, config: ReportConfig, _documents_root: Path | 
         artifact_hash = sha256_file(pdf)
     except OSError:
         return PhaseState("validate", PENDING, "final PDF unreadable")
-    if result != "pass":
-        return PhaseState("validate", PENDING, "validation.yml result is not pass")
+    # Identity before outcome: a receipt that does not bind to the current PDF
+    # bytes describes a superseded build, so its recorded result (fail included)
+    # is stale evidence and validation simply reruns against the new bytes.
     if str(data.get("artifact_sha256") or "").strip().lower() != artifact_hash:
         return PhaseState("validate", PENDING, "validation.yml artifact_sha256 does not match final PDF")
+    result = str(data.get("result") or "").strip().lower()
+    if result == "fail":
+        return PhaseState("validate", BLOCKED, "validation.yml recorded result: fail", "validation_failed")
+    if result != "pass":
+        return PhaseState("validate", PENDING, "validation.yml result is not pass")
     return PhaseState("validate", DONE, f"validation.yml passes for {pdf.name}")
 
 
@@ -228,9 +238,11 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
     reported ``pending`` regardless of the artifacts on disk, because nothing
     downstream has been authorized. The first incomplete phase becomes
     ``current`` and is also the ``next`` token; an all-done route reports
-    ``done``. The whole derivation is read-only.
+    ``done``. The whole derivation is read-only. The work folder is resolved once,
+    so the rendered guidance carries an absolute path even when the caller passed a
+    relative one.
     """
-    folder = Path(folder)
+    folder = Path(folder).resolve()
     config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     handlers = (
         _phase_intake,
@@ -259,7 +271,10 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
         current, next_token, gate = DONE, DONE, ""
     else:
         current = next_token = focus.name
-        gate = f"{focus.name} {focus.state}"
+        # The one authoritative gate: the actual focus phase, its pre-projection
+        # token, and that phase's own readiness guidance. The human renderer and
+        # the JSON payload both project this value verbatim.
+        gate = f"{focus.name} {focus.state} - {_guidance(focus.name, folder)}"
         if focus.state == PENDING:
             phases[PHASES.index(focus.name)] = replace(focus, state=CURRENT)
     blocked_reasons = tuple(
@@ -268,10 +283,38 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
     return DocStatus(folder, tuple(phases), current, next_token, gate, blocked_reasons)
 
 
+def _tool_command(script: str, work_folder: Path) -> str:
+    """A complete, shell-quoted command that runs one entrypoint on ``work_folder``.
+
+    Built with ``shlex.join`` so a work folder containing spaces (or quotes) prints
+    as a command a shell parses back to exactly these arguments, and prefixed with
+    ``sys.executable`` because the entrypoints are not executable files and must run
+    under the interpreter that owns this repository's dependencies.
+    """
+    return shlex.join([sys.executable, str(ROOT / "tools" / script), str(work_folder)])
+
+
 def _guidance(phase_name: str, work_folder: Path) -> str:
-    """Action sentence for ``phase_name``, bound to the real work-folder name."""
+    """Action sentence for ``phase_name``, bound to the real work-folder path.
+
+    Every path is absolute and every command is complete: the work folder exactly as
+    the caller passed it (``derive`` resolves it once), and for ``generate``/
+    ``deliver`` an interpreter + entrypoint + folder command that runs from any
+    working directory. Nothing is left to resolve against an assumed cwd.
+    """
     template = _GUIDANCE.get(phase_name)
-    return "" if template is None else template.format(wf=Path(work_folder).name)
+    if template is None:
+        return ""
+    folder = Path(work_folder)
+    return template.format(
+        folder=folder,
+        report_yml=folder / "report.yml",
+        matrix=folder / "research" / "evidence-matrix.md",
+        preview=folder / "preview.md",
+        validation=folder / "validation.yml",
+        build_command=_tool_command("build_report_auto.py", folder),
+        deliver_command=_tool_command("deliver_report.py", folder),
+    )
 
 
 def _payload(status: DocStatus) -> dict[str, object]:
@@ -302,13 +345,14 @@ def _route(status: DocStatus) -> str:
 
 
 def _gate(status: DocStatus) -> str:
-    """Front-loaded gate text: approval until it passes, else the waiting focus."""
-    focus = next((phase for phase in status.phases if phase.state != DONE), None)
-    if focus is None:
-        return ""
-    approval = next((phase for phase in status.phases if phase.name == "approval"), None)
-    gate_phase = approval if approval is not None and approval.state != DONE else focus
-    return f"{gate_phase.name} {gate_phase.state} - {_guidance(gate_phase.name, status.work_folder)}"
+    """Project the authoritative gate: ``status.gate`` derived once in ``derive``.
+
+    There is no second derivation here -- the human block renders exactly the
+    value the JSON payload carries, so the two outputs cannot disagree. The gate
+    names the route's actual focus phase with its own readiness guidance; there
+    is no approval front-load for phases that have not reached approval.
+    """
+    return status.gate
 
 
 def _summary_lines(status: DocStatus) -> list[str]:

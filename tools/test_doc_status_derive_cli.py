@@ -108,7 +108,21 @@ def test_derive_projects_first_incomplete_phase_as_current(tmp_path: Path) -> No
     assert status.next_token == "research"
     assert states["research"] == doc_status.CURRENT
     assert all(states[name] == doc_status.PENDING for name in doc_status.PHASES[2:])
-    assert status.gate == "research pending"
+    assert status.gate.startswith("research pending - ")
+
+
+def test_derive_resolves_the_work_folder_so_guidance_is_absolute(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """T7: a relative argument still yields absolute, cwd-independent guidance."""
+    folder = _working_folder(tmp_path / "wf")
+    monkeypatch.chdir(tmp_path)
+
+    status = doc_status.derive(Path("wf"))
+
+    assert status.work_folder == folder
+    assert status.work_folder.is_absolute()
+    assert str(folder) in status.gate
 
 
 def test_derive_keeps_focus_on_blocked_phase_and_forces_later_phases_pending(
@@ -126,7 +140,7 @@ def test_derive_keeps_focus_on_blocked_phase_and_forces_later_phases_pending(
     assert "approval_marker_stale" in status.blocked_reasons
     assert status.current == "approval"
     assert status.next_token == "approval"
-    assert status.gate == "approval blocked"
+    assert status.gate.startswith("approval blocked - ")
     assert states["generate"] != doc_status.DONE
     assert all(
         states[name] == doc_status.PENDING for name in ("generate", "validate", "deliver")
@@ -177,7 +191,7 @@ def test_derive_wraps_exception_in_the_first_phase_and_locks_the_route(
     assert states["intake"] == doc_status.BLOCKED
     assert status.current == "intake"
     assert status.next_token == "intake"
-    assert status.gate == "intake blocked"
+    assert status.gate.startswith("intake blocked - ")
     assert all(states[name] == doc_status.PENDING for name in doc_status.PHASES[1:])
 
 
