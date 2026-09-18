@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from publish_pdf import PublicationError, publish_validated_pdf, sha256_file
+from approval_marker import sha256_file
 from report_config import load_report_config
 from validate_report import validate
 
@@ -126,22 +126,14 @@ def main() -> None:
     if config.output_format == "pdf":
         if sha256_file(config.pdf_path) != validated_pdf_hash:
             raise SystemExit(
-                "PDF PUBLICATION FAILED: el PDF cambió entre la validación y la publicación"
+                "PDF CHANGED DURING VALIDATION: el PDF cambió entre las dos "
+                "lecturas de hash; la validación no cubre estos bytes. "
+                "Volvé a generar y validar antes de entregar."
             )
-        try:
-            publication = publish_validated_pdf(
-                config.pdf_path,
-                config.publication_category,
-                config.document_slug,
-                work_folder=config.folder,
-                expected_sha256=validated_pdf_hash,
-            )
-        except PublicationError as exc:
-            raise SystemExit(f"PDF PUBLICATION FAILED: {exc}") from exc
-        action = "PUBLICADO" if publication.created else "REUTILIZADO"
         print(
-            f"PDF_{action}: {publication.path} (SHA-256: {publication.sha256}; "
-            "copia técnicamente validada, sin VISUAL_PASS, HUMAN_REVIEW ni READY_TO_SUBMIT)"
+            f"PDF GENERADO Y VALIDADO: {config.pdf_path} "
+            f"(SHA-256: {validated_pdf_hash}). La entrega a ~/Documents es una "
+            "fase separada: ejecutá tools/deliver_report.py."
         )
     print(f"Reporte: {config.quality_report_path}")
 
