@@ -55,7 +55,10 @@ def make_report(
         "student": "Alejandro Padilla",
         "date": "7 de agosto de 2026",
     }
-    lines = ["type: docx", "backend: docx", "output: docx", "publish_global: false"]
+    # An explicit docx: outside outputs/ keeps this suite's DOCX away from
+    # ReportConfig's derived default (which now lands under the content root
+    # by route/subject): these tests exercise the builder, not that routing.
+    lines = ["type: docx", "backend: docx", "output: docx", "publish_global: false", "docx: final/report.docx"]
     if route:
         lines.append(f"route: {route}")
     lines.append("metadata:")

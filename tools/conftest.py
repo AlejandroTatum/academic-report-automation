@@ -42,9 +42,17 @@ def _report(folder: Path, *, route: str | None = "academic", **metadata: object)
     ``route=None`` omits the key entirely (Route A is the absent-key default).
     ``metadata`` overrides the default body; a ``None`` value drops that key, which
     is how a test builds a route with missing mandatory metadata.
+
+    Declares an explicit ``pdf:`` outside ``outputs/`` (``final/report.pdf``, the
+    same location ``_pdf()`` writes to by default): these fixtures exist to test
+    phase-status logic, not ``ReportConfig``'s own default-path derivation, and a
+    report with nothing declared now derives its final path under the content
+    root by route/subject -- a location these tests have no reason to depend on.
+    A test that wants a different declared path (or none) still writes its own
+    ``pdf:``/``docx:`` line after calling this, and the later line wins.
     """
     folder.mkdir(parents=True, exist_ok=True)
-    lines = ["type: ensayo"]
+    lines = ["type: ensayo", "pdf: final/report.pdf"]
     if route is not None:
         lines.append(f"route: {route}")
     body = dict(_DEFAULT_METADATA)
@@ -178,13 +186,14 @@ def _mtime(path: Path, value: float) -> Path:
     return path
 
 
-def _pdf(folder: Path, *, path: str = "outputs/report.pdf", mtime: float | None = None) -> Path:
+def _pdf(folder: Path, *, path: str = "final/report.pdf", mtime: float | None = None) -> Path:
     """Write the final PDF under ``folder`` and return its path.
 
-    ``path`` mirrors the ``pdf:`` key the derivation resolves through
-    ``ReportConfig``; it defaults to the same ``outputs/report.pdf`` the config
-    uses when the report declares nothing. ``mtime`` pins the timestamp the
-    generate phase compares against the approval marker.
+    ``path`` mirrors the ``pdf:`` key ``_report()`` declares by default
+    (``final/report.pdf``, outside ``outputs/``); pass a report built without
+    ``_report()``'s default -- or one that overrode ``pdf:`` -- and give the
+    matching ``path`` here. ``mtime`` pins the timestamp the generate phase
+    compares against the approval marker.
     """
     target = Path(path)
     if not target.is_absolute():
@@ -218,7 +227,7 @@ def _validation(
     between pass and fail, mirroring the two branches the validate phase reads.
     """
     folder.mkdir(parents=True, exist_ok=True)
-    target = pdf if pdf is not None else folder / "outputs" / "report.pdf"
+    target = pdf if pdf is not None else folder / "final" / "report.pdf"
     body: dict[str, object] = {
         "schema": VALIDATION_SCHEMA,
         "artifact_sha256": artifact_sha256 or _sha256(target),

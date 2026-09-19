@@ -475,7 +475,7 @@ def test_printed_deliver_command_publishes_with_only_the_documents_root_override
     assert completed.returncode == 0, completed.stdout + completed.stderr
     published = sorted(documents.rglob("*-v001.pdf"))
     assert len(published) == 1 and published[0].read_bytes() == status.work_folder.joinpath(
-        "outputs", "report.pdf"
+        "final", "report.pdf"
     ).read_bytes()
     assert not (home / "Documents").exists(), "only the fixture Documents root is used"
 
