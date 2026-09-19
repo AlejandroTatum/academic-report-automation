@@ -347,7 +347,7 @@ def test_absolute_report_folder_outside_the_code_tree_loads(tmp_path):
     assert config.body_path == folder.resolve() / "body.md"
     assert config.body_path.exists()
     assert config.tex_path == folder.resolve() / "build" / "main.tex"
-    assert config.pdf_path == folder.resolve() / "outputs" / "report.pdf"
+    assert config.pdf_path == CONTENT_ROOT / "outputs" / "academicos" / "reporte-de-prueba.pdf"
     # Format rules keep coming from the code root, not from the report's tree.
     assert config.academic_format
 

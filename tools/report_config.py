@@ -53,6 +53,12 @@ def resolve_content_root(environ: dict[str, str] | None = None) -> Path:
 
 CONTENT_ROOT = resolve_content_root()
 
+# ``output_router`` already imports from this module (``CONTENT_ROOT``,
+# ``relative_label``, ``relative_subpath``), so this module cannot import
+# ``output_router`` at module scope without a cycle. ``GLOBAL_OUTPUTS`` is
+# recomputed here instead of imported — it is one line, not worth moving.
+GLOBAL_OUTPUTS = CONTENT_ROOT / "outputs"
+
 DEFAULT_FORMAT = ROOT / "templates" / "academic_format.yml"
 
 LATEX_TYPES = {
@@ -335,14 +341,36 @@ class ReportConfig:
         return resolve_in_folder(self.folder, value)
 
     @property
+    def output_folder_slug(self) -> str:
+        """Output subfolder for the derived default final path.
+
+        ``outputs/<materia>/`` when metadata names a subject ``output_router``
+        recognises (the academic route's own vocabulary), otherwise
+        ``outputs/<route category>/`` derived from the confirmed route. Only
+        consulted when a report leaves ``pdf:``/``docx:`` unset; an explicit
+        path never asks this question.
+
+        Imported lazily to avoid a cycle: ``output_router`` already imports
+        ``CONTENT_ROOT`` from this module at its own module scope.
+        """
+        from output_router import subject_slug
+
+        slug = subject_slug(self.metadata.get("subject"))
+        return slug or ascii_slug(self.publication_category)
+
+    @property
     def pdf_path(self) -> Path:
-        value = self.raw.get("pdf") or self.raw.get("output_pdf") or "outputs/report.pdf"
-        return resolve_in_folder(self.folder, value)
+        value = self.raw.get("pdf") or self.raw.get("output_pdf")
+        if value:
+            return resolve_in_folder(self.folder, value)
+        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.document_slug}.pdf"
 
     @property
     def docx_path(self) -> Path:
-        value = self.raw.get("docx") or self.raw.get("output_docx") or "outputs/report.docx"
-        return resolve_in_folder(self.folder, value)
+        value = self.raw.get("docx") or self.raw.get("output_docx")
+        if value:
+            return resolve_in_folder(self.folder, value)
+        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.document_slug}.docx"
 
     @property
     def log_path(self) -> Path:

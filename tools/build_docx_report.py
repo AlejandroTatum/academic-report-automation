@@ -46,7 +46,7 @@ from build_latex_report import (
     is_bibliography_heading,
 )
 from output_router import publish_global_output
-from report_config import ReportConfig, load_report_config
+from report_config import GLOBAL_OUTPUTS, ReportConfig, load_report_config
 
 # ---------------------------------------------------------------------------
 # Style names and page geometry
@@ -1105,14 +1105,20 @@ def build(folder: Path) -> ReportConfig:
         print(f"Aviso: {warning}")
     print(f"DOCX generado: {config.docx_path}")
     if config.publish_global:
-        published = publish_global_output(config.docx_path, config.metadata)
-        if published:
-            print(f"DOCX publicado por materia: {published}")
+        if GLOBAL_OUTPUTS.resolve() in config.docx_path.resolve().parents:
+            # A report that never declared `docx:` already lands under the
+            # content root's outputs tree (report_config derives it there);
+            # publishing a global copy would just copy the file onto itself.
+            print(f"DOCX final: {config.docx_path}")
         else:
-            print(
-                "Aviso: no pude inferir la materia; no se publicó copia global en "
-                "outputs/<materia>/"
-            )
+            published = publish_global_output(config.docx_path, config.metadata)
+            if published:
+                print(f"DOCX publicado por materia: {published}")
+            else:
+                print(
+                    "Aviso: no pude inferir la materia; no se publicó copia global en "
+                    "outputs/<materia>/"
+                )
     return config
 
 

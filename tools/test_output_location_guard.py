@@ -18,6 +18,7 @@ if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
 from report_config import (  # noqa: E402
+    GLOBAL_OUTPUTS,
     LOCAL_OUTPUTS_ERROR,
     ReportConfig,
     load_report_config,
@@ -92,12 +93,13 @@ def test_global_outputs_path_loads_without_complaint(tmp_path):
 
 
 def test_default_pdf_path_still_loads(tmp_path):
-    """No declared final path: nothing for the user to fix yet, so no fail-fast."""
+    """No declared final path: derives under the content root, not the local outputs/."""
     folder = write_report(tmp_path / "reports" / "informe", "type: essay\noutput: pdf\n")
 
     config = load_report_config(folder)
 
-    assert config.pdf_path == folder.resolve() / "outputs" / "report.pdf"
+    assert config.pdf_path == GLOBAL_OUTPUTS / "academicos" / "t.pdf"
+    assert not targets_local_outputs(config)
 
 
 def test_docx_output_is_not_caught_by_the_pdf_rule(tmp_path):
