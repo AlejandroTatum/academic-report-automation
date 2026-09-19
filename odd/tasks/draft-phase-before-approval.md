@@ -70,7 +70,8 @@ decided (2026-09-19) that drafting happens before the single human approval.
 - T3 `36fb3b1`: RED `test_doc_status_validate_deliver.py` 1 failed/14 passed -> GREEN 15 passed. Files: publish_pdf.py, test_doc_status_validate_deliver.py.
 - Full suite after T3: 8 failed / 938 passed. Failures in `tools/test_approval_marker.py` (2) and `tools/test_pdf_publication.py` (6): fixtures build markers without `body_sha256` (fail-closed by design). Scope was widened to those two files; fix in progress as commit `test(approval): bind body.md in marker fixtures`.
 - Contract test `tests/skills/test_document_workflow_contract.py` still passes after T2 (16 passed): it does not assert the route text; T4 adds `draft` to its maps.
-- RDD: assessment of the T1–T3 commits pending until the fixture commit closes the unit.
+- Fixture commit `5116a8c` (test_approval_marker.py, test_pdf_publication.py): focused 15 passed; full suite 946 passed.
+- RDD unit `49759b3..5116a8c`: assess `high` (`process_boundary`, 12 paths, 461 lines); consent granted by the user; lineage `review-23a93497d83daa2d`, 4 lenses (risk, resilience, readability, reliability) all `admission_decision: completed`; final capture `approved`; acknowledged (`gentle-ai.review-acknowledged/v1`). Reviewed boundary advances to `5116a8c`.
 
 ## Next step
-Fixture commit, then T4 (skill docs + contract test).
+T4 (skill docs + contract test), then T5 sync.
