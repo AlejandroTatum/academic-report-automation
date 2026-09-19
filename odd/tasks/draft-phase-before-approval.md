@@ -37,17 +37,17 @@ decided (2026-09-19) that drafting happens before the single human approval.
 - Forecast: ~380 authored changed lines. Delivery strategy: `ask-on-risk` (default).
 
 ## Tasks
-- [ ] T1 `approval_marker.py`: `BODY_NAME`, `body_sha256` in `REQUIRED_KEYS`,
+- [x] T1 `approval_marker.py`: `BODY_NAME`, `body_sha256` in `REQUIRED_KEYS`,
       hash/compare mirroring preview. Tests: `tools/test_doc_status_approval.py`
       (body edited after approval -> blocked stale; marker without body_sha256 ->
       malformed; body missing -> malformed). Conftest: `_body()` helper,
       `_approval(body=..., body_sha256=...)`.
-- [ ] T2 `doc_status.py`: `draft` in `PHASES` after `preview`; `_phase_draft`
+- [x] T2 `doc_status.py`: `draft` in `PHASES` after `preview`; `_phase_draft`
       (done non-empty body.md, pending missing/empty, blocked `draft_unreadable`);
       `_GUIDANCE["draft"]`; route/human render. Tests in
       `tools/test_doc_status_phases_early.py` (or new `test_doc_status_draft.py`)
       plus render/derive CLI tests that assert the route string.
-- [ ] T3 `publish_pdf.py`: `_approval_refusal` names body.md for stale/malformed.
+- [x] T3 `publish_pdf.py`: `_approval_refusal` names body.md for stale/malformed.
       Tests in `tools/test_doc_status_validate_deliver.py` or publish tests.
 - [ ] T4 Skill docs: new `references/draft.md` (Executor: academic-report-builder,
       Artifact: `reports/<wf>/body.md`, authoring format, Never list); SKILL.md
@@ -64,7 +64,13 @@ decided (2026-09-19) that drafting happens before the single human approval.
 - Full suite passes; contract tests cover the new reference.
 
 ## Progress / evidence
-(filled per task: RED/GREEN output, commit ids, assess tier and outcome)
+- Plan commit `26a888b`: assess `passive` (`non_executable_only`, 1 path, 70 lines) -> structural readback only; reviewed boundary advances to `26a888b`.
+- T1 `49759b3`: RED `test_doc_status_approval.py` 3 failed/7 passed -> GREEN 10 passed. Files: approval_marker.py, conftest.py, test_doc_status_approval.py.
+- T2 `b7770c0`: RED phases_early+derive_cli+render_cli 8 failed/46 passed -> GREEN 54 passed. Files: doc_status.py + the three test files.
+- T3 `36fb3b1`: RED `test_doc_status_validate_deliver.py` 1 failed/14 passed -> GREEN 15 passed. Files: publish_pdf.py, test_doc_status_validate_deliver.py.
+- Full suite after T3: 8 failed / 938 passed. Failures in `tools/test_approval_marker.py` (2) and `tools/test_pdf_publication.py` (6): fixtures build markers without `body_sha256` (fail-closed by design). Scope was widened to those two files; fix in progress as commit `test(approval): bind body.md in marker fixtures`.
+- Contract test `tests/skills/test_document_workflow_contract.py` still passes after T2 (16 passed): it does not assert the route text; T4 adds `draft` to its maps.
+- RDD: assessment of the T1–T3 commits pending until the fixture commit closes the unit.
 
 ## Next step
-T1.
+Fixture commit, then T4 (skill docs + contract test).
