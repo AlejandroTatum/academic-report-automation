@@ -603,6 +603,31 @@ def markdown_to_latex(markdown: str, suppress_bibliography_heading: bool = False
     return "\n".join(output).strip() + "\n"
 
 
+# Sentinel comment markers in unl-report.tex bracket the cover fields that
+# document-routing.md reserves for the academic route: subject, activity,
+# parallel (the framed box) and teacher (the DOCENTE block). The markers keep
+# the template itself route-agnostic -- render_tex() below decides, per
+# report, whether to strip just the marker lines (keeping the block
+# byte-for-byte, for the academic route) or the whole marked block including
+# its content (every other route, where these fields must not appear at all,
+# not even empty).
+COVER_SENTINELS = ("COVER_ACADEMIC_BOX", "COVER_TEACHER_BLOCK")
+
+
+def _apply_cover_sentinels(template: str, keep_academic_only_fields: bool) -> str:
+    for sentinel in COVER_SENTINELS:
+        if keep_academic_only_fields:
+            template = re.sub(rf"[ \t]*% {sentinel}:(BEGIN|END)\n", "", template)
+        else:
+            template = re.sub(
+                rf"[ \t]*% {sentinel}:BEGIN\n.*?[ \t]*% {sentinel}:END\n",
+                "",
+                template,
+                flags=re.DOTALL,
+            )
+    return template
+
+
 def render_tex(config: ReportConfig) -> str:
     template_key = normalize_template_key(template_key_for(config))
     template_path = resolve_template(template_key)
@@ -748,6 +773,9 @@ def render_tex(config: ReportConfig) -> str:
     }
     for key, value in replacements.items():
         template = template.replace(key, value)
+    template = _apply_cover_sentinels(
+        template, keep_academic_only_fields=config.route == DEFAULT_ROUTE
+    )
     return template
 
 

@@ -239,3 +239,51 @@ def test_render_never_rewrites_report_yml(tmp_path):
     build_latex_report.render_tex(ReportConfig.load(folder))
     assert (folder / "report.yml").read_text(encoding="utf-8") == before
     assert "template" not in yaml.safe_load(before)
+
+
+# ---------------------------------------------------------------------------
+# UNL cover on non-academic routes: the shell stays, the academic-only
+# fields (subject/activity/parallel box, DOCENTE) do not (document-routing.md
+# forbids auto-including teacher, subject, parallel or "university submission"
+# language on Routes B-E).
+# ---------------------------------------------------------------------------
+
+
+def test_technical_unl_cover_omits_academic_only_fields(tmp_path):
+    """A technical report that explicitly asks for the UNL template still
+    gets the institutional shell (logo, title, AUTOR, place, date), but must
+    not render the framed subject/activity/parallel box or the DOCENTE block
+    -- not even empty, since an unset subject/teacher would otherwise print a
+    lone "." or a blank teacher line under an academic label.
+    """
+    tex = build_latex_report.render_tex(
+        make_render_config(
+            tmp_path,
+            {
+                "route": "technical",
+                "template": "unl",
+                "cover": {
+                    "required": True,
+                    "logo_required": True,
+                    "body_starts_on_page": 2,
+                },
+            },
+            False,
+        )
+    )
+    assert "titlepage" in tex
+    assert "AUTOR:" in tex
+    assert "Loja, Ecuador" in tex
+    assert r"\includegraphics" in tex
+    assert r"\fbox{" not in tex
+    assert "DOCENTE" not in tex
+    assert "Paralelo" not in tex
+    assert "Informe académico" not in tex
+
+
+def test_academic_unl_cover_keeps_the_academic_box_and_teacher(tmp_path):
+    """The academic route is unchanged: box and DOCENTE keep rendering."""
+    tex = build_latex_report.render_tex(make_render_config(tmp_path, {}, False))
+    assert r"\fbox{" in tex
+    assert "Paralelo" in tex
+    assert "DOCENTE" in tex
