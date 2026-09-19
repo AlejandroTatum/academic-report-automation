@@ -35,6 +35,7 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 | intake | `references/intake.md` | `academic-report-builder` (`document-intake.md`) |
 | research | `references/research.md` | `research-workflow` |
 | preview | `references/preview.md` | `academic-report-builder` (composition, pre-build) |
+| draft | `references/draft.md` | `academic-report-builder` (composition, body draft) |
 | approval | `references/approval.md` | this skill - human gate, no executor |
 | generate | `references/generate.md` | `academic-report-builder` (`automation-contract.md`) |
 | validate | `references/validate.md` | `academic-report-builder` (`quality-gates.md`) or `gentle-ai review` |
@@ -43,6 +44,7 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 - Each delegation produces exactly one artifact consumed by the derivation table.
 - Present the human block verbatim; never summarize or reword it.
 - Never build before approval is `done`; never publish without a current marker.
+- Never present the approval gate before `draft` is `done`.
 - Present the approval gate losslessly: complete options, consequences, exact
   allowed answers, no silent default, and never proceed on silence.
 
@@ -77,12 +79,13 @@ actually waiting on and appears only while a phase is not `done`. The tool binds
 
 ```text
 **Gate**: preview pending - draft <report-folder>/preview.md, then re-run doc_status
-Route: intake > research > [preview] > approval > generate > validate > deliver
+Route: intake > research > [preview] > draft > approval > generate > validate > deliver
 
 **Summary**
 - intake: done - route=academic, metadata complete
 - research: done - skipped in report.yml
 - preview: current - preview.md missing
+- draft: pending
 - approval: pending
 - generate: pending
 - validate: pending
@@ -96,6 +99,7 @@ Route: intake > research > [preview] > approval > generate > validate > deliver
 - `references/intake.md` - intake contract and `report.yml` completion.
 - `references/research.md` - optional evidence collection and `research: skipped`.
 - `references/preview.md` - pre-build content preview composition.
+- `references/draft.md` - full document body drafted before approval.
 - `references/approval.md` - the single human approval gate.
 - `references/generate.md` - approved build and PDF generation.
 - `references/validate.md` - RDD or fallback validation branches.

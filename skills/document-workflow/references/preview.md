@@ -9,9 +9,10 @@ orchestrates the phase and never composes the preview itself.
 
 ## Contract
 
-The preview exists to be the object the human approves, so it must show enough
-content for a decision before any PDF is built. The executor produces exactly one
-artifact: `reports/<wf>/preview.md`, UTF-8, with the fixed H2 sections
+The preview exists to anchor the human decision, together with the full body the
+`draft` phase writes next: the decision object is the preview plus the drafted
+`body.md`, not the preview alone. The executor produces exactly one artifact:
+`reports/<wf>/preview.md`, UTF-8, with the fixed H2 sections
 
     # Content Preview: <title>
     ## Contract Summary   - Route, Type, Audience, Purpose, Template/identity, Outputs, Visual direction
