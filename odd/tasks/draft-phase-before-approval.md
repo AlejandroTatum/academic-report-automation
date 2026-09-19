@@ -49,13 +49,13 @@ decided (2026-09-19) that drafting happens before the single human approval.
       plus render/derive CLI tests that assert the route string.
 - [x] T3 `publish_pdf.py`: `_approval_refusal` names body.md for stale/malformed.
       Tests in `tools/test_doc_status_validate_deliver.py` or publish tests.
-- [ ] T4 Skill docs: new `references/draft.md` (Executor: academic-report-builder,
+- [x] T4 Skill docs: new `references/draft.md` (Executor: academic-report-builder,
       Artifact: `reports/<wf>/body.md`, authoring format, Never list); SKILL.md
       routing table + route line + status example; `approval.md` schema and Done;
       `generate.md` names body.md as approved input; `preview.md` unchanged in
       scope (one artifact). Contract test: `OWNED_REFERENCES`/`REFERENCE_*` maps
       gain `draft`; assertions for `body_sha256`. RED first via the contract test.
-- [ ] T5 Sync skill copies via the existing sync route and verify
+- [x] T5 Sync skill copies via the existing sync route and verify
       `tests/skills/test_sync_skills.py`; full suite green.
 
 ## Acceptance
@@ -73,5 +73,16 @@ decided (2026-09-19) that drafting happens before the single human approval.
 - Fixture commit `5116a8c` (test_approval_marker.py, test_pdf_publication.py): focused 15 passed; full suite 946 passed.
 - RDD unit `49759b3..5116a8c`: assess `high` (`process_boundary`, 12 paths, 461 lines); consent granted by the user; lineage `review-23a93497d83daa2d`, 4 lenses (risk, resilience, readability, reliability) all `admission_decision: completed`; final capture `approved`; acknowledged (`gentle-ai.review-acknowledged/v1`). Reviewed boundary advances to `5116a8c`.
 
+- Doc commit `19be1c4`: assess `passive` (5 lines) -> structural readback; boundary `19be1c4`.
+- T4 `32960f7`: contract test RED 8 failed/9 passed -> GREEN 17 passed. New `references/draft.md`; SKILL.md routing row + route line + status template; approval.md schema `body_sha256`, Done covers both hashes, approver reads body.md in full; preview.md decision-object sentence; generate.md names body.md. 6 files, +107/-27.
+- T5: `scripts/sync_skills.sh` dry run (109 gated contract tests passed) then `--apply`; `diff -q` clean for SKILL.md and all 8 references in `~/.claude/skills` and `~/.codex/skills`; `~/.config/opencode/skills` skipped by the script (directory absent); Pi has no target in the script (known, deferred). `test_sync_skills.py` 4 passed. No tracked changes.
+- Full suite after T4: 947 passed.
+- RDD slice `19be1c4..HEAD`: assess `medium` (`executable_change`, 6 paths, 134 lines) -> deferred to slice close; slice closes with this commit; preflight STATUS with `--base-ref 19be1c4 --committed-only` next.
+
+## Acceptance check
+- `doc_status` with preview.md and no body.md -> `next: draft` (covered by tools/test_doc_status_phases_early.py, derive/render CLI tests).
+- body_sha256 mismatch -> `approval blocked (approval_marker_stale)` (tools/test_doc_status_approval.py, test_approval_marker.py).
+- Contract tests cover references/draft.md (tests/skills/test_document_workflow_contract.py, 17 passed).
+
 ## Next step
-T4 (skill docs + contract test), then T5 sync.
+Native review of the docs slice, then push/PR (user decision), then resume the `engram-funcionamiento` run at `next: draft`.
