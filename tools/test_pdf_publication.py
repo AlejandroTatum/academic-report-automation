@@ -17,6 +17,7 @@ import types
 from pathlib import Path
 
 import publish_pdf
+from conftest import _approval, _body
 
 import pytest
 
@@ -117,23 +118,14 @@ def _validated_pdf(tmp_path: Path, content: bytes = b"%PDF-1.7\nvalidated conten
 
 @pytest.fixture
 def _approved_work_folder(tmp_path: Path) -> Path:
-    """A work folder whose approval.yml records the current preview.md hash.
+    """A work folder whose approval.yml records the current preview.md and body.md hashes.
 
     Publication is gated on this marker, so every pre-existing publication
     assertion proves the ordinary, approved path still behaves exactly as it did
     before the guard existed.
     """
     folder = tmp_path / "approved"
-    folder.mkdir()
-    preview = folder / "preview.md"
-    preview.write_text("# Content Preview: Informe\n\nCuerpo.\n", encoding="utf-8")
-    (folder / "approval.yml").write_text(
-        "schema: academic.doc-approval/v1\n"
-        f"preview_sha256: {hashlib.sha256(preview.read_bytes()).hexdigest()}\n"
-        "approved_at: 2026-09-10T14:03:11Z\n"
-        "approved_by: Alejandro\n",
-        encoding="utf-8",
-    )
+    _approval(folder, preview="# Content Preview: Informe\n\nCuerpo.\n")
     return folder
 
 
@@ -272,6 +264,16 @@ def test_publish_refuses_absent_stale_malformed_marker(
         )
     assert not documents.exists()
 
+    # stale — the body changed after the human approved it
+    stale_body_folder = tmp_path / "stale-body"
+    _approval(stale_body_folder)
+    _body(stale_body_folder, "# Informe\n\nOtro cuerpo.\n")
+    with pytest.raises(publish_pdf.PublicationError, match="obsoleta"):
+        publish_pdf.publish_validated_pdf(
+            source, "Tecnicos", "informe", documents, work_folder=stale_body_folder
+        )
+    assert not documents.exists()
+
     # malformed — the marker cannot be read as a valid approval record
     malformed = tmp_path / "malformed"
     malformed.mkdir()
@@ -308,8 +310,8 @@ def test_refusal_messages_match_design_verbatim(
     absent_message = str(exc.value)
     assert absent_message.startswith(
         "Falta la aprobación humana: no existe approval.yml en "
-        f"{absent}. Ejecutá la fase de aprobación después de revisar preview.md; "
-        "no se publica nada."
+        f"{absent}. Ejecutá la fase de aprobación después de revisar preview.md "
+        "y body.md; no se publica nada."
     )
     assert absent_message.endswith(
         "La validación técnica pasó; falta únicamente la aprobación humana."
@@ -321,9 +323,9 @@ def test_refusal_messages_match_design_verbatim(
             source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
         )
     assert str(exc.value) == (
-        "La aprobación está obsoleta: preview_sha256 de approval.yml no coincide "
-        f"con preview.md en {_approved_work_folder}. Volvé a aprobar el preview actual; "
-        "no se publica nada."
+        "La aprobación está obsoleta: preview_sha256 y/o body_sha256 de "
+        f"approval.yml no coinciden con preview.md y body.md en {_approved_work_folder}. "
+        "Volvé a aprobar el preview y el cuerpo actuales; no se publica nada."
     )
 
     malformed = tmp_path / "malformed-message"
