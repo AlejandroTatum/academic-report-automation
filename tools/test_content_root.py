@@ -121,6 +121,19 @@ def test_module_level_content_root_defaults_without_the_env_var(monkeypatch):
     assert fresh.CONTENT_ROOT == DEFAULT_CONTENT_ROOT.resolve()
 
 
+def test_the_test_suite_never_binds_the_real_content_root():
+    """The repo-root conftest.py pins REPORT_CONTENT_ROOT before any test runs.
+
+    No test may ever read or write the real, private coursework tree: the
+    module-level ``CONTENT_ROOT`` this whole suite imports must resolve under
+    the system temp directory, never under the documented real default.
+    """
+    import tempfile
+
+    assert CONTENT_ROOT != DOCUMENTED_DEFAULT.resolve()
+    assert CONTENT_ROOT.is_relative_to(Path(tempfile.gettempdir()).resolve())
+
+
 def test_relative_env_value_is_made_absolute(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     resolved = resolve_content_root({CONTENT_ROOT_ENV: "relative-content"})
