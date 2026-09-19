@@ -25,6 +25,13 @@ def _write_preview(folder: Path, text: str = "# Content Preview: Informe\n\nCuer
     return preview
 
 
+def _write_body(folder: Path, text: str = "# Informe\n\nCuerpo.\n") -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    body = folder / "body.md"
+    body.write_text(text, encoding="utf-8")
+    return body
+
+
 def _write_marker(folder: Path, body: str) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     marker = folder / "approval.yml"
@@ -32,12 +39,15 @@ def _write_marker(folder: Path, body: str) -> Path:
     return marker
 
 
-def _marker_body(preview: Path, *, sha: str | None = None) -> str:
+def _marker_body(preview: Path, body: Path, *, sha: str | None = None, body_sha: str | None = None) -> str:
     if sha is None:
         sha = hashlib.sha256(preview.read_bytes()).hexdigest()
+    if body_sha is None:
+        body_sha = hashlib.sha256(body.read_bytes()).hexdigest()
     return (
         "schema: academic.doc-approval/v1\n"
         f"preview_sha256: {sha}\n"
+        f"body_sha256: {body_sha}\n"
         "approved_at: 2026-09-10T14:03:11Z\n"
         "approved_by: Alejandro\n"
     )
@@ -60,10 +70,11 @@ def test_approval_state_absent_current_stale_malformed(tmp_path: Path) -> None:
     assert "approval.yml" in absent.detail
     assert absent.detail.isascii()
 
-    # current — the marker hash equals the exact preview.md bytes
+    # current — the marker hash equals the exact preview.md and body.md bytes
     current_folder = tmp_path / "current"
     preview = _write_preview(current_folder)
-    _write_marker(current_folder, _marker_body(preview))
+    body = _write_body(current_folder)
+    _write_marker(current_folder, _marker_body(preview, body))
     current = approval_marker.approval_state(current_folder)
     assert current.state == "current"
     assert current.reason == ""
@@ -72,55 +83,98 @@ def test_approval_state_absent_current_stale_malformed(tmp_path: Path) -> None:
     # stale — the preview changed after the marker was written
     stale_folder = tmp_path / "stale"
     stale_preview = _write_preview(stale_folder, "# Content Preview: original\n")
-    _write_marker(stale_folder, _marker_body(stale_preview))
+    stale_body = _write_body(stale_folder)
+    _write_marker(stale_folder, _marker_body(stale_preview, stale_body))
     stale_preview.write_text("# Content Preview: edited\n", encoding="utf-8")
     stale = approval_marker.approval_state(stale_folder)
     assert stale.state == "stale"
     assert stale.reason == "approval_marker_stale"
     assert stale.detail.isascii()
 
+    # stale — the body changed after the marker was written
+    stale_body_folder = tmp_path / "stale-body"
+    stale_body_preview = _write_preview(stale_body_folder)
+    stale_body_body = _write_body(stale_body_folder, "# Informe\n\noriginal\n")
+    _write_marker(stale_body_folder, _marker_body(stale_body_preview, stale_body_body))
+    stale_body_body.write_text("# Informe\n\neditado\n", encoding="utf-8")
+    stale_body_state = approval_marker.approval_state(stale_body_folder)
+    assert stale_body_state.state == "stale"
+    assert stale_body_state.reason == "approval_marker_stale"
+    assert "body.md" in stale_body_state.detail
+    assert stale_body_state.detail.isascii()
+
     # malformed — every invalid shape names the offending file or key
     good_preview = "# Content Preview: Informe\n\nCuerpo.\n"
     good_sha = hashlib.sha256(good_preview.encode("utf-8")).hexdigest()
+    good_body = "# Informe\n\nCuerpo.\n"
+    good_body_sha = hashlib.sha256(good_body.encode("utf-8")).hexdigest()
     approved_at = "2026-09-10T14:03:11Z"
 
     def case(name: str) -> Path:
         folder = tmp_path / name
         _write_preview(folder, good_preview)
+        _write_body(folder, good_body)
         return folder
 
     bad_yaml = case("bad-yaml")
     _write_marker(bad_yaml, "preview_sha256: [unclosed\napproved_at: x\n")
 
     missing_sha = case("missing-sha")
-    _write_marker(missing_sha, f"approved_at: {approved_at}\napproved_by: Alejandro\n")
+    _write_marker(
+        missing_sha,
+        f"body_sha256: {good_body_sha}\napproved_at: {approved_at}\napproved_by: Alejandro\n",
+    )
+
+    missing_body_sha = case("missing-body-sha")
+    _write_marker(
+        missing_body_sha,
+        f"preview_sha256: {good_sha}\napproved_at: {approved_at}\napproved_by: Alejandro\n",
+    )
 
     missing_at = case("missing-at")
-    _write_marker(missing_at, f"preview_sha256: {good_sha}\napproved_by: Alejandro\n")
+    _write_marker(
+        missing_at,
+        f"preview_sha256: {good_sha}\nbody_sha256: {good_body_sha}\napproved_by: Alejandro\n",
+    )
 
     missing_by = case("missing-by")
-    _write_marker(missing_by, f"preview_sha256: {good_sha}\napproved_at: {approved_at}\n")
+    _write_marker(
+        missing_by,
+        f"preview_sha256: {good_sha}\nbody_sha256: {good_body_sha}\napproved_at: {approved_at}\n",
+    )
 
     blank_by = case("blank-by")
     _write_marker(
         blank_by,
-        f'preview_sha256: {good_sha}\napproved_at: {approved_at}\napproved_by: "   "\n',
+        f'preview_sha256: {good_sha}\nbody_sha256: {good_body_sha}\n'
+        f'approved_at: {approved_at}\napproved_by: "   "\n',
     )
 
     no_preview = tmp_path / "no-preview"
     no_preview.mkdir()
     _write_marker(
         no_preview,
-        f"preview_sha256: {good_sha}\napproved_at: {approved_at}\napproved_by: Alejandro\n",
+        f"preview_sha256: {good_sha}\nbody_sha256: {good_body_sha}\n"
+        f"approved_at: {approved_at}\napproved_by: Alejandro\n",
+    )
+
+    no_body = tmp_path / "no-body"
+    _write_preview(no_body, good_preview)
+    _write_marker(
+        no_body,
+        f"preview_sha256: {good_sha}\nbody_sha256: {good_body_sha}\n"
+        f"approved_at: {approved_at}\napproved_by: Alejandro\n",
     )
 
     expectations = [
         (bad_yaml, "approval.yml"),
         (missing_sha, "preview_sha256"),
+        (missing_body_sha, "body_sha256"),
         (missing_at, "approved_at"),
         (missing_by, "approved_by"),
         (blank_by, "approved_by"),
         (no_preview, "preview.md"),
+        (no_body, "body.md"),
     ]
     for folder, token in expectations:
         state = approval_marker.approval_state(folder)
@@ -159,6 +213,12 @@ def test_approval_state_is_read_only_and_never_raises(tmp_path: Path) -> None:
 def test_marker_constants_are_declared() -> None:
     """The marker contract is a stable, importable surface for both consumers."""
     assert approval_marker.PREVIEW_NAME == "preview.md"
+    assert approval_marker.BODY_NAME == "body.md"
     assert approval_marker.MARKER_NAME == "approval.yml"
     assert approval_marker.MARKER_SCHEMA == "academic.doc-approval/v1"
-    assert approval_marker.REQUIRED_KEYS == ("preview_sha256", "approved_at", "approved_by")
+    assert approval_marker.REQUIRED_KEYS == (
+        "preview_sha256",
+        "body_sha256",
+        "approved_at",
+        "approved_by",
+    )

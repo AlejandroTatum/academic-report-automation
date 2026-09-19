@@ -26,18 +26,19 @@ def tool_doc_status():
 
     return doc_status
 
-PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "deliver")
+PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
 STATE_TOKENS = ("done", "current", "pending", "blocked")
 EXECUTORS = ("academic-report-builder", "research-workflow")
 
-# Slice 3a-ii owns the five executor references below. `approval.md` and
+# Slice 3a-ii owns the six executor references below. `approval.md` and
 # `validate.md` belong to Slices 3b-i and 3b-ii and are asserted by their own
 # contract tests, never here.
-OWNED_REFERENCES = ("intake", "research", "preview", "generate", "deliver")
+OWNED_REFERENCES = ("intake", "research", "preview", "draft", "generate", "deliver")
 REFERENCE_EXECUTOR = {
     "intake": "academic-report-builder",
     "research": "research-workflow",
     "preview": "academic-report-builder",
+    "draft": "academic-report-builder",
     "generate": "academic-report-builder",
     "deliver": "academic-report-builder",
 }
@@ -46,6 +47,7 @@ REFERENCE_ARTIFACT = {
     "intake": "reports/<wf>/report.yml",
     "research": "reports/<wf>/research/evidence-matrix.md",
     "preview": "reports/<wf>/preview.md",
+    "draft": "reports/<wf>/body.md",
     "generate": "outputs/<materia>/<final>.pdf",
     "deliver": "~/Documents/<category>/<slug>/<slug>-vNNN.pdf",
 }
@@ -104,7 +106,7 @@ def test_status_template_contract() -> None:
     route_lines = [line for line in block.splitlines() if line.startswith("Route: ")]
     assert len(route_lines) == 1, "exactly one route line"
     assert route_lines[0] == (
-        "Route: intake > research > [preview] > approval > generate > validate > deliver"
+        "Route: intake > research > [preview] > draft > approval > generate > validate > deliver"
     )
     brackets = re.findall(r"\[([a-z]+)\]", route_lines[0])
     assert len(brackets) == 1 and brackets[0] in PHASES, "exactly one bracketed phase"
@@ -185,10 +187,13 @@ def test_approval_reference_contract() -> None:
     path = SKILL_ROOT / "references" / "approval.md"
     assert path.is_file(), f"missing required contract file: {path}"
     text = read(path)
-    for key in ("preview_sha256", "approved_at", "approved_by"):
+    for key in ("preview_sha256", "body_sha256", "approved_at", "approved_by"):
         assert key in text, f"approval.md must name the marker key {key}"
     assert "approval.yml" in text, "approval.md must name the marker file"
     flat = re.sub(r"\s+", " ", text).lower()
+    assert re.search(r"binds?[^.]*preview\.md[^.]*body\.md", flat), (
+        "approval.md must state that the marker binds both preview.md and body.md"
+    )
     for phrase in ("silence", "inferred yes", "agent decision"):
         assert phrase in flat, f"approval.md must name `{phrase}` as a non-consent signal"
     assert re.search(r"never (?:produce|produces|writes|creates)[^.]*approval\.yml", flat), (
@@ -211,6 +216,7 @@ def test_generate_reference_forbids_unapproved_build() -> None:
     flat = re.sub(r"\s+", " ", text).lower()
     assert "approval: done" in flat, "generate.md must name the `approval: done` precondition"
     assert "preview_sha256" in flat, "generate.md must name the hash the approval binds to"
+    assert "body_sha256" in flat, "generate.md must name body.md as the approved input"
     assert re.search(r"(?:never|must not|do not|does not) build (?:before|until)", flat), (
         "generate.md must forbid building before approval is done"
     )
@@ -283,6 +289,23 @@ def test_phase_references_name_executor_and_single_artifact() -> None:
         assert REFERENCE_EXECUTOR[phase] in text, (
             f"references/{phase}.md must name its executor in prose too"
         )
+
+
+def test_draft_reference_names_authoring_format_and_single_artifact() -> None:
+    """`draft.md` names the body authoring format and produces exactly one artifact.
+
+    The body is Markdown with Pandoc-style `[@key]` citations resolved against
+    `sources.bib` and `![caption](path)` figures; the phase never writes the
+    approval marker.
+    """
+    text = read(SKILL_ROOT / "references" / "draft.md")
+    for token in ("[@", "![", "sources.bib"):
+        assert token in text, f"draft.md must name the authoring format token {token}"
+    flat = re.sub(r"\s+", " ", text).lower()
+    assert "exactly one artifact" in flat, "draft.md must state it produces exactly one artifact"
+    assert re.search(r"never[^.]*writes?[^.]*approval\.yml", flat), (
+        "draft.md must state it never writes approval.yml"
+    )
 
 
 # --------------------------------------------------------------------------

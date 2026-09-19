@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 import doc_status
-from conftest import _config, _evidence_matrix, _preview, _report, _skip_research
+from conftest import _body, _config, _evidence_matrix, _preview, _report, _skip_research
 
 
 def _early_phases(folder: Path) -> list[doc_status.PhaseState]:
@@ -203,4 +203,60 @@ def test_preview_unreadable_is_blocked(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert phase.state == doc_status.BLOCKED
     assert phase.blocked_reason == "preview_unreadable"
+    assert phase.state != doc_status.DONE
+
+
+# ---------------------------------------------------------------------------
+# 2.6 draft
+# ---------------------------------------------------------------------------
+
+
+def test_draft_non_empty_is_done(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+
+    phase = doc_status._phase_draft(folder, _config(folder), None)
+
+    assert phase.state == doc_status.DONE
+
+
+def test_draft_whitespace_only_is_pending(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder, "   \n\t\n")
+
+    phase = doc_status._phase_draft(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+    assert phase.detail == "body.md empty"
+
+
+def test_draft_missing_is_pending(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    phase = doc_status._phase_draft(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert phase.detail == "body.md missing"
+
+
+def test_draft_unreadable_is_blocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    original = Path.read_text
+
+    def denied(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "body.md":
+            raise PermissionError("denied")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    phase = doc_status._phase_draft(folder, _config(folder), None)
+
+    assert phase.state == doc_status.BLOCKED
+    assert phase.blocked_reason == "draft_unreadable"
     assert phase.state != doc_status.DONE

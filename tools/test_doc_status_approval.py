@@ -15,6 +15,7 @@ from pathlib import Path
 import doc_status
 from conftest import (
     _approval,
+    _body,
     _config,
     _marker_text,
     _preview,
@@ -73,6 +74,43 @@ def test_approval_preview_edited_after_approval_is_blocked(tmp_path: Path) -> No
 
     assert phase.state == doc_status.BLOCKED
     assert phase.blocked_reason == "approval_marker_stale"
+
+
+def test_approval_body_edited_after_approval_is_blocked(tmp_path: Path) -> None:
+    """TRIANGULATE: editing body.md after approval invalidates the marker."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _approval(folder)
+    _body(folder, "# Informe\n\nOtro cuerpo.\n")
+
+    phase = doc_status._phase_approval(folder, _config(folder), None)
+
+    assert phase.state == doc_status.BLOCKED
+    assert phase.blocked_reason == "approval_marker_stale"
+
+
+def test_approval_marker_without_body_hash_is_malformed(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _approval(folder, drop=("body_sha256",))
+
+    phase = doc_status._phase_approval(folder, _config(folder), None)
+
+    assert phase.state == doc_status.BLOCKED
+    assert phase.blocked_reason == "approval_marker_malformed"
+    assert phase.state != doc_status.DONE
+
+
+def test_approval_body_missing_with_marker_present_is_malformed(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _approval(folder)
+    (folder / "body.md").unlink()
+
+    phase = doc_status._phase_approval(folder, _config(folder), None)
+
+    assert phase.state == doc_status.BLOCKED
+    assert phase.blocked_reason == "approval_marker_malformed"
 
 
 def test_approval_blank_required_key_is_malformed(tmp_path: Path) -> None:

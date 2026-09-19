@@ -32,8 +32,9 @@ def _approval_refusal(state: ApprovalState, work_folder: Path) -> str:
     """Map an approval state onto the user-facing refusal message."""
     if state.state == "stale":
         return (
-            "La aprobación está obsoleta: preview_sha256 de approval.yml no coincide "
-            f"con preview.md en {work_folder}. Volvé a aprobar el preview actual; no se publica nada."
+            "La aprobación está obsoleta: preview_sha256 y/o body_sha256 de "
+            f"approval.yml no coinciden con preview.md y body.md en {work_folder}. "
+            "Volvé a aprobar el preview y el cuerpo actuales; no se publica nada."
         )
     if state.state == "malformed":
         return (
@@ -42,8 +43,9 @@ def _approval_refusal(state: ApprovalState, work_folder: Path) -> str:
         )
     return (
         "Falta la aprobación humana: no existe approval.yml en "
-        f"{work_folder}. Ejecutá la fase de aprobación después de revisar preview.md; "
-        "no se publica nada. La validación técnica pasó; falta únicamente la aprobación humana."
+        f"{work_folder}. Ejecutá la fase de aprobación después de revisar preview.md "
+        "y body.md; no se publica nada. La validación técnica pasó; falta únicamente "
+        "la aprobación humana."
     )
 
 
@@ -75,9 +77,10 @@ def publish_validated_pdf(
 
     Publication requires both configured technical validation AND a current human
     approval marker: ``work_folder/approval.yml`` must hash the exact bytes of
-    ``work_folder/preview.md``. ``work_folder`` is required keyword-only, so a
-    caller cannot skip the guard by omission. The check runs before any hash,
-    directory or temporary file, so a refused publication creates nothing.
+    both ``work_folder/preview.md`` and ``work_folder/body.md``. ``work_folder``
+    is required keyword-only, so a caller cannot skip the guard by omission. The
+    check runs before any hash, directory or temporary file, so a refused
+    publication creates nothing.
 
     It remains a technical-copy operation: it never grants ``VISUAL_PASS``,
     ``HUMAN_REVIEW``, or ``READY_TO_SUBMIT``.
