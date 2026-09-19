@@ -71,6 +71,36 @@ def test_validate_result_fail_is_blocked_with_validation_failed(tmp_path: Path) 
     assert phase.state != doc_status.DONE
 
 
+def test_validate_stale_fail_receipt_does_not_block_a_new_pdf(tmp_path: Path) -> None:
+    """A fail receipt bound to older bytes is stale: the new PDF simply revalidates.
+
+    Receipt identity is checked before the recorded outcome is interpreted, so a
+    ``result: fail`` that describes a superseded build returns to ``pending``
+    instead of blocking the route forever.
+    """
+    folder = tmp_path / "wf"
+    pdf = _final_pdf(folder)
+    _validation(folder, pdf=pdf, result="fail")
+    pdf.write_bytes(b"%PDF-1.4\nREBUILT\n%%EOF\n")  # a new build after the failed run
+
+    phase = doc_status._phase_validate(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+
+
+def test_validate_fail_receipt_without_bound_identity_is_pending(tmp_path: Path) -> None:
+    """TRIANGULATE: a fail receipt that proves no identity cannot block either."""
+    folder = tmp_path / "wf"
+    pdf = _final_pdf(folder)
+    _validation(folder, pdf=pdf, result="fail", drop=("artifact_sha256",))
+
+    phase = doc_status._phase_validate(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+
+
 def test_validate_missing_receipt_is_pending(tmp_path: Path) -> None:
     """TRIANGULATE: a folder that was never validated waits at validate."""
     folder = tmp_path / "wf"

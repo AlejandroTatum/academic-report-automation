@@ -7,7 +7,10 @@ silently regress back to "every document is a UNL assignment".
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -481,6 +484,29 @@ def test_automatic_documents_publication_requires_a_confirmed_pdf() -> None:
     assert "immediately before publication" in combined
 
 
+def test_generation_does_not_publish_and_delivery_is_explicit() -> None:
+    """#22: build_report_auto never publishes; deliver_report.py is the only route."""
+    automation = read(REFERENCES / "automation-contract.md")
+    assert "automatically publishes" not in automation, (
+        "generation must not be described as publishing to ~/Documents"
+    )
+    assert "tools/deliver_report.py" in automation, (
+        "the automation contract must name the explicit deliver entrypoint"
+    )
+    assert "Generation never publishes" in automation
+
+    workflow = Path(__file__).resolve().parents[2] / "skills" / "document-workflow" / "references"
+    generate = read(workflow / "generate.md")
+    assert "does not publish" in generate
+    deliver = read(workflow / "deliver.md")
+    assert "tools/deliver_report.py" in deliver, (
+        "the deliver phase must name its executable entrypoint"
+    )
+    assert "validation.yml" in deliver, (
+        "delivery must require the validation receipt bound to the exact PDF bytes"
+    )
+
+
 def test_publication_gated_on_approval() -> None:
     automation = read(REFERENCES / "automation-contract.md")
     readiness = sections(automation)["Readiness and command scope"]
@@ -567,3 +593,230 @@ def test_unl_shell_paralelo_defaults_to_a_with_data_override() -> None:
     assert "unless assignment says otherwise" not in unl, (
         "the old conditional fallback wording must be gone"
     )
+
+
+# --------------------------------------------------------------------------
+# T7 — the shipped instructions must stand without session context
+# --------------------------------------------------------------------------
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TOOLS_DIR = REPO_ROOT / "tools"
+AUTOMATION_MD = REFERENCES / "automation-contract.md"
+
+
+def _tools_module(name: str):
+    """Import a real ``tools/`` module so documented text is checked against code."""
+    import sys
+
+    if str(TOOLS_DIR) not in sys.path:
+        sys.path.insert(0, str(TOOLS_DIR))
+    import importlib
+
+    return importlib.import_module(name)
+
+
+def test_automation_contract_resolves_both_roots_without_a_hardcoded_home() -> None:
+    """T7: the tool root and the content root are discovered, never assumed."""
+    automation = read(AUTOMATION_MD)
+
+    assert "REPORT_AUTOMATION_ROOT" in automation, "the tool/repository root must be named"
+    assert "REPORT_CONTENT_ROOT" in automation, "the content root must be named"
+    assert "report_config" in automation and "CONTENT_ROOT" in automation, (
+        "the content root must be resolved through the loader the tools actually use"
+    )
+    assert not re.search(r"/home/[a-z0-9._-]+/", automation), (
+        "no personal absolute path may be baked into the contract"
+    )
+
+
+def test_automation_contract_commands_are_absolute_and_cwd_independent() -> None:
+    """T7: every canonical command names its interpreter, tool and folder absolutely."""
+    automation = read(AUTOMATION_MD)
+
+    assert '"$REPORT_PYTHON"' in automation, (
+        "commands must name the selected dependency-equipped interpreter"
+    )
+    for script in (
+        "build_report_auto.py",
+        "validate_report.py",
+        "visual_pdf_auditor.py",
+        "deliver_report.py",
+    ):
+        assert f'"$REPORT_AUTOMATION_ROOT/tools/{script}"' in automation, script
+    assert '"$REPORT_CONTENT_ROOT/reports/<work-folder>/"' in automation, (
+        "the report folder must be passed as an absolute content-root path"
+    )
+    assert 'cd "$REPORT_AUTOMATION_ROOT"' not in automation, (
+        "no command may depend on a working directory"
+    )
+
+
+def test_clean_delivery_never_implies_automatic_publication() -> None:
+    """T2/T7: generation never publishes; delivery is the explicit entrypoint."""
+    text = read(DELIVERY_MD)
+    flat = re.sub(r"\s+", " ", text).lower()
+
+    assert "automatically published" not in flat, (
+        "clean-delivery must not read as automatic publication after validation"
+    )
+    assert "generation never publishes" in flat
+    assert "deliver_report.py" in text, "the explicit deliver entrypoint must be named"
+    assert "approval.yml" in text, "delivery must restate the current-marker precondition"
+
+
+def intake_record_block() -> str:
+    """The one canonical ``report.yml`` record block documented in the intake."""
+    blocks = re.findall(r"```yaml\n(.*?)```", read(INTAKE_MD), re.DOTALL)
+    assert blocks, "document-intake.md must show the report.yml record as a ```yaml block"
+    assert len(blocks) == 1, "keep exactly one canonical record block so copies cannot drift"
+    return blocks[0]
+
+
+def test_documented_intake_record_loads_with_the_keys_the_pipeline_consumes(
+    tmp_path: Path,
+) -> None:
+    """T7: the documented keys are the real ones -- proven by loading the record."""
+    import yaml
+
+    load_report_config = _tools_module("report_config").load_report_config
+    record = yaml.safe_load(intake_record_block())
+
+    folder = tmp_path / "informe-tecnico"
+    folder.mkdir()
+    (folder / "body.md").write_text("# Cuerpo\n", encoding="utf-8")
+    (folder / "report.yml").write_text(intake_record_block(), encoding="utf-8")
+
+    config = load_report_config(folder)
+
+    assert config.route == record["route"] == "project"
+    assert config.output_format == record["output"] == "pdf"
+    for key in ("title", "student", "date", "audience", "purpose", "visual_direction"):
+        assert str(config.metadata.get(key) or "").strip(), (
+            f"metadata.{key} must survive the real loader"
+        )
+    for academic_only in ("subject", "teacher"):
+        assert not record["metadata"].get(academic_only), (
+            f"a non-academic record must not invent metadata.{academic_only}"
+        )
+
+
+def test_documented_intake_record_keeps_cover_at_top_level(tmp_path: Path) -> None:
+    """T7: ``cover:`` is a top-level key; nesting it under ``metadata`` would be ignored."""
+    import yaml
+
+    template_key_for = _tools_module("build_latex_report").template_key_for
+    load_report_config = _tools_module("report_config").load_report_config
+    record = yaml.safe_load(intake_record_block())
+
+    assert "cover" not in record["metadata"], "cover must not be nested under metadata"
+    assert "cover" in record and record["cover"], "the record must show the top-level cover block"
+
+    folder = tmp_path / "informe-tecnico"
+    folder.mkdir()
+    (folder / "body.md").write_text("# Cuerpo\n", encoding="utf-8")
+    (folder / "report.yml").write_text(intake_record_block(), encoding="utf-8")
+    config = load_report_config(folder)
+
+    # Route "project" defaults to no cover; the explicit top-level block must win.
+    assert config.cover_value("required") is True, (
+        "an explicit top-level cover block must override the route default"
+    )
+    assert config.cover_value("body_starts_on_page") == 2
+    assert config.cover_value("logo_required") is True
+    assert template_key_for(config) == record["template"], (
+        "an explicitly recorded template must be the one the renderer resolves"
+    )
+
+
+def test_workflow_intake_reference_names_the_record_keys() -> None:
+    """The orchestrator reference must name the same keys the record contract defines."""
+    import yaml
+
+    record = yaml.safe_load(intake_record_block())
+    workflow = read(REPO_ROOT / "skills" / "document-workflow" / "references" / "intake.md")
+
+    for key in record["metadata"]:
+        assert f"metadata.{key}" in workflow, f"the workflow intake must name metadata.{key}"
+    for top_level in ("route:", "output:", "template:", "cover:"):
+        assert f"`{top_level}`" in workflow, f"the workflow intake must name the top-level {top_level}"
+    assert "top-level" in workflow.lower(), "cover placement must be stated, not implied"
+
+
+def test_skill_points_at_the_route_derived_rendering_defaults(skill: str) -> None:
+    """T4/T7: the always-read skill must not let a fresh run assume the academic shell."""
+    flat = re.sub(r"\s+", " ", plain(skill)).lower()
+
+    assert "document-routing.md" in skill, "the routing reference must be linked"
+    assert "route-derived" in flat or "derived from the confirmed route" in flat, (
+        "the skill must state that rendering defaults come from the confirmed route"
+    )
+    assert "explicit" in flat, "an explicit report.yml option must still win"
+
+
+def test_automation_contract_separates_the_source_checkout_from_the_interpreter() -> None:
+    """T7 blocker 1: the tool checkout and the interpreter are chosen separately.
+
+    `REPORT_AUTOMATION_ROOT` owns `tools/`; the dependency-equipped interpreter is
+    `REPORT_PYTHON`, and it is never assumed to sit next to those tools (a feature
+    worktree has tools but no `.venv`).
+    """
+    automation = read(AUTOMATION_MD)
+    lowered = automation.lower()
+
+    assert "REPORT_PYTHON" in automation
+    assert re.search(r"REPORT_PYTHON=", automation), "REPORT_PYTHON must be assigned, not implied"
+    assert '"$REPORT_AUTOMATION_ROOT/.venv/bin/python"' not in automation, (
+        "the interpreter must not be hardwired to a .venv beside the tools"
+    )
+    assert "worktree" in lowered and ".venv" in lowered, (
+        "the worktree/shared-interpreter case must be explained"
+    )
+    assert "REPORT_CONTENT_ROOT" in automation and "report_config" in automation
+
+
+def bash_block(text: str, marker: str) -> str:
+    """The fenced bash block containing ``marker``."""
+    blocks = re.findall(r"```bash\n(.*?)```", text, re.DOTALL)
+    matches = [block for block in blocks if marker in block]
+    assert len(matches) == 1, f"expected exactly one bash block containing {marker!r}"
+    return matches[0]
+
+
+def test_documented_root_discovery_snippet_runs_from_an_unrelated_cwd(tmp_path: Path) -> None:
+    """T7 blocker 1: execute the documented snippet exactly, no colocated `.venv` needed.
+
+    The source root is this checkout (in the stabilization worktree it has `tools/`
+    and no `.venv`), the interpreter is supplied explicitly through `REPORT_PYTHON`,
+    and the run happens from an unrelated cwd. The snippet must print the loader's
+    content root and must still honour an exported `REPORT_CONTENT_ROOT`.
+    """
+    snippet = bash_block(read(AUTOMATION_MD), "REPORT_CONTENT_ROOT=")
+    assert "<absolute path of the checkout that owns tools/>" in snippet, (
+        "the snippet must keep exactly one documented placeholder to fill in"
+    )
+    script = snippet.replace("<absolute path of the checkout that owns tools/>", str(REPO_ROOT))
+    interpreter = REPO_ROOT / ".venv" / "bin" / "python"
+    if not interpreter.is_file():  # the worktree case: no .venv beside tools/
+        interpreter = Path(sys.executable)
+    env = {"PATH": os.environ.get("PATH", ""), "REPORT_PYTHON": str(interpreter)}
+
+    run = subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True
+    )
+
+    assert run.returncode == 0, run.stderr
+    expected = _tools_module("report_config").resolve_content_root({})
+    assert run.stdout.strip().splitlines()[-1] == f"REPORT_CONTENT_ROOT={expected}"
+
+    override = tmp_path / "content override"
+    overridden = subprocess.run(
+        ["bash", "-c", script],
+        cwd=tmp_path,
+        env={**env, "REPORT_CONTENT_ROOT": str(override)},
+        capture_output=True,
+        text=True,
+    )
+
+    assert overridden.returncode == 0, overridden.stderr
+    assert overridden.stdout.strip().splitlines()[-1] == f"REPORT_CONTENT_ROOT={override}"

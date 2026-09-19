@@ -34,6 +34,7 @@ REQUIRED_PLACEHOLDERS = (
     "{{BODY}}",
     "{{BIB_FILE}}",
     "{{HAS_BIB}}",
+    "{{PRINT_BIBLIOGRAPHY}}",
     "{{HAS_FIGURES}}",
     "{{LIST_OF_FIGURES}}",
     "{{FRONT_MATTER}}",

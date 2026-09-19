@@ -33,9 +33,11 @@
 \newcommand{\reporthasfigures}{{{HAS_FIGURES}}}
 
 % Academic section numbering, driven by `section_numbering:` in report.yml.
-% Absent key renders "true", which is the historical behaviour. Routes B, C
-% and D forbid auto-included academic section numbering, so those documents
-% can switch it off per report.
+% With the key absent the renderer derives the default from the confirmed
+% route (#23): numbered on the academic route (every report written before
+% `route:` existed), unnumbered on the non-academic routes the routing
+% contract forbids from auto-including academic numbering. An explicit key
+% overrides the route default in either direction.
 %
 % Lowering secnumdepth suppresses only the printed label. The headings are
 % still \section, so \@sect keeps calling \addcontentsline (table of contents
@@ -121,13 +123,16 @@
 
 {{AI_SIGNATURE}}
 
+% The academic list-of-figures page is Route A machinery: the renderer fills
+% LIST_OF_FIGURES only for the academic route (figures included), so a
+% non-academic document lists its figures without the academic prelim page.
 \ifthenelse{\equal{\reporthasfigures}{true}}{{{LIST_OF_FIGURES}}}{}
 
 {{BODY}}
 
 \ifthenelse{\equal{\reporthasbib}{true}}{
 \Needspace{6\baselineskip}
-\printbibliography[title={Referencias}]
+{{PRINT_BIBLIOGRAPHY}}
 }{}
 
 {{AFTER_BIBLIOGRAPHY}}

@@ -8,12 +8,23 @@ routing table, and a portable ASCII status template.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILL_ROOT = ROOT / "skills" / "document-workflow"
 SKILL_MD = SKILL_ROOT / "SKILL.md"
+TOOLS_DIR = ROOT / "tools"
+
+
+def tool_doc_status():
+    """Import the real ``tools/doc_status.py`` so documented text cannot drift."""
+    if str(TOOLS_DIR) not in sys.path:
+        sys.path.insert(0, str(TOOLS_DIR))
+    import doc_status
+
+    return doc_status
 
 PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "deliver")
 STATE_TOKENS = ("done", "current", "pending", "blocked")
@@ -100,10 +111,7 @@ def test_status_template_contract() -> None:
     route_body = route_lines[0].split("Route: ", 1)[1].replace("[", "").replace("]", "")
     assert route_body.split(" > ") == list(PHASES), "route must list every phase in order"
 
-    assert block.splitlines()[0] == (
-        "**Gate**: approval pending - generation runs only after you approve "
-        "reports/<wf>/preview.md"
-    )
+    assert block.splitlines()[0].startswith("**Gate**: ")
     assert block.index("**Gate**:") < block.index("**Summary**"), "gate line must be front-loaded"
 
     summary = block.split("**Summary**", 1)[1].split("**Next**:", 1)[0]
@@ -112,6 +120,45 @@ def test_status_template_contract() -> None:
     assert {state for _, state in bullets} <= set(STATE_TOKENS)
 
     assert re.search(r"^\*\*Next\*\*: [a-z]+", block, re.MULTILINE), "closing Next line missing"
+
+
+def test_status_template_gate_is_phase_projected_not_approval_frontloaded() -> None:
+    """T3/T7: the documented gate is the focus phase's own gate, never approval.
+
+    The embedded block claims to be the exact human output for its state, so it is
+    compared against the real derivation instead of a hand-written string.
+    """
+    doc_status = tool_doc_status()
+    block = human_template(read(SKILL_MD))
+    gate_line = next(line for line in block.splitlines() if line.startswith("**Gate**: "))
+
+    expected = "preview pending - " + doc_status._guidance("preview", Path("<report-folder>"))
+
+    assert gate_line == f"**Gate**: {expected}"
+    assert "approval pending" not in gate_line, "the approval front-load must stay gone"
+
+
+def test_status_template_next_line_matches_the_tool_guidance() -> None:
+    """The documented ``**Next**`` line is the tool's own guidance sentence."""
+    doc_status = tool_doc_status()
+    block = human_template(read(SKILL_MD))
+    next_line = next(line for line in block.splitlines() if line.startswith("**Next**: "))
+
+    assert next_line == (
+        "**Next**: preview - " + doc_status._guidance("preview", Path("<report-folder>"))
+    )
+
+
+def test_status_template_gate_guidance_is_ascii_and_absolute() -> None:
+    """The documented human block stays ASCII and names real, absolute entrypoints."""
+    doc_status = tool_doc_status()
+    block = human_template(read(SKILL_MD))
+
+    assert all(ord(char) < 128 for char in block)
+    for phase, script in (("generate", "build_report_auto.py"), ("deliver", "deliver_report.py")):
+        entrypoint = doc_status.ROOT / "tools" / script
+        assert entrypoint.is_file(), "documented entrypoints must exist"
+        assert str(entrypoint) in doc_status._guidance(phase, Path("/wf"))
 
 
 def test_referenced_paths_resolve() -> None:
@@ -236,3 +283,75 @@ def test_phase_references_name_executor_and_single_artifact() -> None:
         assert REFERENCE_EXECUTOR[phase] in text, (
             f"references/{phase}.md must name its executor in prose too"
         )
+
+
+# --------------------------------------------------------------------------
+# T7 — instructions sufficient without session context
+# --------------------------------------------------------------------------
+
+
+def test_research_reference_names_local_inspected_evidence_when_skipped() -> None:
+    """Skipping research must still cite the local inspected evidence that covers it."""
+    text = read(SKILL_ROOT / "references" / "research.md")
+    flat = re.sub(r"\s+", " ", text).lower()
+
+    assert "source_library.py" in flat, (
+        "a skipped research phase must name the local source inventory the evidence comes from"
+    )
+    assert "inspected" in flat, "the local evidence must be the inspected kind"
+    assert "research: skipped" in flat, "the recorded skip decision must stay"
+
+
+def test_preview_reference_allows_utf8_and_protects_approved_bytes() -> None:
+    """Preview content is UTF-8 (Spanish headings allowed) and frozen once approved."""
+    text = read(SKILL_ROOT / "references" / "preview.md")
+    flat = re.sub(r"\s+", " ", text).lower()
+
+    assert not re.search(r"\b(?:stays|remains|must be|is)\s+ascii\b", flat), (
+        "the preview must not be restricted to ASCII"
+    )
+    assert "utf-8" in flat, "the preview encoding must be named"
+    assert re.search(r"(?:never|do not|must not)\s+(?:be\s+)?rewrit(?:e|ten)", flat), (
+        "an approved preview must never be rewritten: the marker binds its exact bytes"
+    )
+    assert "sha256" in flat or "sha-256" in flat, "the binding hash must be named"
+
+
+def test_intake_reference_states_the_record_keys_without_inventing_a_schema() -> None:
+    """The workflow intake must name the existing keys, not a parallel vocabulary."""
+    text = read(SKILL_ROOT / "references" / "intake.md")
+    flat = re.sub(r"\s+", " ", text)
+
+    for key in ("metadata.audience", "metadata.purpose", "metadata.visual_direction"):
+        assert key in flat, f"the intake record must place {key} in the consumed metadata map"
+    assert "`cover:`" in flat, "cover is a top-level key"
+    assert "document-intake.md" in flat, "the record semantics stay owned by the builder reference"
+
+
+def test_generate_and_deliver_references_print_runnable_absolute_commands() -> None:
+    """Both phase references must show a command that runs from any working directory."""
+    for name, script in (("generate", "build_report_auto.py"), ("deliver", "deliver_report.py")):
+        text = read(SKILL_ROOT / "references" / f"{name}.md")
+        flat = re.sub(r"\s+", " ", text)
+
+        assert '"$REPORT_PYTHON"' in flat, (
+            f"{name}.md must run under the selected interpreter, not one colocated with tools/"
+        )
+        assert f'"$REPORT_AUTOMATION_ROOT/tools/{script}"' in flat, name
+        assert '"$REPORT_CONTENT_ROOT/reports/<work-folder>/"' in flat, name
+        assert '"$REPORT_AUTOMATION_ROOT/.venv/bin/python"' not in flat, (
+            f"{name}.md must not assume a .venv beside the tools"
+        )
+        assert not re.search(r"python tools/", flat), (
+            f"{name}.md must not leave the tool path relative to an assumed cwd"
+        )
+
+
+def test_deliver_reference_names_the_executable_and_the_receipt_precondition() -> None:
+    """T2/T7: deliver names the entrypoint, its receipt gate, and never auto-publishes."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "deliver.md"))
+
+    assert '"$REPORT_AUTOMATION_ROOT/tools/deliver_report.py"' in flat
+    assert "validation.yml" in flat
+    assert "approval.yml" in flat
+    assert "never publishes" in flat

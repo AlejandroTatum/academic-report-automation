@@ -12,8 +12,14 @@ metadata:
 
 Use to resume, inspect, or advance an in-progress document run under
 `$REPORT_CONTENT_ROOT/reports/<work-folder>/`. Run
-`python tools/doc_status.py <work-folder>` first; the returned `next` token owns
-the route. This skill orchestrates only: it never re-implements intake, research,
+`"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/doc_status.py"
+"$REPORT_CONTENT_ROOT/reports/<work-folder>/"` first; the returned `next` token owns
+the route. The source root, the selected interpreter (`REPORT_PYTHON`) and the
+content root are all defined in
+`academic-report-builder/references/automation-contract.md`; the source root may be a
+worktree with no `.venv` of its own. Every path above is
+absolute, so the working directory never changes the answer. This skill orchestrates
+only: it never re-implements intake, research,
 build, validation, or publication, and never reads executor internals to decide
 where a run stands.
 
@@ -51,7 +57,9 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 
 ## Execution Steps
 
-1. Run `python tools/doc_status.py <work-folder>`.
+1. Run
+   `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/doc_status.py"
+   "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`.
 2. Read `next`; present the human status block verbatim.
 3. Load only the reference for that token.
 4. Delegate to the executor in the routing table.
@@ -62,11 +70,13 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 Return the verbatim human block, the `academic.doc-status/v1` machine block, the
 routed token, the delegated executor, and the single artifact it produced.
 
-Render the human block exactly (ASCII only, flat bullets, no tables, no nested
-headers); the `**Gate**` line appears only when a gate is pending or blocked:
+Render the human block exactly (ASCII only for this status block, flat bullets,
+no tables, no nested headers); the `**Gate**` line names the phase the route is
+actually waiting on and appears only while a phase is not `done`. The tool binds
+`<report-folder>` to the absolute work folder it was given:
 
 ```text
-**Gate**: approval pending - generation runs only after you approve reports/<wf>/preview.md
+**Gate**: preview pending - draft <report-folder>/preview.md, then re-run doc_status
 Route: intake > research > [preview] > approval > generate > validate > deliver
 
 **Summary**
@@ -78,7 +88,7 @@ Route: intake > research > [preview] > approval > generate > validate > deliver
 - validate: pending
 - deliver: pending
 
-**Next**: preview - draft reports/<wf>/preview.md, then re-run doc_status
+**Next**: preview - draft <report-folder>/preview.md, then re-run doc_status
 ```
 
 ## References

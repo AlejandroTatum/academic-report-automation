@@ -14,6 +14,9 @@ from pathlib import Path
 from output_router import publish_global_output
 from report_config import (
     CONTENT_ROOT,
+    DEFAULT_ROUTE,
+    ROUTE_ALIASES,
+    ROUTE_KEY,
     ROOT,
     ReportConfig,
     latex_escape,
@@ -56,14 +59,35 @@ def resolve_template(key: str | None) -> Path:
     return template_path
 
 
+# Default template per confirmed route (document-routing.md): only Route A may
+# activate the UNL institutional shell; Routes B–E derive the plain template.
+# This is a DEFAULT for an absent `template:` key — an explicit key always
+# wins, in either direction, and report.yml is never rewritten.
+ROUTE_TEMPLATE_DEFAULTS = {
+    "academic": "unl",
+    "project": "plain",
+    "business": "plain",
+    "technical": "plain",
+    "other": "plain",
+}
+
+
+def template_key_for(config: ReportConfig) -> str | None:
+    """The template key a report resolves to, honouring explicit choice first."""
+    explicit = config.raw.get("template") or config.raw.get("latex_template")
+    if str(explicit or "").strip():
+        return explicit
+    return ROUTE_TEMPLATE_DEFAULTS.get(config.route, "default")
+
+
 # report.yml key that turns academic section numbering on or off for one
 # report. `document-routing.md` forbids auto-included academic section
 # numbering on Routes B, C and D, but the templates numbered unconditionally.
 #
-# The key is intentionally independent of `route:`: numbering is an explicit
-# typographic decision, and a routing key that silently restyled a document
-# would be surprising. A future change could derive the *default* from the
-# route once that key settles.
+# The DEFAULT is derived from the confirmed route (#23): academic reports
+# number as always; Routes B–D, which the contract forbids from auto-including
+# academic numbering, default to unnumbered. An explicit key still overrides
+# the route default in either direction, and nothing rewrites report.yml.
 SECTION_NUMBERING_KEY = "section_numbering"
 
 # Absence of the key means numbered. Every report that exists today declares
@@ -77,12 +101,16 @@ _SECTION_NUMBERING_FALSE = {"false", "no", "off", "0"}
 def section_numbering_enabled(raw: dict) -> bool:
     """Read `section_numbering:` from a report.yml mapping.
 
-    Returns the historical default when the key is absent. An unrecognised
-    value fails loudly rather than picking a side: guessing would silently
+    Returns the route-derived default when the key is absent: numbered for the
+    academic route, unnumbered for the non-academic routes the contract
+    forbids from auto-including academic numbering. An unrecognised value
+    fails loudly rather than picking a side: guessing would silently
     renumber — or unnumber — a whole document over a typo.
     """
     if SECTION_NUMBERING_KEY not in raw:
-        return SECTION_NUMBERING_DEFAULT
+        written = str(raw.get(ROUTE_KEY) or "").strip().lower()
+        route = (ROUTE_ALIASES.get(written, written) if written else DEFAULT_ROUTE)
+        return route == DEFAULT_ROUTE or route not in ROUTE_TEMPLATE_DEFAULTS
     value = raw.get(SECTION_NUMBERING_KEY)
     if isinstance(value, bool):
         return value
@@ -94,7 +122,7 @@ def section_numbering_enabled(raw: dict) -> bool:
     raise SystemExit(
         f"Valor no válido para '{SECTION_NUMBERING_KEY}' en report.yml: "
         f"{value!r}. Valores aceptados: true, false (también sí/no, on/off). "
-        "Sin la clave, las secciones se numeran como hasta ahora."
+        "Sin la clave, la ruta decide: numeradas en la académica, sin números en las demás."
     )
 
 
@@ -196,6 +224,19 @@ CODE_FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})\s*(?P<language>[^`]*)$")
 # Headings the templates already print by themselves through \printbibliography.
 BIBLIOGRAPHY_HEADINGS = {"bibliografia", "referencias", "references", "bibliography"}
 
+# Title each template's \printbibliography prints, keyed by normalized template
+# key. The renderer owns the emission decision (#26); the template owns the
+# heading wording.
+BIBLIOGRAPHY_TITLES = {
+    "default": "Bibliografía",
+    "unl": "Bibliografía",
+    "unl_report": "Bibliografía",
+    "plain": "Referencias",
+    "plain_report": "Referencias",
+    "chamba_overleaf": "Referencias bibliográficas",
+    "overleaf_chamba": "Referencias bibliográficas",
+}
+
 
 def fold_heading(title: str) -> str:
     """Normalize a heading for case- and accent-insensitive comparison."""
@@ -209,7 +250,7 @@ def is_bibliography_heading(title: str) -> bool:
     return fold_heading(title) in BIBLIOGRAPHY_HEADINGS
 
 
-def markdown_to_latex(markdown: str) -> str:
+def markdown_to_latex(markdown: str, suppress_bibliography_heading: bool = False) -> str:
     lines = markdown.splitlines()
     output: list[str] = []
     paragraph: list[str] = []
@@ -234,7 +275,15 @@ def markdown_to_latex(markdown: str) -> str:
         # page space must flow onto the next page, not strand the heading
         # above it while the whole table jumps as one block.
         if columns <= 2:
-            colspec = " | ".join(["c"] * columns)
+            # Long cell text must wrap (#26): fixed `c` columns overflow the
+            # page on any sentence longer than the column. Each column gets an
+            # equal, centered paragraph width derived from \textwidth (8pt per
+            # column covers the 2x3pt \tabcolsep plus the vertical rules),
+            # keeping grid, font and page-break behavior unchanged.
+            col_width = rf"\dimexpr(\textwidth-{8 * columns}pt)/{columns}\relax"
+            colspec = " | ".join(
+                [rf">{{\centering\arraybackslash}}p{{{col_width}}}"] * columns
+            )
             env = "longtable"
             table_open = rf"\begin{{{env}}}{{| {colspec} |}}"
             font_size = r"\small"
@@ -473,12 +522,15 @@ def markdown_to_latex(markdown: str) -> str:
             flush_paragraph(); close_list()
             level = len(heading.group(1))
             raw_title = heading.group(2).strip()
-            if is_bibliography_heading(raw_title) and not any(
-                rest.strip() for rest in lines[i + 1 :]
+            if is_bibliography_heading(raw_title) and (
+                suppress_bibliography_heading
+                or not any(rest.strip() for rest in lines[i + 1 :])
             ):
-                # The templates end with \printbibliography, which prints its
-                # own title. An empty trailing bibliography heading would show
-                # that title twice, once numbered and once not.
+                # A dropped heading is one the template title would
+                # duplicate: an empty trailing one (historical), or, when
+                # the citation-driven bibliography prints, any heading
+                # whose title \printbibliography prints itself (#26).
+                # Content under a suppressed heading still renders.
                 i += 1
                 continue
             title = convert_inline(raw_title)
@@ -551,7 +603,7 @@ def markdown_to_latex(markdown: str) -> str:
 
 
 def render_tex(config: ReportConfig) -> str:
-    template_key = normalize_template_key(config.raw.get("template") or config.raw.get("latex_template"))
+    template_key = normalize_template_key(template_key_for(config))
     template_path = resolve_template(template_key)
     if not template_path.exists():
         raise SystemExit(f"No existe template LaTeX: {template_path}")
@@ -559,7 +611,17 @@ def render_tex(config: ReportConfig) -> str:
         raise SystemExit(f"No existe body.md: {config.body_path}")
     template = template_path.read_text(encoding="utf-8")
     markdown_source = config.body_path.read_text(encoding="utf-8")
+    # Bibliography emission is decided by the body's ACTUAL rendered citations
+    # -- not by the mere presence of the .bib file (#26). A raw-Markdown regex
+    # would falsely count `[@key]` examples inside fenced code blocks or inline
+    # code, which convert_inline() renders as literal text with zero \cite
+    # commands. So the first conversion pass decides: only a body whose
+    # rendered output carries \cite prints the bibliography (and suppresses a
+    # bibliography-named Markdown heading the template title would duplicate).
     body = markdown_to_latex(markdown_source)
+    emit_bibliography = r"\cite{" in body and config.bib_path is not None
+    if emit_bibliography:
+        body = markdown_to_latex(markdown_source, suppress_bibliography_heading=True)
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.
     has_figures = bool(MARKDOWN_IMAGE_RE.search(markdown_source))
@@ -660,12 +722,28 @@ def render_tex(config: ReportConfig) -> str:
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
         "{{SECTION_NUMBERING}}": "true" if section_numbering_enabled(config.raw) else "false",
-        "{{LIST_OF_FIGURES}}": r"\newpage\listoffigures" if has_figures else "",
+        # Academic preliminary pages are Route A machinery (document-routing.md):
+        # only the academic route auto-receives the list-of-figures page, and
+        # only when the body actually has figures. Non-academic routes render
+        # their figures without the academic prelim page, and no explicit
+        # template choice reinstates it — the route owns the prelim default.
+        "{{LIST_OF_FIGURES}}": (
+            r"\newpage\listoffigures"
+            if has_figures and config.route in {DEFAULT_ROUTE, "academic"}
+            else ""
+        ),
         "{{FRONT_MATTER}}": front_matter,
         "{{AI_DECLARATION}}": ai_declaration_latex,
         "{{AI_SIGNATURE}}": ai_signature_latex,
         "{{AFTER_BIBLIOGRAPHY}}": after_bibliography_latex,
         "{{BODY}}": body,
+        # Emission is citation-driven (#26): only a body that actually cites
+        # the .bib file prints the bibliography (and its template title).
+        "{{PRINT_BIBLIOGRAPHY}}": (
+            rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
+            if emit_bibliography
+            else "% Bibliography omitted: the body cites nothing from the .bib file (#26)."
+        ),
     }
     for key, value in replacements.items():
         template = template.replace(key, value)

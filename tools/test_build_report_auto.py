@@ -274,7 +274,6 @@ class TestMain:
             patch("build_report_auto.build_backend") as mock_build,
             patch("build_report_auto.validate", return_value=validation or FakeValidation()) as mock_validate,
             patch("build_report_auto.sha256_file", return_value="validated-hash"),
-            patch("build_report_auto.publish_validated_pdf"),
         ):
             main()
 
@@ -338,75 +337,48 @@ class TestMain:
         assert mutated_config.raw.setdefault("validators", {})["pdf_layout"] is False
         assert mutated_config.output_format == "tex"
 
-    def test_validate_only_refuses_publication_pending_approval(
+    def test_generation_never_exposes_a_publication_entrypoint(self) -> None:
+        """Generation must not carry any publication machinery (#22).
+
+        Publication belongs to the deliver phase through the guarded publisher;
+        a generation run that could publish collapses generate and deliver into
+        one side effect.
+        """
+        import build_report_auto
+
+        assert not hasattr(build_report_auto, "publish_validated_pdf"), (
+            "build_report_auto must not import or expose publish_validated_pdf"
+        )
+
+    def test_generation_does_not_publish_after_validation(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--validate-only still skips the build, but no longer publishes unapproved.
-
-        Reaching publication without a current approval marker must keep the
-        validation output that was already printed and fail with a message that
-        states both facts: validation passed, and publication waits on approval.
-        """
-        folder = tmp_path / "unapproved"
+        """A validated generation run ends with evidence, never a publication."""
+        folder = tmp_path / "generated"
         (folder / "outputs").mkdir(parents=True)
         (folder / "outputs" / "report.pdf").write_bytes(b"%PDF-1.7\nbuilt content\n")
         config = FakeReportConfig(backend="latex", folder=folder)
-        config.publication_category = "PytestGuardCat"
-        config.document_slug = "pytest-guard-slug"
-        argv = ["build_report_auto.py", str(folder), "--validate-only"]
+        argv = ["build_report_auto.py", str(folder)]
 
         with (
             patch.object(sys, "argv", argv),
             patch("build_report_auto.load_report_config", return_value=config),
-            patch("build_report_auto.build_backend") as mock_build,
+            patch("build_report_auto.build_backend"),
             patch("build_report_auto.validate", return_value=FakeValidation()),
-            patch("build_report_auto.sha256_file", return_value="validated-hash"),
+            patch("build_report_auto.sha256_file", return_value="a" * 64),
         ):
-            with pytest.raises(SystemExit) as exc:
-                main()
+            main()  # must not raise and must not publish anything
 
-        mock_build.assert_not_called()
         captured = capsys.readouterr()
         assert "VALIDATION PASSED" in captured.out
-        message = str(exc.value.code)
-        assert "PDF PUBLICATION FAILED" in message
-        assert "validación técnica pasó" in message
-        assert "aprobación" in message
-        assert not (Path.home() / "Documents" / "PytestGuardCat").exists()
-
-    def test_validate_only_refuses_publication_with_warnings(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """The same refusal holds when validation passes with warnings."""
-        folder = tmp_path / "unapproved-warned"
-        (folder / "outputs").mkdir(parents=True)
-        (folder / "outputs" / "report.pdf").write_bytes(b"%PDF-1.7\nbuilt content\n")
-        config = FakeReportConfig(backend="latex", folder=folder)
-        config.publication_category = "PytestGuardCat"
-        config.document_slug = "pytest-guard-slug-warned"
-        argv = ["build_report_auto.py", str(folder), "--validate-only"]
-
-        with (
-            patch.object(sys, "argv", argv),
-            patch("build_report_auto.load_report_config", return_value=config),
-            patch("build_report_auto.build_backend") as mock_build,
-            patch("build_report_auto.validate", return_value=FakeValidation(warnings=["aviso"])),
-            patch("build_report_auto.sha256_file", return_value="validated-hash"),
-        ):
-            with pytest.raises(SystemExit) as exc:
-                main()
-
-        mock_build.assert_not_called()
-        captured = capsys.readouterr()
-        assert "VALIDATION PASSED WITH WARNINGS" in captured.out
-        message = str(exc.value.code)
-        assert "PDF PUBLICATION FAILED" in message
-        assert "aprobación" in message
-        assert not (Path.home() / "Documents" / "PytestGuardCat").exists()
+        assert "a" * 64 in captured.out, "generation must report the validated hash"
+        assert "PUBLICADO" not in captured.out
+        assert "PDF PUBLICATION" not in captured.out
 
     # -- Validation errors ---------------------------------------------------
 
-    def test_publication_runs_after_build_and_validation_pass(self) -> None:
+    def test_generation_flow_is_build_then_validate_only(self) -> None:
+        """Generation is build + validation; nothing runs after validation (#22)."""
         config = FakeReportConfig(backend="latex")
         argv = ["build_report_auto.py", "/tmp/fake-report"]
         events: list[str] = []
@@ -417,23 +389,13 @@ class TestMain:
             patch("build_report_auto.build_backend", side_effect=lambda *_: events.append("build")),
             patch("build_report_auto.validate", side_effect=lambda _: events.append("validate") or FakeValidation()),
             patch("build_report_auto.sha256_file", return_value="validated-hash"),
-            patch(
-                "build_report_auto.publish_validated_pdf",
-                side_effect=lambda *_, **__: events.append("publish") or MagicMock(created=True, path=Path("/tmp/published.pdf"), sha256="hash"),
-            ) as publish,
         ):
             main()
 
-        publish.assert_called_once_with(
-            config.pdf_path,
-            config.publication_category,
-            config.document_slug,
-            expected_sha256="validated-hash",
-            work_folder=config.folder,
-        )
-        assert events == ["build", "validate", "publish"]
+        assert events == ["build", "validate"]
 
-    def test_pdf_hash_must_not_change_between_validation_and_publication(self) -> None:
+    def test_pdf_bytes_must_not_change_across_validation(self) -> None:
+        """A PDF mutated between the two hash reads invalidates the run."""
         config = FakeReportConfig(backend="latex")
         argv = ["build_report_auto.py", "/tmp/fake-report"]
 
@@ -441,17 +403,16 @@ class TestMain:
             patch.object(sys, "argv", argv),
             patch("build_report_auto.load_report_config", return_value=config),
             patch("build_report_auto.build_backend"),
-            patch("build_report_auto.sha256_file", side_effect=["before-validation", "before-publication"]),
+            patch("build_report_auto.sha256_file", side_effect=["hash-before", "hash-after"]),
             patch("build_report_auto.validate", return_value=FakeValidation()) as validate,
-            patch("build_report_auto.publish_validated_pdf") as publish,
         ):
-            with pytest.raises(SystemExit, match="cambió"):
+            with pytest.raises(SystemExit, match="CHANGED DURING VALIDATION"):
                 main()
 
         validate.assert_called_once_with(config)
-        publish.assert_not_called()
 
-    def test_publication_never_runs_after_validation_failure(self) -> None:
+    def test_validation_failure_stops_generation_before_any_delivery(self) -> None:
+        """Validation errors abort the run; delivery is a separate later phase."""
         config = FakeReportConfig(backend="latex")
         argv = ["build_report_auto.py", "/tmp/fake-report"]
 
@@ -461,12 +422,9 @@ class TestMain:
             patch("build_report_auto.build_backend"),
             patch("build_report_auto.validate", return_value=FakeValidation(errors=["falló"])),
             patch("build_report_auto.sha256_file", return_value="validated-hash"),
-            patch("build_report_auto.publish_validated_pdf") as publish,
         ):
             with pytest.raises(SystemExit):
                 main()
-
-        publish.assert_not_called()
 
     def test_validation_errors_cause_systemexit(self) -> None:
         """When validate returns errors, main() raises SystemExit with a failure message."""

@@ -23,9 +23,23 @@ document type, structure, citation style, or prose. Document creation stays with
 
 When the confirmed brief needs no external claims, the phase closes without the
 matrix by recording `research: skipped` in `report.yml`; that key is the recorded
-decision, and it never stands in for an inspected source. Done means a non-empty
-`research/evidence-matrix.md`, or `research: skipped` in `report.yml`. Research is
-never `blocked`, so an absent matrix without that key leaves the phase `pending`.
+decision, and it never stands in for an inspected source.
+
+Skipping still owes evidence: when local inspected sources already cover the claims,
+reference them by stable locator in the preview's `## Evidence` section instead of
+writing "none". The list comes from the local source library over
+`$REPORT_CONTENT_ROOT/academic-sources/manifest.yml`:
+
+```bash
+"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/source_library.py" pack --only-inspected <query>
+```
+
+Only `inspected: true` entries are bibliography-eligible; an uninspected local
+source stays a `lead` and is not cited.
+
+Done means a non-empty `research/evidence-matrix.md`, or `research: skipped` in
+`report.yml`. Research is never `blocked`, so an absent matrix without that key
+leaves the phase `pending`.
 
 ## Steps
 

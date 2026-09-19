@@ -43,6 +43,27 @@ Unsupported dependencies fail explicitly. Do not substitute a renderer silently.
 Reject raw Mermaid when labels are tiny, hierarchy is unclear, arrows are
 awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
 
+## Mermaid layout limits and raster scale
+
+- ER diagrams: Mermaid parses `direction` on an `erDiagram` but does not lay out
+  entities by it — entity placement is decided by the layout engine, so do not
+  promise direction control for ER diagrams.
+- Supported practical workaround, with capabilities this workflow already has:
+  restructure the spec instead of negotiating with the layout engine — reduce
+  entities per diagram, split one large ER model into focused sub-diagrams (for
+  example per bounded context or aggregate), keep relationship labels short — or
+  render the model as a custom HTML/Playwright figure (see the renderer gates
+  above). If the hierarchy stays unclear after restructuring, reject raw Mermaid
+  as above rather than inserting an unreadable diagram.
+- Raster scale: `mermaid --scale <N>` passes `-s <N>` to mmdc for PNG output.
+  Omitting `--scale` preserves mmdc's native default; nonpositive or nonfinite
+  values are rejected explicitly instead of falling back.
+- Readability: a larger `--scale` increases pixel density only. It does not prove
+  the figure is readable at final print size — labels, line lengths, and page
+  geometry must be inspected in the assembled PDF at normal zoom before
+  insertion, per the photo/evidence inspection rule above. Density is not
+  legibility.
+
 ## Subject presets
 
 Use these only as topic suggestions, not automatic style selection: Sistemas
@@ -60,6 +81,7 @@ by the skill. Use the local environment and preserve specs/manifests:
 
 ```bash
 ./.venv/bin/python tools/visual_builder.py mermaid <spec.mmd> --out <asset.svg>
+# PNG at higher density: add --scale <N> (omit it for mmdc's native default)
 ./.venv/bin/python tools/visual_builder.py vegalite <spec.vl.json> --out <asset.svg>
 ./.venv/bin/python tools/visual_builder.py echarts <spec.echarts.json> --out <asset.svg>
 ./.venv/bin/python tools/visual_builder.py html-shot <spec.html> --out <asset.png>

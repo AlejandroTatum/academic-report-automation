@@ -409,7 +409,7 @@ def common_validation(config: ReportConfig) -> ValidationResult:
         if blank_pages:
             result.errors.append("Posibles páginas vacías accidentales: " + ", ".join(blank_pages))
 
-        if config.academic_value("cover", "required", default=True) and len(pages) < 2:
+        if config.cover_value("required", default=True) and len(pages) < 2:
             result.errors.append("La portada es obligatoria pero el PDF tiene menos de 2 páginas")
 
         # CRITICAL: detect LaTeX commands rendered as literal text in PDF
@@ -492,20 +492,22 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
     try:
         images = run(["pdfimages", "-list", str(config.pdf_path)]).stdout.splitlines()
         image_rows = [line for line in images if re.match(r"^\s*\d+\s+\d+\s+image", line)]
-        if config.academic_value("cover", "logo_required", default=True) and not image_rows:
+        if config.cover_value("logo_required", default=True) and not image_rows:
             result.errors.append("PDF no parece tener imágenes embebidas; revisar logo UNL")
     except FileNotFoundError:
         result.warnings.append("pdfimages no disponible; no se validó logo/imágenes")
 
     pages = pdf_text_pages(config.pdf_path)
-    body_page = config.academic_value("cover", "body_starts_on_page", default=2)
+    body_page = config.cover_value("body_starts_on_page", default=2)
     body_page_index = body_page - 1  # 0-indexed
     # The cover/body boundary only exists when there IS a cover. A report that
     # declared `cover: {required: false}` starts its body on page 1, and the
     # markers below are academic Spanish — a business report opening on
     # "Resumen ejecutivo" can never match one, so the warning fired on every
     # build and taught the reader to skip warnings entirely.
-    has_cover = bool(config.academic_value("cover", "required", default=True))
+    # Route-derived (#23): a non-academic route defaults to no cover, so the
+    # academic cover/body boundary markers never apply to it.
+    has_cover = bool(config.cover_value("required", default=True))
     if has_cover and len(pages) > body_page_index:
         first = pages[0].lower()
         body_content = pages[body_page_index].lower()

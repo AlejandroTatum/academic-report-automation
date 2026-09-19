@@ -17,7 +17,9 @@ format, prompt, files, or history.
 ### Mandatory Intake
 
 Load `references/document-intake.md` on every execution. Record document type,
-audience, purpose, template/identity, delivery format, and visual direction.
+audience, purpose, template/identity, delivery format, and visual direction, using
+the `report.yml` record keys that reference defines (`route:`, `output:`,
+`template:`, top-level `cover:`, and the `metadata:` fields).
 Render the Document Contract as a data record written to `report.yml`; it does not
 authorize generation. The single confirmation gate is post-preview and lives in
 `document-workflow/references/approval.md`; intake never asks for approval.
@@ -36,6 +38,7 @@ the run; there is no default document type or academic fallback.
 - Never ghostwrite a final submission. A technically validated PDF published under a current `APPROVAL_CURRENT` marker may be reported, but semantic inspection and human approval remain required for `VISUAL_PASS` and `READY_TO_SUBMIT`. Preserve privacy, provenance, citations, and consent boundaries.
 - Use `academic-visual-builder` for figures, then inspect them again in the assembled report. Confirm the visual direction changes hierarchy and composition, not only decoration.
 - When supplied a research-workflow evidence package, preserve claim-to-source traceability, limitations, and unresolved questions. Do not treat the package as confirmed document intake; this skill still owns intake, citation-style confirmation, composition, and document creation.
+- Rendering defaults (template, cover, section numbering, list of figures) are derived from the confirmed `route:`; an explicitly written `report.yml` option always wins, so a non-academic route never receives the academic shell by accident. See `references/document-routing.md`.
 
 ### Academic Route Only
 

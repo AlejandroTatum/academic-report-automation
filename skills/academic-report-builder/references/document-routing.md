@@ -57,5 +57,22 @@ The route is a decision the tooling cannot infer, so write it into `report.yml` 
 - An absent `route:` means Route A. That default exists so reports written before the key keep working; it is never a licence to omit the key on a non-academic document.
 - An unrecognised value stops the run naming the accepted ones. There is no silent fallback.
 - Declaring `subject` or `teacher` on a non-academic route warns: those fields are academic furniture the route forbids.
-- `section_numbering: false` removes numbered headings, which Routes B, C and D forbid. Absent means numbered, so Route A needs nothing.
+- `section_numbering: false` removes numbered headings, which Routes B, C and D forbid. With the key absent the default is ROUTE-derived: numbered on Route A (and for reports written before `route:` existed), unnumbered on the non-academic routes.
 - These two keys carry the routing contract into the build. A route confirmed with Alejandro but never written to `report.yml` is not a resolved route.
+
+## Derived rendering defaults
+
+The route also derives the rendering defaults, resolved at build/validation time — `report.yml` is never rewritten, and any explicitly written option always wins over the route default:
+
+| Default | Academic (or absent `route:`) | Project / business / technical / other |
+| --- | --- | --- |
+| `template:` | `unl` (UNL institutional shell) | `plain` (non-institutional) |
+| Cover (`required`, `logo_required`, `body_starts_on_page`) | from `templates/academic_format.yml` (cover required, logo, body on page 2) | no institutional cover, no logo requirement, body starts on page 1 |
+| `section_numbering:` (absent key) | numbered | unnumbered (the contract forbids auto-included academic numbering) |
+| List of figures (body has figures) | academic prelim page included | no academic prelim page (figures render without it) |
+| Cover-dependent validation (`body_starts_on_page`, `logo_required`) | from `academic_format.yml` | body page 1, no logo expectation — but explicitly requiring `cover.required: true` upgrades these to the coherent cover expectations (page 2, logo) unless overridden per key |
+
+- An explicit `template:`, `cover:` block or `section_numbering:` in `report.yml` overrides the route default in either direction; a partial `cover:` block resolves per key, and the untouched keys keep the route default. Template choice is typographic only: it never reinstates the academic prelim page or re-enables numbering on a non-academic route, and it never disables cover validation on the academic route — template and cover defaults are independently resolved.
+- An absent `route:` keeps every historical academic default, so reports written before `route:` existed render exactly as before.
+- Non-academic routes default to the plain template, so they are not forced into a title-only cover page or an academic list-of-figures page; a plain report lists figures only when the body has figures.
+- Historical approvals and published PDFs are never re-interpreted: derivation affects new builds and their validation only.
