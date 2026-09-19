@@ -21,6 +21,7 @@ from pathlib import Path
 from report_config import ReportConfig, read_yaml
 
 DEFAULT_PREVIEW = "# Content Preview: Informe\n\nCuerpo.\n"
+DEFAULT_BODY = "# Informe\n\nCuerpo del documento.\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
 VALIDATION_SCHEMA = "academic.doc-validation/v1"
@@ -72,6 +73,14 @@ def _preview(folder: Path, text: str = DEFAULT_PREVIEW) -> Path:
     return path
 
 
+def _body(folder: Path, text: str = DEFAULT_BODY) -> Path:
+    """Write a ``body.md`` under ``folder`` and return its path."""
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "body.md"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def _evidence_matrix(folder: Path, text: str = DEFAULT_MATRIX) -> Path:
     """Write ``research/evidence-matrix.md`` under ``folder`` and return its path."""
     research = folder / "research"
@@ -111,30 +120,37 @@ def _approval(
     *,
     preview: str | None = None,
     preview_sha256: str | None = None,
+    body: str | None = None,
+    body_sha256: str | None = None,
     drop: tuple[str, ...] = (),
     **fields: object,
 ) -> Path:
-    """Write ``preview.md`` plus an ``approval.yml`` bound to it.
+    """Write ``preview.md`` and ``body.md`` plus an ``approval.yml`` bound to both.
 
-    Defaults produce a current marker. ``preview`` rewrites the preview before
-    hashing (the normal shape), ``preview_sha256`` overrides the recorded hash
-    (a stale marker), and ``drop`` removes required keys (a malformed marker).
+    Defaults produce a current marker. ``preview``/``body`` rewrite those files
+    before hashing (the normal shape), ``preview_sha256``/``body_sha256`` override
+    the recorded hash (a stale marker), and ``drop`` removes required keys (a
+    malformed marker).
     """
     folder.mkdir(parents=True, exist_ok=True)
     preview_path = folder / "preview.md"
     if preview is not None or not preview_path.is_file():
         preview_path.write_text(preview if preview is not None else DEFAULT_PREVIEW, encoding="utf-8")
-    body: dict[str, object] = {
+    body_path = folder / "body.md"
+    if body is not None or not body_path.is_file():
+        body_path.write_text(body if body is not None else DEFAULT_BODY, encoding="utf-8")
+    marker_body: dict[str, object] = {
         "schema": APPROVAL_SCHEMA,
         "preview_sha256": preview_sha256 or _sha256(preview_path),
+        "body_sha256": body_sha256 or _sha256(body_path),
         "approved_at": "2026-09-10T14:03:11Z",
         "approved_by": "Alejandro",
     }
-    body.update(fields)
+    marker_body.update(fields)
     for key in drop:
-        body.pop(key, None)
+        marker_body.pop(key, None)
     marker = folder / "approval.yml"
-    marker.write_text(_yaml(body), encoding="utf-8")
+    marker.write_text(_yaml(marker_body), encoding="utf-8")
     return marker
 
 

@@ -2,12 +2,13 @@
 """The shared approval-marker contract.
 
 An approval is a file on disk, not a session variable: ``approval.yml`` binds a
-human decision to the exact bytes of ``preview.md`` through ``preview_sha256``.
-Two consumers share this predicate with different presentation: ``doc_status``
-maps the state onto a phase state and a blocked-reason token, and
-``publish_validated_pdf`` maps it onto a user-facing abort message. Keeping the
-predicate here -- and the presentation at each boundary -- is what stops the
-routing layer and the irreversible publisher from disagreeing about approval.
+human decision to the exact bytes of both ``preview.md`` and ``body.md``,
+through ``preview_sha256`` and ``body_sha256``. Two consumers share this
+predicate with different presentation: ``doc_status`` maps the state onto a
+phase state and a blocked-reason token, and ``publish_validated_pdf`` maps it
+onto a user-facing abort message. Keeping the predicate here -- and the
+presentation at each boundary -- is what stops the routing layer and the
+irreversible publisher from disagreeing about approval.
 
 The module is pure and read-only. ``approval_state`` never writes, never creates
 a directory, and never raises for a bad marker: an unreadable or invalid marker
@@ -23,9 +24,10 @@ from pathlib import Path
 from report_config import read_yaml
 
 PREVIEW_NAME = "preview.md"
+BODY_NAME = "body.md"
 MARKER_NAME = "approval.yml"
 MARKER_SCHEMA = "academic.doc-approval/v1"
-REQUIRED_KEYS = ("preview_sha256", "approved_at", "approved_by")
+REQUIRED_KEYS = ("preview_sha256", "body_sha256", "approved_at", "approved_by")
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,22 @@ def approval_state(work_folder: Path) -> ApprovalState:
             state="stale",
             reason="approval_marker_stale",
             detail=f"{MARKER_NAME} preview_sha256 does not match {PREVIEW_NAME}",
+        )
+
+    body_path = folder / BODY_NAME
+    if not body_path.is_file():
+        return _malformed(f"{BODY_NAME} missing")
+
+    try:
+        body_hash = sha256_file(body_path)
+    except OSError:
+        return _malformed(f"{BODY_NAME} unreadable")
+
+    if str(data["body_sha256"]).strip().lower() != body_hash:
+        return ApprovalState(
+            state="stale",
+            reason="approval_marker_stale",
+            detail=f"{MARKER_NAME} body_sha256 does not match {BODY_NAME}",
         )
 
     return ApprovalState(state="current", reason="", detail="")
