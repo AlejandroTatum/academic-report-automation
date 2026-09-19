@@ -2,7 +2,7 @@
 """Derive the document-workflow phases from on-disk artifacts (read-only).
 
 Slice 2c-i of the status layer: the phase vocabulary, the two value dataclasses,
-the seven per-phase derivations, and the ``derive``/``main`` composition on top of
+the eight per-phase derivations, and the ``derive``/``main`` composition on top of
 them. Each ``_phase_*`` function answers for exactly one phase and returns a raw
 ``done|pending|blocked`` token; ``derive`` runs them in order, wraps an unexpected
 exception as ``blocked``, locks every phase after the first incomplete one to
@@ -31,7 +31,7 @@ from pathlib import Path
 from approval_marker import approval_state, sha256_file
 from report_config import ROOT, ReportConfig, read_yaml
 
-PHASES = ("intake", "research", "preview", "approval", "generate", "validate", "deliver")
+PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
 DONE, CURRENT, PENDING, BLOCKED = "done", "current", "pending", "blocked"
 STATE_TOKENS = (DONE, CURRENT, PENDING, BLOCKED)
 SCHEMA_NAME = "academic.doc-status"
@@ -50,7 +50,8 @@ _GUIDANCE = {
         "then re-run doc_status"
     ),
     "preview": "draft {preview}, then re-run doc_status",
-    "approval": "generation runs only after you approve {preview}",
+    "draft": "draft {body}, then re-run doc_status",
+    "approval": "generation runs only after you approve {preview} and {body}",
     "generate": "build with {build_command}, then re-run doc_status",
     "validate": "record {validation} for the final PDF, then re-run doc_status",
     "deliver": "publish with {deliver_command}, then re-run doc_status",
@@ -116,6 +117,18 @@ def _phase_preview(folder: Path, _config: ReportConfig, _documents_root: Path | 
     if not text.strip():
         return PhaseState("preview", PENDING, "preview.md empty")
     return PhaseState("preview", DONE, "preview.md present")
+
+
+def _phase_draft(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    body = folder / "body.md"
+    if not body.is_file():
+        return PhaseState("draft", PENDING, "body.md missing")
+    text = _read_text(body)
+    if text is None:
+        return PhaseState("draft", BLOCKED, "body.md unreadable", "draft_unreadable")
+    if not text.strip():
+        return PhaseState("draft", PENDING, "body.md empty")
+    return PhaseState("draft", DONE, "body.md present")
 
 
 def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -248,6 +261,7 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
         _phase_intake,
         _phase_research,
         _phase_preview,
+        _phase_draft,
         _phase_approval,
         _phase_generate,
         _phase_validate,
@@ -311,6 +325,7 @@ def _guidance(phase_name: str, work_folder: Path) -> str:
         report_yml=folder / "report.yml",
         matrix=folder / "research" / "evidence-matrix.md",
         preview=folder / "preview.md",
+        body=folder / "body.md",
         validation=folder / "validation.yml",
         build_command=_tool_command("build_report_auto.py", folder),
         deliver_command=_tool_command("deliver_report.py", folder),

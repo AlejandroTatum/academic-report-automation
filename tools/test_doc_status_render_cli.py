@@ -121,12 +121,13 @@ def test_render_human_golden(tmp_path: Path) -> None:
     assert text == "\n".join(
         [
             f"**Gate**: preview pending - {guidance}",
-            "Route: intake > research > [preview] > approval > generate > validate > deliver",
+            "Route: intake > research > [preview] > draft > approval > generate > validate > deliver",
             "",
             "**Summary**",
             "- intake: done - route=academic, metadata complete",
             "- research: done - skipped in report.yml",
             "- preview: current - preview.md missing",
+            "- draft: pending",
             "- approval: pending",
             "- generate: pending",
             "- validate: pending",
@@ -293,6 +294,22 @@ def test_render_human_gate_reports_blocked_approval(tmp_path: Path) -> None:
     _assert_human_contract(text)
 
 
+def test_gate_names_body_md_when_draft_is_current(tmp_path: Path) -> None:
+    """Acceptance: preview done, body.md missing gates on draft naming body.md."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _skip_research(folder)
+    _preview(folder)
+
+    status = doc_status.derive(folder)
+    text = doc_status.render_human(status)
+
+    body = status.work_folder / "body.md"
+    assert status.current == "draft"
+    assert _human_gate(text) == f"draft pending - draft {body}, then re-run doc_status"
+    _assert_human_contract(text)
+
+
 def test_gate_and_guidance_helpers_are_ascii_and_folder_bound(tmp_path: Path) -> None:
     """``_gate`` projects the authoritative gate; ``_guidance`` binds the folder."""
     folder = _golden_folder(tmp_path / "wf")
@@ -305,8 +322,11 @@ def test_gate_and_guidance_helpers_are_ascii_and_folder_bound(tmp_path: Path) ->
     assert doc_status._guidance("preview", work) == (
         f"draft {work}/preview.md, then re-run doc_status"
     )
+    assert doc_status._guidance("draft", work) == (
+        f"draft {work}/body.md, then re-run doc_status"
+    )
     assert doc_status._guidance("approval", work) == (
-        f"generation runs only after you approve {work}/preview.md"
+        f"generation runs only after you approve {work}/preview.md and {work}/body.md"
     )
     assert all(ord(char) < 128 for char in gate + doc_status._guidance("intake", work))
 
