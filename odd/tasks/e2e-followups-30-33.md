@@ -20,7 +20,7 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
 
 ## Tasks
 - [x] T1 #30 validate.md: when the native RDD candidate cannot bind to `reports/<wf>/**`, fall through to the fallback branch and record `reason:` in `validation.yml`. Route: delegated writer (4+ files overall).
-- [ ] T2 #32 validate_report: skip materia warning when pdf_path is already under the route-derived output folder; body-start marker route-aware. RED tests in `tools/test_output_location_guard.py`, `tools/test_cover_route_defaults.py`.
+- [x] T2 #32 validate_report: skip materia warning when pdf_path is already under the route-derived output folder; body-start marker route-aware. RED tests in `tools/test_output_location_guard.py`, `tools/test_cover_route_defaults.py`.
 - [ ] T3 #33 doc_status approval detail names every bound file (preview.md and body.md); deliver_report lists granted/missing gates from `validation.yml` `gates:`. RED tests in `tools/test_doc_status_approval.py`, `tools/test_deliver_report.py`.
 - [ ] T4 #31 build_latex_report: remove filename-substring width table; size from image aspect ratio with a height cap; reconsider hard `[H]`. RED test in `tools/test_figure_detection.py`.
 
@@ -37,5 +37,18 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
   Evidence: `tests/skills/test_document_workflow_contract.py -q` -> 17 passed.
   Full suite: `.venv/bin/python -m pytest tools/ tests/ -q` -> 959 passed.
 
+- T2 done: `tools/validate_report.py` `common_validation` skips the materia
+  warning when `config.pdf_path` already resolves under
+  `GLOBAL_OUTPUTS / config.output_folder_slug` (guarded by
+  `config.route_is_known` to avoid `publication_category`'s KeyError on an
+  unknown route); the body-start heuristic (`body_marker_pattern`) now only
+  applies on `config.route == DEFAULT_ROUTE` (academic).
+  RED: `test_no_materia_warning_when_pdf_already_under_route_derived_folder`
+  (tools/test_output_location_guard.py) and
+  `test_technical_route_with_cover_does_not_false_warn_on_unnumbered_heading`
+  (tools/test_cover_route_defaults.py) both failed before the fix.
+  GREEN: both files -> 44 passed.
+  Full suite: 961 passed (was 959; +2 new tests).
+
 ## Next step
-T2 #32: route-aware materia warning and body-start heuristic in `tools/validate_report.py`.
+T3 #33: receipt-derived approval detail in `tools/doc_status.py` and gate list in `tools/deliver_report.py`.
