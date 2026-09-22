@@ -22,7 +22,7 @@ ODD delegated direct (user decision 2026-09-22: "flujo directo aplica odd"). The
 - [x] T1 (SDD phase 1, PR1) recover parser/corpus `7f321f6` as `bba66ec` `feat(visual): parse renderer-real connectors`. Route: delegated writer (cherry-pick, clean auto-merge in `tools/visual_builder.py`).
 - [x] T2 (SDD phase 2, PR2) `feat(visual): protect connector routes`: R2-R6 in `tools/test_connector_geometry.py` (protected regions, crossing vs touching, 0.80 clearance, source/target/direction, actionable evidence, chart silence) with the named fixtures. Route: delegated writer.
 - [x] T3 (SDD phase 3, PR3) `feat(visual): enforce final-size connector gate`: R7 in `tools/test_connector_pdf_stage.py`, contract REDs in `tests/skills/test_visual_builder_contract.py`, `tools/connector_pdf_stage.py`, `tools/validate_report.py`, SKILL.md and `visual-workflow.md` rules. Route: delegated writer.
-- [ ] T4 (post-T1 native review, non-blocking findings) `fix(visual): harden connector parsing`: RED tests first for — edge/node id parsing breaking on underscores (`connector_geometry.py:43`), SVG path sampling ignoring relative commands/other unhandled commands (`:89-114`), circle nodes not resolved as node regions (`:130-152`), the "fix" boundary-grazing-only detection (`:281-286`), unguarded connector audit letting parse exceptions escape `visual_builder.py` instead of becoming a reported finding (`:387-392`), missing integration/edge-case coverage (`test_connector_geometry.py:72-84`), plus the minor misplaced constant comment and node-id-holding-the-label naming. Route: delegated writer.
+- [x] T4 (post-T1 native review, non-blocking findings) `fix(visual): harden connector parsing`: RED tests first for — edge/node id parsing breaking on underscores (`connector_geometry.py:43`), SVG path sampling ignoring relative commands/other unhandled commands (`:89-114`), circle nodes not resolved as node regions (`:130-152`), the "fix" boundary-grazing-only detection (`:281-286`), unguarded connector audit letting parse exceptions escape `visual_builder.py` instead of becoming a reported finding (`:387-392`), missing integration/edge-case coverage (`test_connector_geometry.py:72-84`), plus the minor misplaced constant comment and node-id-holding-the-label naming. Route: delegated writer.
 
 ## Acceptance
 - SDD spec requirements hold with named tests observed RED then GREEN; full suite green; open connector failure denies `VISUAL_PASS`.
@@ -76,8 +76,27 @@ ODD delegated direct (user decision 2026-09-22: "flujo directo aplica odd"). The
   verified against a real generated report (no PDF exists in this checkout — content lives in the
   separate `CONTENT_ROOT`), only against a hand-built scratch report.
 
+- T4: `c0257d6` `fix(visual): harden connector parsing`. RED (all 6 new tests, observed failing before
+  their fix): `test_edge_ids_with_underscored_node_labels_resolve` (CONNECTOR_PARSE on a valid
+  underscored label), `test_sample_path_supports_relative_and_line_only_commands` (relative `l`
+  misread as absolute), `test_circle_node_shape_is_resolved` (0 nodes instead of 1), two graze tests
+  (`test_multi_segment_endpoint_graze_is_exempt` false-positive; its `..._beyond_epsilon_still_fails`
+  companion was already correctly green and stayed green), and
+  `test_connector_audit_parse_error_becomes_a_reported_finding` in the new
+  `tools/test_visual_builder_validate.py` (raw `xml.etree.ElementTree.ParseError` escaping uncaught).
+  GREEN: `.venv/bin/python -m pytest tools/test_connector_geometry.py tools/test_visual_builder_validate.py -q`
+  -> 21 passed. Full suite: `.venv/bin/python -m pytest tools/ tests/ -q` -> 1000 passed. Shortstat:
+  `6 files changed, 243 insertions(+), 26 deletions(-)`. Scope: the underscore-id fix required
+  restructuring `parse_svg` into a node-then-edge two-pass (real mmdc emits `g.edgePaths` before
+  `g.nodes`, so a single pass never has the label set an ambiguous split needs); the "fix" grazing
+  defect turned out to be a real false-positive risk (contiguous multi-segment grazes from a curved
+  departure were checked segment-by-segment, flagging the second segment as an unrelated traversal) and
+  is now measured as one contiguous run per the same `CONTACT_EPS` budget. The `Node.id`-holds-the-label
+  rename was intentionally NOT done (would ripple through `Edge.source/target`,
+  `ProtectedRegion.owner_id`, and the whole T2/T3 test suite); addressed with a clarifying docstring
+  instead, noted honestly as a scope choice rather than the full rename.
+
 ## Next step
-Start T4 (native-review hardening of the T1 parser). Reconciliation against T2/T3: neither task touched
-`_EDGE_ID_RE`/`_NODE_ID_RE` (underscore-splitting), `sample_path`'s command handling, `_shape_bbox`'s
-shape-kind branches (rect/polygon/path only, no circle/ellipse), or `visual_builder.py`'s
-`command_validate` exception handling — all six findings are still open and unaddressed by T2/T3.
+Issue #10's four planned slices (T1-T4) are complete on this branch. Delivery (PR review/merge per the
+stacked-to-main strategy) is the user's decision under ordinary repository policy; no further ODD task
+is queued unless new findings arrive.
