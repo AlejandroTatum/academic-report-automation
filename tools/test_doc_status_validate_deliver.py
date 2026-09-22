@@ -13,8 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import doc_status
-from conftest import _config, _pdf, _published, _report, _validation
+import publish_pdf
+from conftest import _approval, _body, _config, _pdf, _published, _report, _validation
 
 CATEGORY = "Academicos"
 SLUG = "informe-de-laboratorio"
@@ -233,3 +236,26 @@ def test_validate_and_deliver_derivations_never_write(tmp_path: Path) -> None:
 
     after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     assert after == before
+
+
+# ---------------------------------------------------------------------------
+# T3: publish_pdf._approval_refusal names body.md for a body-stale marker
+# ---------------------------------------------------------------------------
+
+
+def test_publish_refuses_body_stale_marker_and_names_body_md(tmp_path: Path) -> None:
+    """A body edited after approval refuses publication and names body.md."""
+    folder = tmp_path / "wf"
+    _approval(folder)
+    _body(folder, "# Informe\n\nOtro cuerpo.\n")
+    source = tmp_path / "validated.pdf"
+    source.write_bytes(b"%PDF-1.7\nvalidated content\n")
+    documents = tmp_path / "Documents"
+
+    with pytest.raises(publish_pdf.PublicationError) as exc:
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents, work_folder=folder
+        )
+
+    assert "body.md" in str(exc.value)
+    assert not documents.exists()

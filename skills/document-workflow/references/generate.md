@@ -11,17 +11,19 @@ canonical build and validation commands; this skill never builds the document it
 
 Generation runs only when the routed block reports `approval: done` for the work
 folder: `approval.yml` exists and its `preview_sha256` matches the current
-`preview.md`. An absent, stale, or malformed marker keeps `approval` `pending` or
-`blocked`, so `doc_status` never returns `next: generate` and this reference must not
-be loaded or acted on. Never build before approval is `done`: a build made on an
-unapproved preview is discarded at publication, where the publisher re-checks the
-marker and refuses to deliver anything.
+`preview.md` and its `body_sha256` matches the current `body.md`. An absent, stale, or
+malformed marker keeps `approval` `pending` or `blocked`, so `doc_status` never
+returns `next: generate` and this reference must not be loaded or acted on. Never
+build before approval is `done`: a build made on an unapproved preview or body is
+discarded at publication, where the publisher re-checks the marker and refuses to
+deliver anything.
 
 ## Contract
 
 Generation exists to turn the confirmed report content into the single final PDF the
 later phases read. The executor runs the canonical pipeline, which builds from the
-confirmed `report.yml` plus its content, runs the configured technical validation,
+confirmed `report.yml` plus the approved `body.md` -- the drafted body whose exact
+bytes the marker's `body_sha256` binds -- runs the configured technical validation,
 and records the artifact hash and page count:
 
 ```bash

@@ -16,7 +16,7 @@ import hashlib
 from pathlib import Path
 
 import doc_status
-from conftest import _approval, _pdf, _preview, _report, _skip_research
+from conftest import _approval, _body, _pdf, _preview, _report, _skip_research
 
 
 def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
@@ -35,10 +35,11 @@ def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
 
 
 def _working_folder(folder: Path) -> Path:
-    """Build a folder that reaches the approval phase: report, research, preview."""
+    """Build a folder that reaches the approval phase: report, research, preview, body."""
     _report(folder)
     _skip_research(folder)
     _preview(folder)
+    _body(folder)
     return folder
 
 
@@ -93,6 +94,22 @@ def test_derive_fresh_folder_focus_is_intake_and_later_phases_pending(tmp_path: 
     assert status.next_token == "intake"
     assert status.phases[0].state == doc_status.CURRENT
     assert all(phase.state == doc_status.PENDING for phase in status.phases[1:])
+
+
+def test_derive_focuses_on_draft_when_preview_done_and_body_missing(tmp_path: Path) -> None:
+    """Acceptance: preview.md present with no body.md routes to ``next: draft``."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _skip_research(folder)
+    _preview(folder)
+
+    status = doc_status.derive(folder)
+
+    states = {phase.name: phase.state for phase in status.phases}
+    assert states["preview"] == doc_status.DONE
+    assert status.current == "draft"
+    assert status.next_token == "draft"
+    assert all(states[name] == doc_status.PENDING for name in doc_status.PHASES[4:])
 
 
 def test_derive_projects_first_incomplete_phase_as_current(tmp_path: Path) -> None:
