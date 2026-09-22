@@ -644,6 +644,63 @@ def visual_validation(config: ReportConfig) -> ValidationResult:
     return result
 
 
+def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
+    """Independent final-print-size connector audit for every diagram SVG a
+    LaTeX report embeds (issue #10).
+
+    ``tools/visual_builder.py validate`` is the isolated precheck; this is the
+    mandatory, independent final-stage run the spec requires — neither
+    substitutes for the other. Like every gate in this function, it never
+    grants ``VISUAL_PASS`` itself (see academic-report-builder/SKILL.md: no
+    script, validator, or auditor ever does); it only blocks the earlier
+    gates ``VISUAL_PASS`` depends on. An unresolved figure or unaudited SVG
+    is reported, never silently skipped.
+    """
+    result = ValidationResult()
+    if config.backend != "latex" or not config.body_path.exists():
+        return result
+    from build_latex_report import (
+        figure_references,
+        normalize_template_key,
+        resolve_figure,
+        resolve_template,
+        template_key_for,
+    )
+    from connector_pdf_stage import audit_svg_at_final_size
+    from visual_pdf_auditor import FAILURE as CONNECTOR_FAILURE
+
+    build_dir = config.tex_path.parent
+    markdown = config.body_path.read_text(encoding="utf-8")
+    svg_figures: list[Path] = []
+    for reference in figure_references(markdown):
+        resolved = resolve_figure(reference, build_dir)
+        if resolved is None:
+            continue
+        candidate = resolved if resolved.suffix.lower() == ".svg" else resolved.with_suffix(".svg")
+        if candidate.exists():
+            svg_figures.append(candidate)
+    if not svg_figures:
+        return result
+
+    try:
+        template_path = resolve_template(normalize_template_key(template_key_for(config)))
+        tex_source = template_path.read_text(encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        result.errors.append(f"No se pudo resolver la plantilla LaTeX para el gate de conectores en tamaño final: {exc}")
+        return result
+
+    for svg_path in svg_figures:
+        try:
+            issues = audit_svg_at_final_size(svg_path, tex_source)
+        except ValueError as exc:
+            result.errors.append(f"No se pudo auditar '{svg_path}' en tamaño final impreso: {exc}")
+            continue
+        for issue in issues:
+            if issue.level == CONNECTOR_FAILURE:
+                result.errors.append(f"[tamaño final] {issue.tag}: {issue.detail} ({svg_path.name})")
+    return result
+
+
 def docx_validation(config: ReportConfig) -> ValidationResult:
     """Validate the DOCX artefact itself, not merely that a file exists.
 
@@ -847,6 +904,7 @@ def validate(config: ReportConfig) -> ReportValidation:
     validation.add("common", common_validation(config))
     if config.backend == "latex":
         validation.add("assets", asset_validation(config))
+        validation.add("connector_final_size", connector_final_size_validation(config))
     if config.output_format == "pdf":
         validation.add("pdf_layout", pdf_layout_validation(config))
     if validators.get("ieee", True):

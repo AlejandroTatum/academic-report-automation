@@ -59,10 +59,23 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   Omitting `--scale` preserves mmdc's native default; nonpositive or nonfinite
   values are rejected explicitly instead of falling back.
 - Readability: a larger `--scale` increases pixel density only. It does not prove
-  the figure is readable at final print size — labels, line lengths, and page
-  geometry must be inspected in the assembled PDF at normal zoom before
-  insertion, per the photo/evidence inspection rule above. Density is not
-  legibility.
+  the figure is readable at final print size — density is not legibility.
+  Connector readability (obstruction, crossings, clearance, direction) is
+  enforced automatically instead of eyeballed: `tools/visual_builder.py
+  validate <asset.svg>` runs `connector_geometry`'s isolated precheck
+  (unrelated connectors and connectors-to-nodes/text/annotations/cluster
+  labels/legends must clear 0.80 SVG units; obstruction and unnecessary
+  crossings always fail), and `validate_report.py`'s LaTeX visual validator
+  independently re-audits every diagram SVG at its real final print scale
+  through `connector_pdf_stage` (the 0.80-SVG-unit rule's final-scale
+  equivalent, derived from the template's own page geometry), blocking the
+  report there too. The isolated run is precheck evidence only; the
+  final-size run is the mandatory, independent enforcement — neither
+  substitutes for the other, and passing both is still not `VISUAL_PASS` (see
+  the report skill's `quality-gates.md`). Non-connector legibility (label
+  wrapping, page geometry, overall composition) still needs inspection in the
+  assembled PDF at normal zoom before insertion, per the photo/evidence rule
+  above.
 
 ## Subject presets
 
