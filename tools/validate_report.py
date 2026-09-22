@@ -13,6 +13,7 @@ from report_config import ROOT as AUTOMATION_ROOT
 from report_config import (
     ACADEMIC_ONLY_METADATA,
     CONTENT_ROOT,
+    DEFAULT_ROUTE,
     LOCAL_OUTPUTS_ERROR,
     ReportConfig,
     load_report_config,
@@ -369,7 +370,16 @@ def common_validation(config: ReportConfig) -> ValidationResult:
         if dirty:
             result.warnings.append("outputs/ contiene intermedios; deberían ir a backups/ o build/: " + ", ".join(dirty[:8]))
 
-    if config.publish_global and config.output_format == "pdf" and config.pdf_path.exists():
+    if (
+        config.publish_global
+        and config.output_format == "pdf"
+        and config.pdf_path.exists()
+        and not (
+            config.route_is_known
+            and config.pdf_path.resolve().parent
+            == (GLOBAL_OUTPUTS / config.output_folder_slug).resolve()
+        )
+    ):
         subject_slug = infer_subject_for_path(config.pdf_path, config.metadata)
         if subject_slug:
             expected_global = GLOBAL_OUTPUTS / subject_slug / config.pdf_path.name
@@ -535,7 +545,15 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
         cover_body_marker_pattern = r"\b(" + "|".join(re.escape(marker) for marker in cover_body_markers) + r")\b"
         if re.search(cover_body_marker_pattern, first) and not config.raw.get("allow_body_on_cover", False):
             result.errors.append("La portada parece mezclada con el cuerpo; el cuerpo debe iniciar en página 2")
-        if not re.search(body_marker_pattern, body_content) and config.backend == "latex":
+        # The marker vocabulary is academic Spanish (#23's numbering contract).
+        # Non-academic routes render unnumbered, route-specific headings by
+        # contract (document-routing.md, routes B-D), so requiring one of
+        # these words there is a false positive, not a real signal.
+        if (
+            config.route == DEFAULT_ROUTE
+            and not re.search(body_marker_pattern, body_content)
+            and config.backend == "latex"
+        ):
             result.warnings.append(f"No detecté inicio claro del cuerpo en página {body_page}; revisar portada/cuerpo")
 
     # Orphan headings are a pagination defect, not a cover concern: this loop

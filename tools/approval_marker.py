@@ -29,6 +29,17 @@ MARKER_NAME = "approval.yml"
 MARKER_SCHEMA = "academic.doc-approval/v1"
 REQUIRED_KEYS = ("preview_sha256", "body_sha256", "approved_at", "approved_by")
 
+# The subset of REQUIRED_KEYS that binds a marker to a file's exact bytes,
+# mapped to that file's name -- the single place a caller derives "which
+# files does this marker bind" from, so a new bound file only has to be
+# added here instead of re-listed at each call site.
+BOUND_FILES = {"preview_sha256": PREVIEW_NAME, "body_sha256": BODY_NAME}
+
+
+def bound_file_names() -> tuple[str, ...]:
+    """Return the files an approval marker binds, in REQUIRED_KEYS order."""
+    return tuple(BOUND_FILES[key] for key in REQUIRED_KEYS if key in BOUND_FILES)
+
 
 @dataclass(frozen=True)
 class ApprovalState:

@@ -28,7 +28,7 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from approval_marker import approval_state, sha256_file
+from approval_marker import approval_state, bound_file_names, sha256_file
 from report_config import ROOT, ReportConfig, read_yaml
 
 PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
@@ -140,7 +140,8 @@ def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path |
     """
     state = approval_state(folder)
     if state.state == "current":
-        return PhaseState("approval", DONE, "approval.yml matches preview.md")
+        bound = " and ".join(bound_file_names())
+        return PhaseState("approval", DONE, f"approval.yml matches {bound}")
     if state.state == "absent":
         return PhaseState("approval", PENDING, state.detail)
     return PhaseState("approval", BLOCKED, state.detail, state.reason)

@@ -25,6 +25,12 @@ from report_config import load_report_config, read_yaml
 
 VALIDATION_RECEIPT = "validation.yml"
 
+# The full gate vocabulary the validate phase can grant, in the order
+# ``skills/document-workflow/references/validate.md`` names them. The
+# delivery message below reports exactly which of these the receipt
+# actually names, never a fixed phrase.
+KNOWN_GATES = ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW", "READY_TO_SUBMIT")
+
 
 def _refuse(reason: str) -> int:
     """Print the refusal with its named missing evidence and fail the run."""
@@ -87,10 +93,14 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
         return _refuse(str(exc))
 
     action = "ENTREGADO" if publication.created else "REUTILIZADO"
+    granted = [gate for gate in KNOWN_GATES if gate in (receipt.get("gates") or [])]
+    missing = [gate for gate in KNOWN_GATES if gate not in granted]
+    status_note = f"gates otorgados: {', '.join(granted) if granted else 'ninguno'}"
+    if missing:
+        status_note += f"; sin {', '.join(missing)}"
     print(
         f"PDF {action}: {publication.path} (SHA-256: {publication.sha256}); "
-        "copia técnicamente validada y aprobada, sin VISUAL_PASS, HUMAN_REVIEW "
-        "ni READY_TO_SUBMIT."
+        f"copia técnicamente validada y aprobada; {status_note}."
     )
     return 0
 

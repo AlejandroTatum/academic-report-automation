@@ -282,3 +282,35 @@ def test_tex_output_can_skip_pdf_layout_only(tmp_path):
 
     assert config.validators["common"] is True
     assert config.validators["pdf_layout"] is False
+
+
+# ---------------------------------------------------------------------------
+# No materia warning when the PDF is already under the route-derived folder (#32)
+# ---------------------------------------------------------------------------
+
+
+def test_no_materia_warning_when_pdf_already_under_route_derived_folder(tmp_path):
+    """A technical-route report with no recognised `subject` still resolves.
+
+    ``pdf_path`` defaults to ``outputs/<output_folder_slug>/...`` when no
+    ``pdf:`` is declared, which for a technical route without a known subject
+    falls back to the route category (e.g. ``tecnicos``). The file already
+    lives where it should, so the "no pude inferir la materia" warning is
+    noise: there is nothing left to publish elsewhere.
+    """
+    folder = tmp_path / "reports" / "informe"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "report.yml").write_text(
+        "type: technical_report\nroute: technical\noutput: pdf\n"
+        "metadata:\n  title: T\n",
+        encoding="utf-8",
+    )
+    (folder / "body.md").write_text("# Titulo\n\nTexto.\n", encoding="utf-8")
+
+    config = load_report_config(folder)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    result = common_validation(config)
+
+    assert not any("inferir la materia" in w for w in result.warnings)

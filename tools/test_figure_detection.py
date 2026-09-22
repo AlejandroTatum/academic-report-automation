@@ -98,6 +98,64 @@ def test_template_exposes_the_figure_list_placeholder(template: str) -> None:
     assert "{{LIST_OF_FIGURES}}" in tex, f"{path.name} exposes no figure list"
 
 
+# ---------------------------------------------------------------------------
+# Figure sizing derives from the image's own aspect ratio, not a filename (#31)
+# ---------------------------------------------------------------------------
+
+
+def test_wide_image_outside_the_old_filename_table_gets_aspect_and_height_cap(
+    tmp_path: Path,
+) -> None:
+    """The removed filename table never named this image; it still gets sized.
+
+    Shape matches the wide Mermaid figure from #31 (2768x514) that rendered
+    unreadably small labels under the old fixed ``width=0.86\\textwidth`` with
+    no height constraint at all.
+    """
+    from PIL import Image
+
+    config = make_config(
+        tmp_path,
+        "# Section\n\n"
+        "![A wide diagram. Source: own elaboration.](../assets/widediagram.png)\n",
+        "plain",
+    )
+    assets = config.folder / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (2768, 514), color="white").save(assets / "widediagram.png")
+    # build() always mkdirs the build directory before rendering (figure paths
+    # resolve relative to it); mirror that ordering here.
+    config.tex_path.parent.mkdir(parents=True, exist_ok=True)
+
+    rendered = build_latex_report.render_tex(config)
+
+    assert "widediagram.png" in rendered
+    assert r"\textheight" in rendered
+    assert r"\begin{figure}[H]" not in rendered
+
+
+def test_unresolvable_figure_falls_back_to_the_historical_width_only_default(
+    tmp_path: Path,
+) -> None:
+    """A figure that never resolves on disk keeps the old, safe fallback.
+
+    ``validate_figure_paths`` reports the missing figure as its own error
+    before compilation; this renderer must not crash trying to read pixels
+    from a file that is not there.
+    """
+    config = make_config(
+        tmp_path,
+        "# Section\n\n"
+        "![Missing figure. Source: own elaboration.](../assets/does_not_exist.png)\n",
+        "plain",
+    )
+    config.tex_path.parent.mkdir(parents=True, exist_ok=True)
+
+    rendered = build_latex_report.render_tex(config)
+
+    assert r"width=0.86\textwidth,keepaspectratio" in rendered
+
+
 @pytest.mark.parametrize("template", TEMPLATE_KEYS)
 def test_template_localizes_the_figure_list_title(template: str) -> None:
     r"""The documents are written in Spanish; the index heading must match.

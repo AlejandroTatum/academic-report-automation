@@ -251,7 +251,11 @@ def is_bibliography_heading(title: str) -> bool:
     return fold_heading(title) in BIBLIOGRAPHY_HEADINGS
 
 
-def markdown_to_latex(markdown: str, suppress_bibliography_heading: bool = False) -> str:
+def markdown_to_latex(
+    markdown: str,
+    suppress_bibliography_heading: bool = False,
+    build_dir: Path | None = None,
+) -> str:
     lines = markdown.splitlines()
     output: list[str] = []
     paragraph: list[str] = []
@@ -481,36 +485,14 @@ def markdown_to_latex(markdown: str, suppress_bibliography_heading: bool = False
             flush_paragraph(); close_list()
             caption = convert_inline(image.group("caption"))
             src = latex_escape(image.group("src"))
-            width = "0.86"
             raw_src = image.group("src")
-            if "merge_sort_visual_example" in raw_src or "merge_sort_recursion" in raw_src:
-                width = "0.70"
-            elif "comparison_matrix" in raw_src or "method_" in raw_src or "three_method" in raw_src:
-                width = "0.94"
-            elif "complexity_growth" in raw_src:
-                width = "0.90"
-            elif "matriz_etica_ia" in raw_src:
-                width = "0.94"
-            elif "gestion-procesos" in raw_src:
-                width = "0.96"
-            elif "planificacion-cpu" in raw_src:
-                width = "0.96"
-            elif "aa1-uml" in raw_src:
-                width = "0.96"
-            elif "kipu-entregables" in raw_src:
-                # Vertical flowcharts need headroom for their caption and page footer.
-                width = "0.50"
-            elif "manual_ej" in raw_src:
-                width = "0.88"
-            elif "mini_paginacion" in raw_src or "mini_segmentacion" in raw_src:
-                width = "0.88"
-            elif "infografia_paginacion_segmentacion" in raw_src:
-                width = "0.75"
+            resolved = resolve_figure(raw_src, build_dir) if build_dir is not None else None
+            options = figure_includegraphics_options(resolved)
             output.extend([
                 r"\Needspace{6\baselineskip}",
-                r"\begin{figure}[H]",
+                r"\begin{figure}[tbp]",
                 r"\centering",
-                rf"\includegraphics[width={width}\textwidth, keepaspectratio]{{{src}}}",
+                rf"\includegraphics[{options}]{{{src}}}",
                 rf"\caption{{{caption}}}",
                 r"\end{figure}",
                 "",
@@ -693,10 +675,13 @@ def render_tex(config: ReportConfig) -> str:
     # commands. So the first conversion pass decides: only a body whose
     # rendered output carries \cite prints the bibliography (and suppresses a
     # bibliography-named Markdown heading the template title would duplicate).
-    body = markdown_to_latex(markdown_source)
+    build_dir = config.tex_path.parent
+    body = markdown_to_latex(markdown_source, build_dir=build_dir)
     emit_bibliography = r"\cite{" in body and config.bib_path is not None
     if emit_bibliography:
-        body = markdown_to_latex(markdown_source, suppress_bibliography_heading=True)
+        body = markdown_to_latex(
+            markdown_source, suppress_bibliography_heading=True, build_dir=build_dir
+        )
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.
     has_figures = bool(MARKDOWN_IMAGE_RE.search(markdown_source))
@@ -884,6 +869,42 @@ def resolve_figure(reference: str, build_dir: Path) -> Path | None:
         if with_suffix.exists():
             return with_suffix
     return None
+
+
+# Historical default width, unchanged by this fix (#31): a figure earns a
+# smaller share of the page only by having a header/footer-hungry aspect
+# ratio, never by matching a filename.
+FIGURE_WIDTH_FRACTION = 0.86
+# A figure can never claim more than this share of \textheight. keepaspectratio
+# combined with an explicit width AND height lets LaTeX itself -- which alone
+# knows the exact point value of \textheight for the active template -- pick
+# whichever constraint actually binds: a wide figure is unaffected (its
+# printed height never approaches the cap), a tall one is capped instead of
+# floating alone onto a page of its own (the symptom in #31).
+FIGURE_MAX_HEIGHT_FRACTION = 0.80
+
+
+def figure_includegraphics_options(image_path: Path | None) -> str:
+    r"""Return the ``\includegraphics`` size options for one figure.
+
+    Sized from the image's own pixel dimensions (read via Pillow, already a
+    project dependency) when the figure resolves to a readable file on disk;
+    otherwise the historical width-only default applies, exactly as before
+    this fix -- ``validate_figure_paths`` reports an unresolved figure as its
+    own error, this function never needs to.
+    """
+    width = f"{FIGURE_WIDTH_FRACTION}\\textwidth"
+    if image_path is not None:
+        try:
+            from PIL import Image
+
+            with Image.open(image_path) as im:
+                width_px, height_px = im.size
+        except Exception:
+            width_px = height_px = 0
+        if width_px and height_px:
+            return f"width={width},height={FIGURE_MAX_HEIGHT_FRACTION}\\textheight,keepaspectratio"
+    return f"width={width},keepaspectratio"
 
 
 def validate_figure_paths(

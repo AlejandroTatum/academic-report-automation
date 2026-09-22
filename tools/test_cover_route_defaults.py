@@ -152,6 +152,33 @@ def test_technical_route_without_cover_does_not_fail_cover_validation(tmp_path):
     assert not any("portada parece mezclada" in e for e in layout.errors)
 
 
+def test_technical_route_with_cover_does_not_false_warn_on_unnumbered_heading(tmp_path, monkeypatch):
+    """Non-academic routes use unnumbered, non-academic headings by contract.
+
+    The body-start heuristic used to require an academic Spanish marker
+    (`introducción`, `desarrollo`, `ejercicio`, ...) on the body page; a
+    technical route whose body opens with e.g. "Arquitectura" never matches
+    one, so it always warned even though the body demonstrably starts there.
+    """
+    folder = tmp_path / "r"
+    config = make_config(
+        folder,
+        {"route": "technical", "cover": {"required": True, "body_starts_on_page": 2}},
+    )
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    monkeypatch.setattr(
+        "validate_report.pdf_text_pages",
+        lambda path: ["Portada\n", "Arquitectura\n\nContenido técnico.\n"],
+    )
+    monkeypatch.setattr("validate_report.pdfinfo", lambda path: {"Pages": "2"})
+
+    result = pdf_layout_validation(config)
+
+    assert not any("inicio claro del cuerpo" in w for w in result.warnings)
+
+
 def test_academic_route_still_demands_the_cover(tmp_path):
     folder = tmp_path / "r"
     config = make_config(folder, {})

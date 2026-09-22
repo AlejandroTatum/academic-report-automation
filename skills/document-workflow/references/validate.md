@@ -21,6 +21,7 @@ generate phase produced. The phase produces exactly one artifact:
     gates: [BUILD_PASS, VALIDATION_PASS, ...]
     recorded_at: <ISO-8601 UTC>
     evidence: backups/quality_report.md | <opaque acknowledged review identifier>
+    reason: <optional; why the RDD branch fell through to fallback, when it did>
 
 Done means `result: pass` and `artifact_sha256` matches the current final PDF. `result:
 fail` is `blocked` (`validation_failed`); a missing receipt or a mismatched hash stays
@@ -36,6 +37,13 @@ selects the RDD branch. An `off` status, an absent `gentle-ai` binary, a non-zer
 or unparsable output selects the fallback branch, and an `unknown` status routes to the
 fallback chain exactly like `off`, because an unknown state is never a reason to skip,
 lower, or defer a gate.
+
+The RDD candidate for a document is `reports/<wf>/**`, binary figures excluded. If the
+native review STATUS preflight cannot bind a candidate scoped to that path — for example
+it returns `next_transition.reason_code: intended_untracked_selection_required`, or the
+returned `next_transition` otherwise cannot be bound to the work folder — fall through to
+the fallback branch instead of leaving the phase unreachable, and record why in
+`validation.yml` as `reason: <the unbindable condition>`.
 
 ## RDD branch (`mode: rdd`)
 
