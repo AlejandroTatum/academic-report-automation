@@ -34,6 +34,10 @@ Every path is absolute, so the command runs from any working directory; the
 interpreter is the one selected in `automation-contract.md` (`REPORT_PYTHON`), which
 may live outside a worktree's own source root. The phase
 produces exactly one artifact: the final PDF under `outputs/<materia>/<final>.pdf`.
+`<materia>` resolves from `metadata.subject` on the academic route (when it names a
+subject the pipeline recognises), or from the confirmed `route:` category otherwise
+(e.g. `outputs/tecnicos/<final>.pdf`); a `pdf:` written in `report.yml` overrides
+that derived path.
 
 Done means that final PDF exists and is not older than `approval.yml`, so a PDF that
 predates the marker is `pending` and the build simply reruns. Generate is never

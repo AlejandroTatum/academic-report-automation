@@ -121,6 +121,19 @@ def test_module_level_content_root_defaults_without_the_env_var(monkeypatch):
     assert fresh.CONTENT_ROOT == DEFAULT_CONTENT_ROOT.resolve()
 
 
+def test_the_test_suite_never_binds_the_real_content_root():
+    """The repo-root conftest.py pins REPORT_CONTENT_ROOT before any test runs.
+
+    No test may ever read or write the real, private coursework tree: the
+    module-level ``CONTENT_ROOT`` this whole suite imports must resolve under
+    the system temp directory, never under the documented real default.
+    """
+    import tempfile
+
+    assert CONTENT_ROOT != DOCUMENTED_DEFAULT.resolve()
+    assert CONTENT_ROOT.is_relative_to(Path(tempfile.gettempdir()).resolve())
+
+
 def test_relative_env_value_is_made_absolute(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     resolved = resolve_content_root({CONTENT_ROOT_ENV: "relative-content"})
@@ -334,7 +347,7 @@ def test_absolute_report_folder_outside_the_code_tree_loads(tmp_path):
     assert config.body_path == folder.resolve() / "body.md"
     assert config.body_path.exists()
     assert config.tex_path == folder.resolve() / "build" / "main.tex"
-    assert config.pdf_path == folder.resolve() / "outputs" / "report.pdf"
+    assert config.pdf_path == CONTENT_ROOT / "outputs" / "academicos" / "reporte-de-prueba.pdf"
     # Format rules keep coming from the code root, not from the report's tree.
     assert config.academic_format
 

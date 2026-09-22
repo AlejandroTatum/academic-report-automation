@@ -126,6 +126,7 @@ invent a parallel key for a meaning that already has one:
 type: report                  # backend classification: essay | report | technical_report | visual | docx ...
 route: project                # academic | project | business | technical | other
 output: pdf                   # pdf | docx
+# pdf: ../../outputs/<materia>/<slug>.pdf   # optional override; default is derived (see below)
 template: plain               # only when a template was confirmed; omit it otherwise
 
 metadata:
@@ -143,6 +144,11 @@ cover:                        # top-level and optional: explicit values win over
   body_starts_on_page: 2
 ```
 
+- `pdf:` (and `docx:`) is optional and top-level. Leaving it unset derives the
+  final path under the content root's outputs tree: `outputs/<materia>/<slug>.pdf`
+  on the academic route when `metadata.subject` names a known subject, otherwise
+  `outputs/<route category>/<slug>.pdf` (e.g. `outputs/tecnicos/<slug>.pdf`).
+  Writing `pdf:` overrides the derived default.
 - `route:` and `output:` are top-level. `metadata:` holds identity and the three
   recorded context fields (`audience`, `purpose`, `visual_direction`); Route A adds
   `subject` and `teacher`, and the other routes must not invent those.

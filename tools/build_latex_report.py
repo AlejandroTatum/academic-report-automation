@@ -15,6 +15,7 @@ from output_router import publish_global_output
 from report_config import (
     CONTENT_ROOT,
     DEFAULT_ROUTE,
+    GLOBAL_OUTPUTS,
     ROUTE_ALIASES,
     ROUTE_KEY,
     ROOT,
@@ -1012,11 +1013,17 @@ def compile_latex(config: ReportConfig) -> None:
     if not is_same_file(built_pdf, config.pdf_path):
         shutil.copy2(built_pdf, config.pdf_path)
     if config.publish_global:
-        global_pdf = publish_global_output(config.pdf_path, config.metadata)
-        if global_pdf:
-            print(f"PDF publicado por materia: {global_pdf}")
+        if GLOBAL_OUTPUTS.resolve() in config.pdf_path.resolve().parents:
+            # A report that never declared `pdf:` already lands under the
+            # content root's outputs tree (report_config derives it there);
+            # publishing a global copy would just copy the file onto itself.
+            print(f"PDF final: {config.pdf_path}")
         else:
-            print("Aviso: no pude inferir la materia; no se publicó copia global en outputs/<materia>/")
+            global_pdf = publish_global_output(config.pdf_path, config.metadata)
+            if global_pdf:
+                print(f"PDF publicado por materia: {global_pdf}")
+            else:
+                print("Aviso: no pude inferir la materia; no se publicó copia global en outputs/<materia>/")
 
 
 def build(folder: Path, compile_pdf: bool = True) -> ReportConfig:
