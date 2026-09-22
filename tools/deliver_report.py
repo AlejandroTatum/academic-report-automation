@@ -32,6 +32,23 @@ VALIDATION_RECEIPT = "validation.yml"
 KNOWN_GATES = ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW", "READY_TO_SUBMIT")
 
 
+def _granted_gates(receipt: dict) -> list[str]:
+    """Return the ``KNOWN_GATES`` the receipt's ``gates:`` actually names.
+
+    By the time this runs, delivery already happened: ``result: pass`` and the
+    artifact hash were already checked, and the publisher already copied the
+    PDF. ``gates:`` only feeds the informational message below, so a
+    malformed value (a string, a mapping, ``None``, or a list with
+    non-string entries) grants no gate instead of refusing an already
+    completed delivery -- a naive ``gate in receipt.get("gates")`` would turn
+    a string into a substring match and a mapping into a key lookup.
+    """
+    gates = receipt.get("gates")
+    if not isinstance(gates, list) or not all(isinstance(gate, str) for gate in gates):
+        return []
+    return [gate for gate in KNOWN_GATES if gate in gates]
+
+
 def _refuse(reason: str) -> int:
     """Print the refusal with its named missing evidence and fail the run."""
     print(f"DELIVERY REFUSED: {reason}", file=sys.stderr)
@@ -93,7 +110,7 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
         return _refuse(str(exc))
 
     action = "ENTREGADO" if publication.created else "REUTILIZADO"
-    granted = [gate for gate in KNOWN_GATES if gate in (receipt.get("gates") or [])]
+    granted = _granted_gates(receipt)
     missing = [gate for gate in KNOWN_GATES if gate not in granted]
     status_note = f"gates otorgados: {', '.join(granted) if granted else 'ninguno'}"
     if missing:

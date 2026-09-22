@@ -76,6 +76,36 @@ def test_delivery_message_lists_gates_from_the_receipt(tmp_path: Path, capsys) -
     assert "READY_TO_SUBMIT" in out
 
 
+def test_delivery_message_grants_no_gate_from_a_string(tmp_path: Path, capsys) -> None:
+    """A malformed ``gates:`` string never turns substring matches into grants (#37).
+
+    ``"VISUAL_PASS" in "BUILD_PASS NO_VISUAL_PASS"`` is true, so a naive
+    membership check reports VISUAL_PASS as granted even though the receipt
+    never listed it as a gate name.
+    """
+    folder, pdf = _ready_folder(tmp_path)
+    _validation(folder, pdf=pdf, gates="BUILD_PASS NO_VISUAL_PASS")
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    out = capsys.readouterr().out
+    assert "gates otorgados: ninguno" in out
+    assert "VISUAL_PASS" in out  # only in the missing list, never as granted
+
+
+def test_delivery_message_grants_no_gate_from_a_mapping(tmp_path: Path, capsys) -> None:
+    """A malformed ``gates:`` mapping never turns key lookups into grants (#37)."""
+    folder, pdf = _ready_folder(tmp_path)
+    _validation(folder, pdf=pdf, gates={"VISUAL_PASS": False})
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    out = capsys.readouterr().out
+    assert "gates otorgados: ninguno" in out
+
+
 def test_delivery_is_idempotent_for_identical_bytes(tmp_path: Path, capsys) -> None:
     """A second delivery of the same bytes reuses the version, not a new one."""
     folder, _ = _ready_folder(tmp_path)
