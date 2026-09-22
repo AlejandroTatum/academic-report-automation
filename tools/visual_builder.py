@@ -21,8 +21,10 @@ import tempfile
 from pathlib import Path
 from textwrap import dedent
 
+from connector_geometry import audit_connector_geometry
 from report_config import CONTENT_ROOT
 from visual_metadata import validate_visual_manifest
+from visual_pdf_auditor import FAILURE
 
 ROOT = Path(__file__).resolve().parents[1]
 # Toolchain: node_modules is reinstalled with the code, so it stays CODE.
@@ -382,6 +384,12 @@ def command_validate(args: argparse.Namespace) -> int:
         errors.append("no hay visuales SVG/PNG/PDF para validar")
     for file in files:
         errors.extend(validate_image(file))
+        if file.suffix.lower() == ".svg":
+            # Connector geometry is a FAILURE-severity gate for diagrams; chart
+            # SVGs simply carry no nodes/edges and stay silent.
+            errors.extend(
+                f"{i.tag}: {i.detail}" for i in audit_connector_geometry(file) if i.level == FAILURE
+            )
     if target.is_dir() and not args.no_metadata:
         errors.extend(metadata_errors(target))
     if errors:
