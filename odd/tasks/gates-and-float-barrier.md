@@ -46,5 +46,18 @@ Close the two follow-ups raised by the native review of #36.
 - Rendered check: copied the real `reports/engram-funcionamiento/` (resolved via `report_config.DEFAULT_CONTENT_ROOT`, read-only) into a scratch content root under the session scratchpad, built with `REPORT_CONTENT_ROOT=<scratch>` through `tools/build_report_auto.py` (Docker TeX Live fallback), and inspected the PDF with `pdftotext -layout`: all 4 figure captions (Figura 1–4) land between their own section heading and the next one, none crossed a boundary. Page count: 12 (previous delivered version: 13). `fd -t f --changed-within 1h` against the real content root returned 0 both before and after the build — nothing written there.
 - Commit: `fix(latex): keep floating figures inside their section`.
 
+### Native review
+- Parent spot check: `.venv/bin/python -m pytest tools/ tests/ -q` -> 972 passed.
+- Assessed `high` (7 files, 134 lines). Preflight first stopped with
+  `managed_assets_outdated`; the provider-issued `gentle-ai sync --agent claude-code`
+  cleared it. Consent granted; lineage `review-1868dc47ca994980`, four lenses,
+  approved and acknowledged (gentle-ai 3.6.0).
+- Six non-blocking advisory findings, left as follow-up: `placeins` becomes a hard
+  TeX dependency (WARNING, `templates/plain-report.tex:19`); malformed `gates:` is
+  silent rather than logged (`deliver_report.py:46-48`); untested mixed list/None
+  gates; a possibly vacuous `VISUAL_PASS` assertion and misleading inline comment
+  (`test_deliver_report.py:94`); template regex would match a commented-out
+  `\usepackage` (`test_figure_detection.py:186-188`).
+
 ## Next step
-Both T1 and T2 are done, committed on `fix/gates-and-float-barrier`, and the full suite is green. Push and open the PR under ordinary repository policy (RDD/native review assessment is the orchestrator's decision, not this writer's).
+Open the PR (Closes #37, #38).
