@@ -48,6 +48,11 @@ def test_approval_current_is_done(tmp_path: Path) -> None:
     assert phase.state == doc_status.DONE
     assert phase.blocked_reason == ""
     assert phase.state != doc_status.BLOCKED
+    # The marker binds both preview.md and body.md (approval_marker.py
+    # REQUIRED_KEYS); the detail must name both, not just the file it used to
+    # bind before body_sha256 was added.
+    assert "preview.md" in phase.detail
+    assert "body.md" in phase.detail
 
 
 def test_approval_stale_hash_is_blocked_with_stale_reason(tmp_path: Path) -> None:

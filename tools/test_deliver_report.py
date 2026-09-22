@@ -56,6 +56,26 @@ def test_delivery_publishes_the_validated_bytes_once(tmp_path: Path) -> None:
     assert _sha256(published) == _sha256(pdf)
 
 
+def test_delivery_message_lists_gates_from_the_receipt(tmp_path: Path, capsys) -> None:
+    """The granted/missing gate list is derived from validation.yml, not fixed.
+
+    A receipt that recorded VISUAL_PASS must show it as granted; the old
+    message unconditionally claimed "sin VISUAL_PASS" even when the receipt
+    said otherwise (#33).
+    """
+    folder, pdf = _ready_folder(tmp_path)
+    _validation(folder, pdf=pdf, gates=["BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS"])
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    out = capsys.readouterr().out
+    assert "VISUAL_PASS" in out
+    assert "sin VISUAL_PASS" not in out
+    assert "HUMAN_REVIEW" in out
+    assert "READY_TO_SUBMIT" in out
+
+
 def test_delivery_is_idempotent_for_identical_bytes(tmp_path: Path, capsys) -> None:
     """A second delivery of the same bytes reuses the version, not a new one."""
     folder, _ = _ready_folder(tmp_path)

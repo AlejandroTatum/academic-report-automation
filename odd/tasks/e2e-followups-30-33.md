@@ -21,7 +21,7 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
 ## Tasks
 - [x] T1 #30 validate.md: when the native RDD candidate cannot bind to `reports/<wf>/**`, fall through to the fallback branch and record `reason:` in `validation.yml`. Route: delegated writer (4+ files overall).
 - [x] T2 #32 validate_report: skip materia warning when pdf_path is already under the route-derived output folder; body-start marker route-aware. RED tests in `tools/test_output_location_guard.py`, `tools/test_cover_route_defaults.py`.
-- [ ] T3 #33 doc_status approval detail names every bound file (preview.md and body.md); deliver_report lists granted/missing gates from `validation.yml` `gates:`. RED tests in `tools/test_doc_status_approval.py`, `tools/test_deliver_report.py`.
+- [x] T3 #33 doc_status approval detail names every bound file (preview.md and body.md); deliver_report lists granted/missing gates from `validation.yml` `gates:`. RED tests in `tools/test_doc_status_approval.py`, `tools/test_deliver_report.py`.
 - [ ] T4 #31 build_latex_report: remove filename-substring width table; size from image aspect ratio with a height cap; reconsider hard `[H]`. RED test in `tools/test_figure_detection.py`.
 
 ## Acceptance
@@ -50,5 +50,17 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
   GREEN: both files -> 44 passed.
   Full suite: 961 passed (was 959; +2 new tests).
 
+- T3 done: `tools/approval_marker.py` adds `BOUND_FILES`/`bound_file_names()`
+  derived from `REQUIRED_KEYS`; `doc_status._phase_approval` DONE detail now
+  names every bound file (`approval.yml matches preview.md and body.md`).
+  `tools/deliver_report.py` adds `KNOWN_GATES` and derives the granted/missing
+  gate list from the receipt's `gates:` instead of a fixed phrase.
+  RED: `test_approval_current_is_done` (tools/test_doc_status_approval.py,
+  the new `body.md` assertion) and
+  `test_delivery_message_lists_gates_from_the_receipt`
+  (tools/test_deliver_report.py) both failed before the fix.
+  GREEN: both files -> 20 passed.
+  Full suite: 962 passed.
+
 ## Next step
-T3 #33: receipt-derived approval detail in `tools/doc_status.py` and gate list in `tools/deliver_report.py`.
+T4 #31: aspect-ratio figure sizing in `tools/build_latex_report.py`.
