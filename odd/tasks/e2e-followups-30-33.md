@@ -83,6 +83,20 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
   test encoded the old filename table, so nothing needed updating).
   Full suite: 964 passed.
 
+- Native review: assessed `high` over main..1ca8e98 (12 files, 369 lines);
+  consent granted; lineage `review-348cf2856d937c04`, four lenses, approved and
+  acknowledged (gentle-ai 3.6.0). Eight non-blocking advisory findings, left
+  as follow-up work: misleading aspect-ratio comment
+  (`build_latex_report.py:897-907`), duplicated gate vocabulary and
+  substring-prone `gates` handling when the receipt value is a string
+  (`deliver_report.py:28-32,96`), inline compound materia condition
+  (`validate_report.py:373-382`), untested float placement
+  (`build_latex_report.py:493`), weak `\textheight` assertion, and the materia
+  test writing under the pinned scratch content root instead of `tmp_path`
+  (`test_output_location_guard.py:310-312`; verified no write reached the real
+  content root).
+- Parent spot check: `.venv/bin/python -m pytest tools/ tests/ -q` -> 964 passed.
+
 ## Next step
-None -- all four tasks (T1-T4) are done. Suite green, work-unit commits on
-this branch, ready for delivery per repository policy.
+Open the PR (Closes #30-#33); merge is a separate decision because T4 changes
+figure placement from `[H]` to `[tbp]` for every report.
