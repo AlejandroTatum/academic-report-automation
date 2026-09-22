@@ -13,6 +13,7 @@ These tests pin the observable behaviour:
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -154,6 +155,37 @@ def test_unresolvable_figure_falls_back_to_the_historical_width_only_default(
     rendered = build_latex_report.render_tex(config)
 
     assert r"width=0.86\textwidth,keepaspectratio" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Floats stay bound to their section (#38): [tbp] lets a figure drift within
+# the page, but nothing bounded how far until a \FloatBarrier closes every
+# section.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("template", TEMPLATE_KEYS)
+def test_figure_is_emitted_with_tbp_placement(tmp_path: Path, template: str) -> None:
+    """Figures float ([tbp]), not fixed ([H]), across every template (#36)."""
+    config = make_config(tmp_path, BODY_WITH_FIGURE, template)
+    config.tex_path.parent.mkdir(parents=True, exist_ok=True)
+    rendered = build_latex_report.render_tex(config)
+    assert r"\begin{figure}[tbp]" in rendered
+
+
+@pytest.mark.parametrize("template", TEMPLATE_KEYS)
+def test_template_loads_placeins_with_section_barrier(template: str) -> None:
+    r"""A float may drift within its section, but never past the next one.
+
+    ``\usepackage{float}`` alone lets [tbp] figures cross into the next
+    section; ``placeins`` with the ``section`` option makes every
+    ``\section`` an implicit ``\FloatBarrier``.
+    """
+    path = build_latex_report.resolve_template(template)
+    tex = path.read_text(encoding="utf-8")
+    assert re.search(r"\\usepackage(\[[^\]]*\bsection\b[^\]]*\])\{placeins\}", tex), (
+        f"{path.name} never loads placeins with the section option"
+    )
 
 
 @pytest.mark.parametrize("template", TEMPLATE_KEYS)
