@@ -36,9 +36,12 @@ CONNECTOR_CROSSING = "CONNECTOR_CROSSING"
 CONNECTOR_CLEARANCE = "CONNECTOR_CLEARANCE"
 CONNECTOR_DIRECTION = "CONNECTOR_DIRECTION"
 CONNECTOR_PARSE = "CONNECTOR_PARSE"
-# A source/target bbox may be brushed at most CONTACT_EPS SVG units beyond the
-# endpoint contact point before it counts as passing through.
+# Cubic-bezier flattening resolution for sample_path()'s fallback d-attribute
+# sampling (node/region shapes given as a path, not a rect/polygon/circle).
 BEZIER_SAMPLES = 16
+# A source/target bbox may be brushed at most CONTACT_EPS SVG units, measured
+# as the total contiguous run from the true endpoint (which may span several
+# polyline segments), before it counts as passing through rather than grazing.
 CONTACT_EPS = 2.0
 # Endpoints resolve against their declared node's boundary within this many
 # SVG units — the same tolerance an adjacent-endpoint obstruction check uses.
@@ -52,10 +55,13 @@ MIN_CLEARANCE = 0.80
 # for a fixture placed at exactly 0.80) must still pass "exact or greater".
 CLEARANCE_TOLERANCE = 1e-9
 _POINT = r"-?\d*\.?\d+(?:[eE][-+]?\d+)?"
-_PATH_RE = re.compile(rf"([MmLlCc])|({_POINT})")
+_PATH_RE = re.compile(rf"([MmLlCcHhVvZz])|({_POINT})")
 _MARKER_RE = re.compile(r"url\(#([^)]+)\)")
 _TRANSLATE_RE = re.compile(r"translate\(\s*([-+.\d eE]+)[ ,]+([-+.\d eE]+)\s*\)")
-_EDGE_ID_RE = re.compile(r"^L_([^_]+)_([^_]+)_(\d+)$")
+# Lenient envelope only: source/target may themselves contain underscores, so
+# the middle group is split against known node labels in parse_flat_edge(),
+# not here.
+_EDGE_ID_RE = re.compile(r"^L_(.+)_(\d+)$")
 _NODE_ID_RE = re.compile(r"^.*-flowchart-(.+?)-\d+$")
 
 
@@ -64,6 +70,14 @@ _NODE_ID_RE = re.compile(r"^.*-flowchart-(.+?)-\d+$")
 
 @dataclass(frozen=True)
 class Node:
+    """A diagram node's identity and bounding box.
+
+    ``id`` holds the resolved diagram-visible label (``node_label()``
+    already strips the ``<svg-id>-flowchart-...-<ordinal>`` wrapper) — the
+    same value ``Edge.source``/``Edge.target`` and ``ProtectedRegion.owner_id``
+    key against — not the raw SVG element id/attribute.
+    """
+
     id: str
     x0: float
     y0: float
@@ -122,28 +136,54 @@ def node_label(node_id: str) -> str:
 
 
 def sample_path(d: str, steps: int = BEZIER_SAMPLES) -> list[tuple[float, float]]:
-    """Flatten an SVG path ``d`` (absolute M/L/C) to a polyline."""
+    """Flatten an SVG path ``d`` to a polyline.
+
+    Handles M/L/C in both absolute and relative (lowercase) form, plus the
+    line-only H/V and the Z close-path command. A command outside this set
+    is skipped rather than left to silently corrupt the current point for
+    whatever draws after it (real mmdc emits only absolute M/L/C, but shape
+    libraries feeding a node's own ``path`` bbox routinely use the rest).
+    """
     tokens = _PATH_RE.findall(d)
     points: list[tuple[float, float]] = []
     cx = cy = 0.0
+    start_x = start_y = 0.0
     i = 0
     cmd = "M"
     while i < len(tokens):
         if tokens[i][0]:
             cmd = tokens[i][0]
             i += 1
+            if cmd.upper() == "Z":
+                cx, cy = start_x, start_y
+                points.append((cx, cy))
             continue
         numbers: list[float] = []
         while i < len(tokens) and not tokens[i][0]:
             numbers.append(float(tokens[i][1]))
             i += 1
-        if cmd.upper() in ("M", "L"):
+        relative = cmd.islower()
+        upper = cmd.upper()
+        if upper in ("M", "L"):
             for j in range(0, len(numbers), 2):
-                cx, cy = numbers[j], numbers[j + 1]
+                nx, ny = numbers[j], numbers[j + 1]
+                cx, cy = (cx + nx, cy + ny) if relative else (nx, ny)
                 points.append((cx, cy))
-        elif cmd.upper() == "C":
+                if upper == "M" and j == 0:
+                    start_x, start_y = cx, cy
+        elif upper == "H":
+            for value in numbers:
+                cx = cx + value if relative else value
+                points.append((cx, cy))
+        elif upper == "V":
+            for value in numbers:
+                cy = cy + value if relative else value
+                points.append((cx, cy))
+        elif upper == "C":
             for j in range(0, len(numbers), 6):
                 x1, y1, x2, y2, x, y = numbers[j:j + 6]
+                if relative:
+                    x1, y1, x2, y2, x, y = cx + x1, cy + y1, cx + x2, cy + y2, cx + x, cy + y
                 _cubic(cx, cy, x1, y1, x2, y2, x, y, points, steps)
                 cx, cy = x, y
     return points
@@ -170,6 +210,17 @@ def _shape_bbox(el: ET.Element) -> tuple[float, float, float, float] | None:
             x = float(child.attrib.get("x", 0.0))
             y = float(child.attrib.get("y", 0.0))
             bbox = (x, y, x + float(child.attrib.get("width", 0.0)), y + float(child.attrib.get("height", 0.0)))
+        elif name == "circle":
+            cx = float(child.attrib.get("cx", 0.0))
+            cy = float(child.attrib.get("cy", 0.0))
+            r = float(child.attrib.get("r", 0.0))
+            bbox = (cx - r, cy - r, cx + r, cy + r)
+        elif name == "ellipse":
+            cx = float(child.attrib.get("cx", 0.0))
+            cy = float(child.attrib.get("cy", 0.0))
+            rx = float(child.attrib.get("rx", 0.0))
+            ry = float(child.attrib.get("ry", 0.0))
+            bbox = (cx - rx, cy - ry, cx + rx, cy + ry)
         elif name == "polygon":
             coords = [float(v) for v in re.split(r"[ ,]+", child.attrib.get("points", "").strip()) if v]
             if not coords:
@@ -215,13 +266,42 @@ def _edge_from_attrs(edge_id, source, target, path_el) -> tuple[Edge | None, str
     return Edge(edge_id, source, target, points, marker.group(1) if marker else ""), ""
 
 
-def parse_flat_edge(el: ET.Element) -> tuple[Edge | None, str]:
-    """Parse a real mmdc flat edge path (data-id + data-points + marker-end)."""
+def parse_flat_edge(el: ET.Element, known_labels: set[str]) -> tuple[Edge | None, str]:
+    """Parse a real mmdc flat edge path (data-id + data-points + marker-end).
+
+    ``data-id`` is ``L_<source>_<target>_<ordinal>``, but source and target
+    are the diagram's own node labels and may themselves legitimately contain
+    underscores (a valid Mermaid id) — a single fixed split point is not
+    always correct. Every split of the ``source_target`` middle whose two
+    halves both resolve to a *known* node label is tried: a unique such split
+    wins, more than one is a genuine ambiguity, and none falls back to the
+    original leftmost two-run split so the "ambiguous or unresolved" pass
+    still reports whatever it could not identify (an actually-missing node,
+    for instance) exactly as before.
+    """
     data_id = el.attrib.get("data-id", "")
     match = _EDGE_ID_RE.match(data_id)
     if not match:
         return None, f"edge id '{data_id}' is not L_<source>_<target>_<ordinal>"
-    return _edge_from_attrs(data_id, match.group(1), match.group(2), el)
+    parts = match.group(1).split("_")
+    if len(parts) < 2:
+        return None, f"edge id '{data_id}' is not L_<source>_<target>_<ordinal>"
+    resolved = [
+        (source, target)
+        for i in range(1, len(parts))
+        for source, target in [("_".join(parts[:i]), "_".join(parts[i:]))]
+        if source in known_labels and target in known_labels
+    ]
+    if len(resolved) == 1:
+        source, target = resolved[0]
+    elif len(resolved) > 1:
+        return None, f"edge id '{data_id}' splits ambiguously across known node labels: {resolved}"
+    else:
+        # No split resolved against a known label: fall back to the leftmost
+        # split so the later "ambiguous or unresolved" pass still names
+        # exactly what it could not identify (e.g. a genuinely missing node).
+        source, target = parts[0], "_".join(parts[1:])
+    return _edge_from_attrs(data_id, source, target, el)
 
 
 def parse_edge_wrapper(el: ET.Element, index: int) -> tuple[Edge | None, str]:
@@ -325,6 +405,12 @@ def parse_svg(text: str) -> Diagram:
     markers: dict[str, str] = {}
     regions: list[ProtectedRegion] = []
     issues: list[PageIssue] = []
+
+    # First pass: nodes and markers only. A flat edge id may legitimately
+    # contain underscores in its own source/target labels, which can only be
+    # disambiguated against the full known-label set — and real mmdc emits
+    # g.edgePaths BEFORE g.nodes in document order, so a single combined pass
+    # cannot have that set ready when it reaches the edges.
     for el in root.iter():
         name = local(el.tag)
         classes = el.attrib.get("class", "").split()
@@ -335,7 +421,12 @@ def parse_svg(text: str) -> Diagram:
             if node is not None:
                 nodes.append(node)
             regions.extend(_node_text_regions(el, node))
-        elif name == "g" and "cluster" in classes:
+    known_labels = {node.id for node in nodes}
+
+    for el in root.iter():
+        name = local(el.tag)
+        classes = el.attrib.get("class", "").split()
+        if name == "g" and "cluster" in classes:
             regions.extend(_cluster_label_regions(el))
         elif name == "g" and "edgeLabel" in classes:
             regions.extend(_edge_text_regions(el))
@@ -345,7 +436,7 @@ def parse_svg(text: str) -> Diagram:
                 regions.append(region)
         elif (name == "path" and "data-id" in el.attrib) or (name == "g" and "edgePath" in classes):
             edge, issue = (
-                parse_flat_edge(el) if "data-id" in el.attrib else parse_edge_wrapper(el, len(edges))
+                parse_flat_edge(el, known_labels) if "data-id" in el.attrib else parse_edge_wrapper(el, len(edges))
             )
             if edge is None:
                 issues.append(PageIssue(FAILURE, CONNECTOR_PARSE, f"edge '{el.attrib.get('data-id', 'wrapper')}': {issue}"))
@@ -392,21 +483,48 @@ def _clip_interval(a, b, bbox):
 def _edge_traverses_bbox(points, bbox, start_exempt: bool, end_exempt: bool) -> bool:
     """Does the edge polyline enter *bbox* beyond endpoint contact?
 
-    Adjacent source/target regions are exempt ONLY at the endpoint contact
-    point: the first (resp. last) segment may touch the bbox for at most
-    ``CONTACT_EPS`` SVG units; every other penetration is a traversal.
+    Adjacent source/target regions are exempt ONLY at the endpoint contact:
+    the run of segments CONTIGUOUS with the true start (resp. end) may touch
+    the bbox for at most ``CONTACT_EPS`` SVG units in total; every other
+    penetration is a traversal. The run — not a single fixed segment index —
+    is what is measured: a curved departure routinely grazes its own source
+    across more than one polyline segment before fully leaving it, and
+    checking segment 0 (resp. the last one) in isolation would flag the
+    second segment of that same graze as an unrelated traversal.
     """
     last = len(points) - 1
+    inside = [0.0] * last
     for i in range(last):
         a, b = points[i], points[i + 1]
         interval = _clip_interval(a, b, bbox)
-        if interval is None:
+        if interval is not None:
+            t0, t1 = interval
+            inside[i] = (t1 - t0) * math.hypot(b[0] - a[0], b[1] - a[1])
+
+    exempt_prefix = 0
+    if start_exempt:
+        run = 0.0
+        for value in inside:
+            if value <= 0:
+                break
+            run += value
+        if run <= CONTACT_EPS:
+            exempt_prefix = next((i for i, v in enumerate(inside) if v <= 0), last)
+
+    exempt_suffix = 0
+    if end_exempt:
+        run = 0.0
+        for value in reversed(inside):
+            if value <= 0:
+                break
+            run += value
+        if run <= CONTACT_EPS:
+            exempt_suffix = next((i for i, v in enumerate(reversed(inside)) if v <= 0), last)
+
+    for i, value in enumerate(inside):
+        if value <= 0:
             continue
-        t0, t1 = interval
-        inside = (t1 - t0) * math.hypot(b[0] - a[0], b[1] - a[1])
-        if i == 0 and start_exempt and inside <= CONTACT_EPS:
-            continue
-        if i == last - 1 and end_exempt and inside <= CONTACT_EPS:
+        if i < exempt_prefix or i >= last - exempt_suffix:
             continue
         return True
     return False

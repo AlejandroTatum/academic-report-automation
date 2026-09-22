@@ -184,3 +184,58 @@ def test_connector_failure_evidence_is_actionable() -> None:
 def test_clean_chart_without_connectors_is_silent() -> None:
     """A chart SVG with no diagram nodes/edges never trips the connector gate."""
     assert failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-chart-clean.svg")) == set()
+
+
+# --- T4: native-review hardening findings on the T1 parser --------------------
+
+
+def test_edge_ids_with_underscored_node_labels_resolve() -> None:
+    """A node label containing its own underscore (e.g. ``my_node``, a valid
+    Mermaid id) must not hard-fail L_<source>_<target>_<ordinal> parsing."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="nodes">'
+        '<g class="node" id="my-svg-flowchart-my_node-0"><rect x="0" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-your_node-1"><rect x="50" y="0" width="10" height="10"/></g>'
+        "</g>"
+        '<g class="edgePaths"><path data-id="L_my_node_your_node_0" d="M 10 5 L 50 5" marker-end="url(#pointEnd)"/></g>'
+        "</svg>"
+    )
+    diagram = cg.parse_svg(svg)
+    assert diagram.parse_issues == []
+    assert {(e.id, e.source, e.target) for e in diagram.edges} == {("L_my_node_your_node_0", "my_node", "your_node")}
+
+
+def test_sample_path_supports_relative_and_line_only_commands() -> None:
+    """Relative m/l and the H/V/Z line-only commands must not corrupt the
+    current point for whatever draws after them."""
+    assert cg.sample_path("M 5 5 l 10 0 L 25 5") == [(5.0, 5.0), (15.0, 5.0), (25.0, 5.0)]
+    assert cg.sample_path("M 0 0 H 10 V 10 Z") == [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 0.0)]
+
+
+def test_circle_node_shape_is_resolved() -> None:
+    """A circle-shaped node (start/end states, some flowchart shapes) must
+    resolve to a bounding box, not be silently dropped as an unrecognized shape."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="nodes"><g class="node" id="my-svg-flowchart-C-0">'
+        '<circle cx="50" cy="50" r="20"/></g></g></svg>'
+    )
+    diagram = cg.parse_svg(svg)
+    assert len(diagram.nodes) == 1
+    node = diagram.nodes[0]
+    assert (node.x0, node.y0, node.x1, node.y1) == (30.0, 30.0, 70.0, 70.0)
+
+
+def test_multi_segment_endpoint_graze_is_exempt() -> None:
+    """A graze contiguous from the true source/target, spanning more than one
+    polyline segment (routine for a curved departure), must total against
+    CONTACT_EPS as one run -- not be checked segment-by-segment, which would
+    flag the second segment as a fresh, unrelated traversal."""
+    assert failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-graze-clean.svg")) == set()
+
+
+def test_multi_segment_graze_beyond_epsilon_still_fails() -> None:
+    """The same contiguous-run rule must not become a loophole: a multi-segment
+    graze that totals beyond CONTACT_EPS is still a traversal."""
+    assert cg.CONNECTOR_THROUGH_NODE in failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-graze-bad.svg"))
