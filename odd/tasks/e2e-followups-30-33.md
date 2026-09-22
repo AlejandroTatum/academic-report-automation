@@ -22,7 +22,7 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
 - [x] T1 #30 validate.md: when the native RDD candidate cannot bind to `reports/<wf>/**`, fall through to the fallback branch and record `reason:` in `validation.yml`. Route: delegated writer (4+ files overall).
 - [x] T2 #32 validate_report: skip materia warning when pdf_path is already under the route-derived output folder; body-start marker route-aware. RED tests in `tools/test_output_location_guard.py`, `tools/test_cover_route_defaults.py`.
 - [x] T3 #33 doc_status approval detail names every bound file (preview.md and body.md); deliver_report lists granted/missing gates from `validation.yml` `gates:`. RED tests in `tools/test_doc_status_approval.py`, `tools/test_deliver_report.py`.
-- [ ] T4 #31 build_latex_report: remove filename-substring width table; size from image aspect ratio with a height cap; reconsider hard `[H]`. RED test in `tools/test_figure_detection.py`.
+- [x] T4 #31 build_latex_report: remove filename-substring width table; size from image aspect ratio with a height cap; reconsider hard `[H]`. RED test in `tools/test_figure_detection.py`.
 
 ## Acceptance
 - Each issue's expected behavior holds with a test that was observed RED then GREEN.
@@ -62,5 +62,27 @@ The E2E run on a technical-route report surfaced gaps that only appear outside t
   GREEN: both files -> 20 passed.
   Full suite: 962 passed.
 
+- T4 done: `tools/build_latex_report.py` deletes the per-filename `elif` width
+  chain; `markdown_to_latex` now takes `build_dir`, resolves each figure with
+  the existing `resolve_figure`, and a new `figure_includegraphics_options`
+  reads pixel dimensions via PIL (already a project dependency) to emit
+  `width=0.86\textwidth,height=0.80\textheight,keepaspectratio` for any
+  resolvable figure -- LaTeX itself, which knows the exact point value of
+  `\textheight`, picks whichever constraint binds, so a tall figure can no
+  longer claim a full page (#31's symptom). An unresolvable figure keeps the
+  historical width-only fallback, unchanged. `\begin{figure}[H]` (forced
+  "exactly here", the placement that produced the 68%-blank page) becomes
+  `\begin{figure}[tbp]` (ordinary floating). The printed-label legibility
+  gate stays out of scope per the issue.
+  RED (verified against the pre-fix code via a temporary `git stash` of the
+  implementation, not just written-then-run):
+  `test_wide_image_outside_the_old_filename_table_gets_aspect_and_height_cap`
+  and `test_unresolvable_figure_falls_back_to_the_historical_width_only_default`
+  (tools/test_figure_detection.py) both failed before the fix.
+  GREEN: tools/test_figure_detection.py -> 14 passed (was 12; no existing
+  test encoded the old filename table, so nothing needed updating).
+  Full suite: 964 passed.
+
 ## Next step
-T4 #31: aspect-ratio figure sizing in `tools/build_latex_report.py`.
+None -- all four tasks (T1-T4) are done. Suite green, work-unit commits on
+this branch, ready for delivery per repository policy.
