@@ -603,6 +603,80 @@ def markdown_to_latex(markdown: str, suppress_bibliography_heading: bool = False
     return "\n".join(output).strip() + "\n"
 
 
+# Sentinel comment markers in unl-report.tex bracket the cover fields that
+# document-routing.md reserves for the academic route: subject, activity,
+# parallel (the framed box) and teacher (the DOCENTE block). The markers keep
+# the template itself route-agnostic -- render_tex() below decides, per
+# report, whether to strip just the marker lines (keeping the block
+# byte-for-byte, for the academic route) or the whole marked block including
+# its content (every other route, where these fields must not appear at all,
+# not even empty).
+COVER_SENTINELS = ("COVER_ACADEMIC_BOX", "COVER_TEACHER_BLOCK")
+
+# Only these template keys resolve to unl-report.tex (see TEMPLATE_ALIASES),
+# the one template that carries the sentinel contract above. plain-report.tex
+# has no titlepage at all, and chamba-overleaf.tex has a titlepage but never
+# declared these markers -- render_tex() must never demand them there.
+UNL_TEMPLATE_KEYS = frozenset({"default", "unl", "unl_report"})
+
+# The titlepage environment, used to scope every sentinel match: a lookalike
+# sentinel string sitting in body content (e.g. inside a fenced code block,
+# which renders unescaped) must never be read as a real marker.
+_TITLEPAGE_RE = re.compile(r"\\begin\{titlepage\}.*?\\end\{titlepage\}", re.DOTALL)
+
+
+def _cover_sentinel_re(sentinel: str, marker: str) -> re.Pattern[str]:
+    """A sentinel marker line, tolerant of trailing whitespace and CRLF.
+
+    A plain, untolerant match silently no-ops on any formatting drift --
+    exactly the failure this guards against: a mismatched marker must fail
+    the build loudly, never leak the academic cover onto a non-academic
+    route (or silently drop it on the academic one).
+    """
+    return re.compile(rf"[ \t]*% {re.escape(sentinel)}:{marker}[ \t]*\r?\n")
+
+
+def _apply_cover_sentinels(
+    template: str, keep_academic_only_fields: bool, template_path: Path
+) -> str:
+    """Strip (or keep) the UNL cover's academic-only sentinel-marked blocks.
+
+    Scoped to the ``titlepage`` environment only (see ``_TITLEPAGE_RE``).
+    Every sentinel pair must appear exactly once inside it -- on EITHER
+    route, since the template contract requires both -- or the build fails
+    loudly instead of silently rendering or dropping the academic cover
+    fields.
+    """
+    match = _TITLEPAGE_RE.search(template)
+    if not match:
+        return template
+    section = match.group(0)
+    for sentinel in COVER_SENTINELS:
+        begin_re = _cover_sentinel_re(sentinel, "BEGIN")
+        end_re = _cover_sentinel_re(sentinel, "END")
+        begins = begin_re.findall(section)
+        ends = end_re.findall(section)
+        if len(begins) != 1 or len(ends) != 1:
+            raise SystemExit(
+                f"Marcador de portada '{sentinel}' incompleto en {template_path}: "
+                "se esperaba exactamente un BEGIN y un END dentro de "
+                r"\begin{titlepage}...\end{titlepage} "
+                f"(BEGIN={len(begins)}, END={len(ends)})"
+            )
+        if keep_academic_only_fields:
+            section = begin_re.sub("", section)
+            section = end_re.sub("", section)
+        else:
+            block_re = re.compile(
+                rf"[ \t]*% {re.escape(sentinel)}:BEGIN[ \t]*\r?\n"
+                rf".*?"
+                rf"[ \t]*% {re.escape(sentinel)}:END[ \t]*\r?\n",
+                re.DOTALL,
+            )
+            section = block_re.sub("", section)
+    return template[: match.start()] + section + template[match.end() :]
+
+
 def render_tex(config: ReportConfig) -> str:
     template_key = normalize_template_key(template_key_for(config))
     template_path = resolve_template(template_key)
@@ -748,6 +822,12 @@ def render_tex(config: ReportConfig) -> str:
     }
     for key, value in replacements.items():
         template = template.replace(key, value)
+    if template_key in UNL_TEMPLATE_KEYS:
+        template = _apply_cover_sentinels(
+            template,
+            keep_academic_only_fields=config.route == DEFAULT_ROUTE,
+            template_path=template_path,
+        )
     return template
 
 

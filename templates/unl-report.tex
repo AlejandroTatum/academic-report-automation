@@ -121,6 +121,13 @@
   % swapping them moves the box horizontally and leaves the tuned vertical
   % rhythm exactly as it was. The text inside the box stays left-aligned: the
   % minipage is left-aligned by default and nothing re-centres it.
+  % These BEGIN/END markers are not read by LaTeX: render_tex() in
+  % build_latex_report.py strips the markers on the academic route (leaving
+  % the block byte-for-byte as before) and strips the whole marked block on
+  % every other route, since document-routing.md forbids auto-including
+  % subject, activity, parallel or teacher outside the academic route. The
+  % template stays route-agnostic; the builder owns the route decision.
+  % COVER_ACADEMIC_BOX:BEGIN
   \begin{center}
     \setlength{\fboxsep}{8pt}
     \fbox{%
@@ -132,11 +139,14 @@
     }
   \end{center}
   \vspace{0.8cm}
+  % COVER_ACADEMIC_BOX:END
 
   {\bfseries\large AUTOR:}\\[0.45em]
   {\large {{STUDENT}}}\\[1.35em]
+  % COVER_TEACHER_BLOCK:BEGIN
   {\bfseries\large DOCENTE:}\\[0.45em]
   {\large {{TEACHER}}}\\[1.35em]
+  % COVER_TEACHER_BLOCK:END
   {\bfseries\large Loja, Ecuador}\\[0.75em]
   {\bfseries\large {{DATE}}}
 \end{titlepage}
