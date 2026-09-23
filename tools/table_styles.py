@@ -95,6 +95,16 @@ _CONSTRAINT_FIELD = {
 _TOP_LEVEL_KEYS = frozenset({"schema_version", "catalog_version", "styles", "status_indicators"})
 _STYLE_KEYS = frozenset({"label", "deprecated", "priority", "tokens", "applicability", "avoidance"})
 
+# Shared literal shading colors every backend's token mapper renders for the
+# same token, so LaTeX/DOCX/HTML stay coherent (spec: "backend mappings MUST
+# preserve meaning"; `test_issue_13_backend_style_coherence`) instead of each
+# mapper hand-picking its own hex value that silently drifts from the
+# others. Uppercase, no leading `#` -- DOCX/OOXML's native ``w:fill`` format;
+# each mapper (and any test needing these colors) derives its own spelling.
+HEADER_FILL_HEX = {"gray_shaded": "EAEAEA", "dark_shaded": "404040"}
+ROW_ALTERNATING_FILL_HEX = "F2F2F2"
+COLUMN_EMPHASIS_FILL_HEX = "D9D9D9"
+
 
 class CatalogError(ValueError):
     """The catalog file is malformed, incomplete, or not the approved set."""
@@ -116,7 +126,13 @@ class UnsupportedContextError(ValueError):
 
 @dataclass(frozen=True)
 class TableContext:
-    """Normalized, backend-independent facts a table style selects from."""
+    """Normalized, backend-independent facts a table style selects from.
+
+    Every enum-valued field below is validated against ``_CONSTRAINT_ENUMS``
+    (the applicability/avoidance vocabulary a catalog entry may declare) --
+    the inline comments here are a reading aid, not a second source of
+    truth; ``_CONSTRAINT_ENUMS``/``TOKEN_ENUMS`` above are authoritative.
+    """
 
     purpose: str  # reference | comparison | status | evidence | dense
     length: str  # short | long

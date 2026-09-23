@@ -332,7 +332,7 @@ def _inline_markdown(text: str) -> str:
     return fragment
 
 
-def apply_table_styles(body: str, catalog=None) -> str:
+def apply_table_styles(body: str, catalog=None, warnings: list[str] | None = None) -> str:
     """Replace every DIRECTED table with a self-contained styled HTML block.
 
     Issue #13. There is no ``ReportConfig`` in this preview tool (it takes
@@ -342,16 +342,41 @@ def apply_table_styles(body: str, catalog=None) -> str:
     ``<!-- table-style: ... -->`` comment) is left completely untouched, so
     it renders exactly as before through python-markdown's "tables"
     extension: this function never blocks a build.
+
+    A fenced code block is skipped verbatim (directive-looking comments and
+    pipe tables inside a code sample -- documentation about the syntax --
+    must never be mistaken for a real directive/table). The catalog is
+    loaded lazily, only once a directed table is actually found, so an HTML
+    build with no tables (or only undirected ones) never depends on it. A
+    style-validation ``ValueError`` (an unknown status marker, or a missing/
+    out-of-range ``emphasis_column``) is collected into ``warnings`` and the
+    table's original Markdown source is left untouched, rather than crashing
+    the whole preview build (T4+T5 review R3/R4).
     """
-    catalog = catalog or load_catalog()
+    warnings = warnings if warnings is not None else []
     lines = body.splitlines()
     output: list[str] = []
     i = 0
+    fence: str | None = None
     while i < len(lines):
-        stripped = lines[i].strip()
+        raw_line = lines[i]
+        stripped = raw_line.strip()
+
+        marker = FENCE_PATTERN.match(raw_line)
+        if fence is None and marker:
+            fence = marker.group(0).strip()[:3]
+            output.append(raw_line)
+            i += 1
+            continue
+        if fence is not None:
+            if marker and marker.group(0).strip().startswith(fence):
+                fence = None
+            output.append(raw_line)
+            i += 1
+            continue
 
         if not stripped:
-            output.append(lines[i])
+            output.append(raw_line)
             i += 1
             continue
 
@@ -378,22 +403,34 @@ def apply_table_styles(body: str, catalog=None) -> str:
                 output.extend(lines[table_start + 2 : i])
                 continue
 
-            result = select_style(context, catalog)
-            style = catalog.styles[result.style_id]
-            html_fragment = render_styled_table_html(
-                header=header,
-                rows=rows,
-                style=style,
-                status_indicators=catalog.status_indicators,
-                escape_inline=_inline_markdown,
-                emphasis_column=context.emphasis_column,
-            )
+            catalog = catalog or load_catalog()
+            try:
+                result = select_style(context, catalog)
+                style = catalog.styles[result.style_id]
+                html_fragment = render_styled_table_html(
+                    header=header,
+                    rows=rows,
+                    style=style,
+                    status_indicators=catalog.status_indicators,
+                    escape_inline=_inline_markdown,
+                    emphasis_column=context.emphasis_column,
+                )
+            except ValueError as exc:
+                warnings.append(
+                    f"Tabla '{table_key}' (línea {table_start + 1}) con estilo inválido, "
+                    f"se muestra sin estilizar: {exc}"
+                )
+                output.append(lines[table_start])
+                output.append(lines[table_start + 1])
+                output.extend(lines[table_start + 2 : i])
+                continue
+
             output.append("")
             output.append(html_fragment)
             output.append("")
             continue
 
-        output.append(lines[i])
+        output.append(raw_line)
         i += 1
 
     return "\n".join(output)
@@ -413,7 +450,7 @@ def render(md_path: Path, css_path: Path, out_dir: Path | None = None) -> str:
 
     warnings: list[str] = []
     body = normalize_markdown(body, md_path.parent, out_dir, warnings)
-    body = apply_table_styles(body)
+    body = apply_table_styles(body, warnings=warnings)
     body_html = markdown.markdown(body, extensions=["tables", "fenced_code", "attr_list"])
 
     css = css_path.read_text(encoding="utf-8") if css_path.is_file() else ""

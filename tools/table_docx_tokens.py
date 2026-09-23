@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from table_styles import StatusIndicator, StyleDefinition
 
 from table_directives import strip_status_markers
+from table_styles import COLUMN_EMPHASIS_FILL_HEX, HEADER_FILL_HEX, ROW_ALTERNATING_FILL_HEX
 
 _ALIGN_ENUM = {
     "centered": WD_ALIGN_PARAGRAPH.CENTER,
@@ -36,25 +37,48 @@ _SIZE_PT = {"low": 11, "medium": 10, "high": 8}
 # Mirrors table_latex_tokens's \tabcolsep pt mapping (left/right); top/bottom
 # is half that, for a visually comparable (not pixel-identical) cell margin.
 _PADDING_LR_DXA = {"generous": 120, "standard": 60, "compact": 40, "minimal": 20}
-_HEADER_FILL = {"gray_shaded": "EAEAEA", "dark_shaded": "404040"}
+_HEADER_FILL = HEADER_FILL_HEX
+
+# OOXML (ECMA-376) requires `w:tblPr`/`w:tcPr` children in a fixed schema
+# order -- Word repairs or silently drops a document whose properties are
+# out of sequence. python-docx does not expose `tblBorders`/`tcBorders`/
+# `shd`/`tcMar` as typed accessors (only a few CT_TblPr/CT_TcPr children
+# are), so this module inserts them itself via the same
+# `insert_element_before` mechanism python-docx's own generated accessors
+# use, keyed on each element's schema successors (CT_TblPr/CT_TcPr
+# `_tag_seq` in ``docx/oxml/table.py``). This makes insertion order-
+# independent: whichever of `_shade_cell`/`_set_cell_margins`/
+# `_underline_header_row` runs first, each new child lands before its own
+# schema successors, never merely appended at the end.
+_TBL_PR_SUCCESSORS = (
+    "w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCaption", "w:tblDescription", "w:tblPrChange",
+)
+_TC_PR_TCBORDERS_SUCCESSORS = (
+    "w:shd", "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText",
+    "w:vAlign", "w:hideMark", "w:headers", "w:cellIns", "w:cellDel", "w:cellMerge", "w:tcPrChange",
+)
+_TC_PR_SHD_SUCCESSORS = _TC_PR_TCBORDERS_SUCCESSORS[1:]
+_TC_PR_TCMAR_SUCCESSORS = _TC_PR_TCBORDERS_SUCCESSORS[3:]
 
 
 def _shade_cell(cell, fill_hex: str) -> None:
     shading = OxmlElement("w:shd")
     shading.set(qn("w:val"), "clear")
     shading.set(qn("w:fill"), fill_hex)
-    cell._tc.get_or_add_tcPr().append(shading)
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_pr.insert_element_before(shading, *_TC_PR_SHD_SUCCESSORS)
 
 
 def _set_cell_margins(cell, lr_dxa: int) -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
     margins = OxmlElement("w:tcMar")
-    for side, value in (("top", lr_dxa // 2), ("bottom", lr_dxa // 2), ("left", lr_dxa), ("right", lr_dxa)):
+    # CT_TcMar child order: top, left(start), bottom, right(end).
+    for side, value in (("top", lr_dxa // 2), ("left", lr_dxa), ("bottom", lr_dxa // 2), ("right", lr_dxa)):
         element = OxmlElement(f"w:{side}")
         element.set(qn("w:w"), str(value))
         element.set(qn("w:type"), "dxa")
         margins.append(element)
-    tc_pr.append(margins)
+    tc_pr.insert_element_before(margins, *_TC_PR_TCMAR_SUCCESSORS)
 
 
 def _set_table_borders(table: "Table", borders_token: str) -> None:
@@ -62,7 +86,8 @@ def _set_table_borders(table: "Table", borders_token: str) -> None:
     borders = OxmlElement("w:tblBorders")
     single = borders_token == "full_grid"
     horizontal = borders_token in ("full_grid", "horizontal_only")
-    for side in ("top", "bottom", "left", "right", "insideH", "insideV"):
+    # CT_TblBorders child order: top, left, bottom, right, insideH, insideV.
+    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
         element = OxmlElement(f"w:{side}")
         vertical = side in ("left", "right", "insideV")
         keep = single or (horizontal and not vertical)
@@ -70,7 +95,7 @@ def _set_table_borders(table: "Table", borders_token: str) -> None:
         element.set(qn("w:sz"), "4")
         element.set(qn("w:color"), "000000")
         borders.append(element)
-    tbl_pr.append(borders)
+    tbl_pr.insert_element_before(borders, *_TBL_PR_SUCCESSORS)
 
 
 def _underline_header_row(table: "Table") -> None:
@@ -85,7 +110,7 @@ def _underline_header_row(table: "Table") -> None:
         bottom.set(qn("w:sz"), "4")
         bottom.set(qn("w:color"), "000000")
         tc_borders.append(bottom)
-        tc_pr.append(tc_borders)
+        tc_pr.insert_element_before(tc_borders, *_TC_PR_TCBORDERS_SUCCESSORS)
 
 
 def _indicator_runs(paragraph, value: str, status_indicators: "dict[str, StatusIndicator]") -> None:
@@ -149,6 +174,11 @@ def render_styled_table_docx(
     legend_values: set[str] = set()
 
     def _emit_row(values: list[str], *, is_header: bool) -> None:
+        if len(values) > columns:
+            raise ValueError(
+                f"{style.id}: row has {len(values)} cells but the header defines "
+                f"{columns} columns -- a body row can never be wider than the header"
+            )
         cells = table.add_row().cells
         padded = values + [""] * (columns - len(values))
         for column_index, raw_text in enumerate(padded):
@@ -170,7 +200,7 @@ def render_styled_table_docx(
                         run.font.color.rgb = RGBColor.from_string("FFFFFF")
                 _shade_cell(cell, header_fill)
             elif is_emphasis_cell:
-                _shade_cell(cell, "D9D9D9")
+                _shade_cell(cell, COLUMN_EMPHASIS_FILL_HEX)
 
     _emit_row(header, is_header=True)
     if tokens["borders"] == "minimal":
@@ -179,7 +209,7 @@ def render_styled_table_docx(
         _emit_row(row, is_header=False)
         if tokens["row_rhythm"] == "alternating" and row_index % 2 == 1:
             for cell in table.rows[-1].cells:
-                _shade_cell(cell, "F2F2F2")
+                _shade_cell(cell, ROW_ALTERNATING_FILL_HEX)
 
     if notes and tokens["notes"] == "inline":
         note_cells = table.add_row().cells

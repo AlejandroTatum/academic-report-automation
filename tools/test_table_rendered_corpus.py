@@ -86,6 +86,21 @@ def test_issue_13_rendered_context_corpus(tmp_path: Path) -> None:
     pages = _page_count(pdf_path)
     assert pages >= 3  # short+long+comparison / status+dense+multipage-start / continuation ...
 
+    # Proves SELECTION, not merely that some rendering happened: each named
+    # context class must have actually resolved to its expected approved ID
+    # (same mapping as test_issue_13_context_matrix_is_deterministic), not
+    # just any style (T3+T4+T5 review R3-corpus-test-doesnt-prove-selection).
+    expected_ids = {
+        "short": "TAB-CL-01",
+        "long": "TAB-ZB-04",
+        "comparison": "TAB-CE-05",
+        "status": "TAB-ES-06",
+        "dense": "TAB-CC-07",
+        "multipage": "TAB-ZB-04",
+    }
+    for name, style_id in expected_ids.items():
+        assert f'data-table-style="{style_id}"' in html, f"{name}: expected {style_id} in rendered HTML"
+
     full_text = "\n".join(_page_text(pdf_path, page) for page in range(1, pages + 1))
     # Every context section heading survived rendering, legible and present.
     for heading in ("Corto", "Largo", "Comparaci", "Estado", "Denso", "Multip"):

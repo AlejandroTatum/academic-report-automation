@@ -383,6 +383,17 @@ class ReportConfig:
         return resolve_in_folder(self.folder, value)
 
     @property
+    def table_style_receipts_path(self) -> Path:
+        """Path-free, machine-readable ``SelectionReceipt`` evidence (issue #13).
+
+        Written by ``tools/validate_report.py`` beside ``quality_report.md``
+        for every table a directive resolved, so "the selected ID and
+        rationale appear in validation evidence" holds for every backend
+        that applies styles (T5's disclosed "What remains" gap).
+        """
+        return resolve_in_folder(self.folder, "backups/table_style_receipts.json")
+
+    @property
     def metadata(self) -> dict[str, Any]:
         meta = dict(self.raw.get("metadata") or {})
         aliases = {
