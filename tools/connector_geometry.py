@@ -24,10 +24,11 @@ import json
 import math
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from visual_pdf_auditor import FAILURE, PageIssue
+from visual_pdf_auditor import FAILURE, INFO, PageIssue
 
 # Failure tags, decided in exactly one place (auditor pattern).
 CONNECTOR_THROUGH_NODE = "CONNECTOR_THROUGH_NODE"
@@ -36,6 +37,14 @@ CONNECTOR_CROSSING = "CONNECTOR_CROSSING"
 CONNECTOR_CLEARANCE = "CONNECTOR_CLEARANCE"
 CONNECTOR_DIRECTION = "CONNECTOR_DIRECTION"
 CONNECTOR_PARSE = "CONNECTOR_PARSE"
+# INFO-level, never a FAILURE: the direction/marker check ran against the
+# pre-#43 strict rule because no ``.mmd`` source was found next to the SVG to
+# say which links are intentionally undirected (see direction_issues()).
+CONNECTOR_DIRECTION_NO_SOURCE = "CONNECTOR_DIRECTION_NO_SOURCE"
+# A geometry exception (malformed XML, corrupted path/point data, or any
+# other defect the parser cannot recover from) turned into a finding instead
+# of an uncaught crash. See run_geometry_audit() (#43 T2).
+CONNECTOR_AUDIT_ERROR = "CONNECTOR_AUDIT_ERROR"
 # Cubic-bezier flattening resolution for sample_path()'s fallback d-attribute
 # sampling (node/region shapes given as a path, not a rect/polygon/circle).
 BEZIER_SAMPLES = 16
@@ -63,6 +72,7 @@ _TRANSLATE_RE = re.compile(r"translate\(\s*([-+.\d eE]+)[ ,]+([-+.\d eE]+)\s*\)"
 # not here.
 _EDGE_ID_RE = re.compile(r"^L_(.+)_(\d+)$")
 _NODE_ID_RE = re.compile(r"^.*-flowchart-(.+?)-\d+$")
+_VIEWBOX_RE = re.compile(rf"^({_POINT})\s+({_POINT})\s+({_POINT})\s+({_POINT})$")
 
 
 # --- Model ---
@@ -120,6 +130,12 @@ class Diagram:
     markers: dict[str, str]  # marker id -> orient value
     regions: list[ProtectedRegion]
     parse_issues: list[PageIssue]
+    # The SVG's own viewBox, (x0, y0, x1, y1) -- the outer limit an
+    # alternative route may occupy when proving a crossing necessary (#43
+    # T3). ``None`` when the SVG carries no viewBox (route search then stays
+    # unbounded: more room to find a route, never less -- the safe
+    # direction, see _has_alternative_route()).
+    bounds: tuple[float, float, float, float] | None = None
 
 
 # --- SVG parsing into the model ---
@@ -452,7 +468,12 @@ def parse_svg(text: str) -> Diagram:
             token = getattr(edge, attr)
             if token and len(label_index.get(token, [])) != 1:
                 issues.append(PageIssue(FAILURE, CONNECTOR_PARSE, f"edge '{edge.id}' {attr} '{token}' is ambiguous or unresolved"))
-    return Diagram(nodes=nodes, edges=edges, markers=markers, regions=regions, parse_issues=issues)
+    bounds = None
+    view_box = _VIEWBOX_RE.match(root.attrib.get("viewBox", "").strip())
+    if view_box:
+        x0, y0, w, h = (float(v) for v in view_box.groups())
+        bounds = (x0, y0, x0 + w, y0 + h)
+    return Diagram(nodes=nodes, edges=edges, markers=markers, regions=regions, parse_issues=issues, bounds=bounds)
 
 
 # --- Geometry primitives and checks (each a FAILURE, classified here) ---
@@ -678,25 +699,175 @@ def _edges_cross(e1: Edge, e2: Edge) -> bool:
     )
 
 
-def crossing_issues(diagram: Diagram) -> list[PageIssue]:
-    """Every genuine crossing between unrelated connectors fails.
+# --- Necessary-crossing exemption (#43 T3) -------------------------------------
+#
+# 2026-09-23 decision: conservative. A crossing is exempt ONLY when the gate
+# PROVES no alternative route exists for one of the two edges -- an
+# obstacle-aware visibility check, within the diagram's own bounds, showing
+# every possible route from that edge's own source to its own target must
+# cross the other edge as currently drawn. When the proof is inconclusive
+# (state budget exceeded, no bounds to reason within) or a route IS found,
+# the crossing still fails -- the pre-#43 always-fail behaviour, which this
+# only narrows, never widens past what is actually proven.
 
-    Known scope gap (native review, issue #10 T5): the spec's full rule is
-    narrower -- reject a crossing only "when a non-crossing route exists or
-    the crossing makes direction ambiguous" (design: an obstacle-expanded
-    orthogonal visibility graph). This always fails instead, a conservative
-    superset that still catches every unnecessary crossing the 15 named spec
-    scenarios test, but would also flag a genuinely unavoidable one. No
-    diagram in this project's real corpus currently exercises that case;
-    implementing route-avoidance detection is a dedicated follow-up, not a
-    hardening fix -- an incorrect route-finding heuristic risks the opposite
-    failure mode (a real defect silently exempted as "necessary").
+# Hard cap on visibility-graph vertices (2 endpoints + 4 per obstacle + every
+# blocker vertex): keeps the O(V^2) all-pairs visibility check bounded on
+# real diagrams carrying many nodes/regions. Past this, the proof is
+# inconclusive by construction -- the crossing keeps failing, the same safe
+# default as having no proof at all.
+MAX_VISIBILITY_VERTICES = 60
+
+
+def _obstacles_for_edge(diagram: Diagram, edge: Edge) -> list[tuple[float, float, float, float]]:
+    """Bounding boxes an alternative route for *edge* must not cross: every
+    node it does not itself terminate at, and every protected region it does
+    not own -- the same adjacency rule obstruction_issues() already applies."""
+    boxes = [(n.x0, n.y0, n.x1, n.y1) for n in diagram.nodes if n.id != edge.source and n.id != edge.target]
+    boxes.extend(
+        (r.x0, r.y0, r.x1, r.y1)
+        for r in diagram.regions
+        if r.owner_id != edge.id and not _is_own_edge_label(r, edge)
+    )
+    return boxes
+
+
+def _segment_crosses_bbox_interior(a, b, bbox) -> bool:
+    """True only when segment a-b passes through *bbox*'s OPEN interior --
+    merely touching its boundary or a corner is a legitimate way to route
+    around it, not a block."""
+    x0, y0, x1, y1 = bbox
+    inset = 1e-6
+    ix0, iy0, ix1, iy1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
+    if ix1 <= ix0 or iy1 <= iy0:
+        return False
+    return _clip_interval(a, b, (ix0, iy0, ix1, iy1)) is not None
+
+
+def _point_within_bounds(p, bounds) -> bool:
+    x0, y0, x1, y1 = bounds
+    eps = 1e-6
+    return x0 - eps <= p[0] <= x1 + eps and y0 - eps <= p[1] <= y1 + eps
+
+
+def _has_alternative_route(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    obstacles: list[tuple[float, float, float, float]],
+    blocker: Edge,
+    bounds: tuple[float, float, float, float] | None,
+) -> bool | None:
+    """Whether *start* can reach *end* by a route of straight segments that
+    stays within *bounds*, never crosses an obstacle's interior, and never
+    crosses *blocker*'s own polyline -- a standard corner visibility graph
+    over ``{start, end} + every obstacle corner + every blocker vertex}``:
+    the shortest route around axis-aligned rectangles always bends only at
+    their corners, so this construction is exact, not a heuristic --
+    *blocker* contributes its own vertices too, since a zero-width obstacle
+    has no corners of its own to route around otherwise (a route legitimately
+    going around one of its ends must be able to pivot exactly there).
+
+    Returns ``None`` (inconclusive) when *bounds* is absent -- the #43 T3
+    decision only reasons "within the diagram's own bounds", so without a
+    declared viewBox there is nothing to prove within, not an unbounded
+    plane to search freely -- or once the vertex budget is exceeded; the
+    caller must then treat the crossing as NOT proven necessary, never as
+    proven exempt.
     """
+    if bounds is None:
+        return None
+    # *start*/*end* are the edge's own required endpoints, not part of the
+    # alternative route being searched for -- a declared viewBox that
+    # happens not to enclose one of them (a stray node placed outside it)
+    # must never trap the search into a false "no route exists" just
+    # because the endpoint itself sits outside bounds.
+    x0, y0, x1, y1 = bounds
+    xs, ys = (start[0], end[0]), (start[1], end[1])
+    bounds = (min(x0, *xs), min(y0, *ys), max(x1, *xs), max(y1, *ys))
+
+    corners = [
+        (x, y)
+        for x0, y0, x1, y1 in obstacles
+        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+        if _point_within_bounds((x, y), bounds)
+    ]
+    blocker_vertices = [p for p in blocker.points if _point_within_bounds(p, bounds)]
+    vertices = [start, end, *corners, *blocker_vertices]
+    if len(vertices) > MAX_VISIBILITY_VERTICES:
+        return None
+
+    def blocked(a, b) -> bool:
+        if not (_point_within_bounds(a, bounds) and _point_within_bounds(b, bounds)):
+            return True
+        if any(_segment_crosses_bbox_interior(a, b, box) for box in obstacles):
+            return True
+        for p1, p2 in zip(blocker.points, blocker.points[1:]):
+            if a in (p1, p2) or b in (p1, p2):
+                # This visibility edge starts or ends exactly at one of
+                # *blocker*'s own vertices -- the intentional pivot point a
+                # route legitimately going around its tip bends at, not a
+                # crossing. Two segments sharing only that single endpoint
+                # can never strictly cross elsewhere along their length, so
+                # there is nothing further to check against this specific
+                # adjacent blocker segment.
+                continue
+            # Unlike an obstacle box (which has an interior/exterior, so
+            # merely touching its boundary while staying outside is a
+            # legitimate way to route around it), *blocker* is a
+            # zero-width curve: any OTHER shared point -- including a
+            # single tangent touch away from its own vertices -- is
+            # contact a route claiming to "avoid" it cannot have.
+            # Strict-crossing-only here would let a route flip sides by
+            # grazing exactly one point of *blocker*'s body, which is not
+            # a real alternative route.
+            if _segments_intersect(a, b, p1, p2):
+                return True
+        return False
+
+    adjacency: list[list[int]] = [[] for _ in vertices]
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            if not blocked(vertices[i], vertices[j]):
+                adjacency[i].append(j)
+                adjacency[j].append(i)
+
+    seen, frontier = {0}, [0]
+    while frontier:
+        current = frontier.pop()
+        if current == 1:
+            return True
+        for neighbour in adjacency[current]:
+            if neighbour not in seen:
+                seen.add(neighbour)
+                frontier.append(neighbour)
+    return False
+
+
+def _crossing_is_provably_necessary(diagram: Diagram, e1: Edge, e2: Edge) -> bool:
+    """True only when the gate can PROVE, within the diagram's own declared
+    bounds, that neither edge has an alternative route around the other.
+    Checking just one edge's total routing freedom against the other's
+    fixed, as-rendered path is sufficient proof per the accepted decision
+    ("every route for one of the edges must cross the other"); a ``None``
+    (inconclusive) result -- no declared bounds to reason within, or the
+    visibility-graph vertex budget exceeded -- is never treated as ``False``
+    and never grants the exemption, only an explicit, proven ``False`` does."""
+    for edge, blocker in ((e1, e2), (e2, e1)):
+        obstacles = _obstacles_for_edge(diagram, edge)
+        if _has_alternative_route(edge.points[0], edge.points[-1], obstacles, blocker, diagram.bounds) is False:
+            return True
+    return False
+
+
+def crossing_issues(diagram: Diagram) -> list[PageIssue]:
+    """Every genuine crossing between unrelated connectors fails, except one
+    the gate can prove is unavoidable (see the module note above and
+    ``_crossing_is_provably_necessary`` -- #43 T3, conservative: an
+    inconclusive proof still fails, exactly like the pre-#43 rule)."""
     issues: list[PageIssue] = []
     edges = diagram.edges
     for i, e1 in enumerate(edges):
         for e2 in edges[i + 1:]:
-            if _edges_cross(e1, e2):
+            if _edges_cross(e1, e2) and not _crossing_is_provably_necessary(diagram, e1, e2):
                 issues.append(PageIssue(FAILURE, CONNECTOR_CROSSING, f"edge '{e1.id}' crosses edge '{e2.id}'"))
     return issues
 
@@ -785,24 +956,188 @@ def _point_near_bbox(p, bbox, eps=ENDPOINT_EPS) -> bool:
     return x0 - eps <= x <= x1 + eps and y0 - eps <= y <= y1 + eps
 
 
-def direction_issues(diagram: Diagram) -> list[PageIssue]:
+# --- Declared link direction, from the .mmd source (#43 T1) -------------------
+#
+# 2026-09-23 decision (supersedes the August "every connector MUST use a
+# defined end marker" rule): an undirected Mermaid link (open ---, dotted
+# -.-, thick ===, with or without a |label| or inline ' text ' segment) is
+# valid and skips direction/marker checks. A link carrying any arrowhead
+# (-->, -.->,  ==>, <-->, --o, --x, ...) is unchanged -- still checked in
+# full. The source is the sole authority on intent; there is no SVG-only
+# signal to tell "renderer correctly omitted the marker" from "marker
+# generation broke", so a missing source keeps the old strict rule and says
+# so (CONNECTOR_DIRECTION_NO_SOURCE, informational).
+_LINK_ID = r"[A-Za-z0-9_][\w-]*"
+# A node's shape delimiter on either side of a link (e.g. "A[Label]",
+# "B((Label))"); only skipped past, never parsed for its own content.
+_LINK_SHAPE = (
+    r"(?:@\{[^}]*\}|\[\[[^\]]*\]\]|\(\([^)]*\)\)|\{\{[^}]*\}\}|\[\([^)]*\)\]"
+    r"|>[^\]]*\]|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})?"
+)
+# The connector itself: an optional leading '<' (bidirectional/reversed
+# arrowhead), a run of >=2 line characters (-/./=), an optional inline label
+# (|...| or free text before the closing run), the closing run, an optional
+# trailing arrowhead ('>' or a circle/cross terminator 'o'/'x'), and an
+# optional |label| placed AFTER the arrow (Mermaid's "-->|label|" form).
+_LINK_ARROW = (
+    r"(?P<lhead><)?(?P<lpunct>[-=.]{2,})"
+    r"(?:\s*\|[^|]*\||\s+[^-=.\n]+?(?=\s*[-=.]{2,}))?"
+    # 'o'/'x' end a circle/cross terminator only when NOT immediately
+    # followed by another identifier character -- otherwise it is the start
+    # of the target's own id (R3-link-regex-o-x-node-prefix, native review:
+    # "A --- ox" or "A --> xray" must parse "ox"/"xray" whole, not swallow
+    # their first letter as a terminator). A rare, accepted trade-off: a
+    # genuine circle/cross terminator glued directly to its target with no
+    # separating space (e.g. "A --oB") is not recognized either -- routine
+    # Mermaid usage always separates the target with whitespace.
+    r"\s*(?P<rpunct>[-=.]{0,})(?P<rhead>[>ox](?!\w))?"
+    r"(?:\s*\|[^|]*\|)?"
+)
+_LINK_RE = re.compile(rf"(?P<src>{_LINK_ID}){_LINK_SHAPE}\s*{_LINK_ARROW}\s*(?P<tgt>{_LINK_ID})")
+# Lines that never carry a link, skipped so their punctuation cannot be
+# mistaken for one (subgraph/style/class declarations use similar symbols).
+_LINK_SKIP_LINE_RE = re.compile(
+    r"^\s*(subgraph\b|end\b|classDef\b|class\b|style\b|click\b|linkStyle\b|direction\b|flowchart\b|graph\b|%%)",
+    re.IGNORECASE,
+)
+_LINK_COMMENT_RE = re.compile(r"%%.*$")
+
+
+def parse_link_directions(text: str) -> dict[tuple[str, str], list[bool]]:
+    """Declared link directedness per ``(source, target)`` pair, in
+    declaration order, from Mermaid flowchart/graph source text.
+
+    ``True`` means the link carries an arrowhead (checked in full); ``False``
+    means a bare open/dotted/thick link (direction/marker checks skipped).
+    Known gap: chained (``A --> B --> C``) and fan-out (``A --> B & C``)
+    links only resolve their first hop -- the rest are simply absent from
+    the returned map, and ``direction_issues()`` already treats an edge with
+    no matching entry as directed, the same safe default a missing source
+    file gets.
+    """
+    directions: dict[tuple[str, str], list[bool]] = {}
+    for raw_line in text.splitlines():
+        line = _LINK_COMMENT_RE.sub("", raw_line)
+        if _LINK_SKIP_LINE_RE.match(line):
+            continue
+        for match in _LINK_RE.finditer(line):
+            key = (match.group("src"), match.group("tgt"))
+            directed = bool(match.group("lhead") or match.group("rhead"))
+            directions.setdefault(key, []).append(directed)
+    return directions
+
+
+def _edge_ordinal(edge_id: str) -> int:
+    match = _EDGE_ID_RE.match(edge_id)
+    return int(match.group(2)) if match else 0
+
+
+def _match_declared_directions(
+    edges: list[Edge], link_directions: dict[tuple[str, str], list[bool]]
+) -> dict[str, bool]:
+    """Map each edge id to whether the source declared it directed.
+
+    mmdc does not number repeated links between the same pair sequentially
+    from the SVG's ``_<ordinal>`` suffix alone (a second ``A--F`` link is
+    ``L_A_F_2``, not ``L_A_F_1``) -- but it always keeps them in ascending,
+    declaration-preserving order. Matching therefore goes by each edge's
+    position within its own (source, target) group, not by the raw ordinal
+    value: sort the group by ordinal, zip it against the source's
+    declaration-ordered list for that same pair. An edge past the end of its
+    pair's declared list (parse gap, e.g. a chained link) defaults to
+    directed -- the safe, stricter choice.
+    """
+    groups: dict[tuple[str, str], list[Edge]] = {}
+    for edge in edges:
+        groups.setdefault((edge.source, edge.target), []).append(edge)
+    result: dict[str, bool] = {}
+    for key, group in groups.items():
+        declared = link_directions.get(key, [])
+        for position, edge in enumerate(sorted(group, key=lambda e: _edge_ordinal(e.id))):
+            result[edge.id] = declared[position] if position < len(declared) else True
+    return result
+
+
+def _source_path_for(svg_path: Path) -> Path:
+    """The sibling ``.mmd``: same directory, same stem."""
+    return svg_path.with_suffix(".mmd")
+
+
+def _mirrored_specs_path(svg_path: Path) -> Path | None:
+    """The ``.mmd`` under the mirrored ``visuals/specs/`` tree, for a
+    rendered asset stored under ``assets/generated/`` (the canonical
+    asset-class layout, see visual-workflow.md's "Asset classes" section):
+    same relative subpath and stem, only the leading ``assets/generated``
+    path-segment pair replaced by ``visuals/specs``. ``None`` when
+    *svg_path* does not sit under an ``assets/generated`` prefix at all --
+    derived purely from the path, no config or flag.
+    """
+    parts = svg_path.parts
+    for i in range(len(parts) - 1):
+        if parts[i] == "assets" and parts[i + 1] == "generated":
+            mirrored = (*parts[:i], "visuals", "specs", *parts[i + 2:])
+            return Path(*mirrored).with_suffix(".mmd")
+    return None
+
+
+def _source_candidates(svg_path: Path) -> list[Path]:
+    """Every place *svg_path*'s ``.mmd`` source could legitimately live, in
+    lookup order: the cheaper sibling first, then the mirrored specs tree
+    real pipeline runs actually use (renders and specs live in parallel
+    directory trees, never siblings there -- see
+    ``_mirrored_specs_path``)."""
+    candidates = [_source_path_for(svg_path)]
+    mirrored = _mirrored_specs_path(svg_path)
+    if mirrored is not None:
+        candidates.append(mirrored)
+    return candidates
+
+
+def load_link_directions(svg_path: Path) -> dict[tuple[str, str], list[bool]] | None:
+    """Declared link directions from *svg_path*'s ``.mmd`` source (see
+    ``_source_candidates``), or ``None`` when none of the candidate
+    locations exist OR the ones that do exist cannot be read as text.
+
+    An unreadable/undecodable ``.mmd`` (permission error, binary garbage, a
+    non-UTF-8 encoding) is treated exactly like a missing one -- falling
+    back to the strict direction rule with its informational finding --
+    instead of raising past this function. A raised exception here would
+    otherwise escape all the way to ``run_geometry_audit``'s broad guard and
+    get reported as one opaque ``CONNECTOR_AUDIT_ERROR``, masking every
+    other, unrelated geometry finding (through-node, crossing, clearance)
+    the rest of the audit would have correctly produced for the same file
+    (R4-mmd-read-failure-masks-geometry-audit, native review).
+    """
+    for source in _source_candidates(svg_path):
+        try:
+            if not source.exists():
+                continue
+            text = source.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        return parse_link_directions(text)
+    return None
+
+
+def direction_issues(
+    diagram: Diagram, link_directions: dict[tuple[str, str], list[bool]] | None = None
+) -> list[PageIssue]:
     """Source/target endpoint containment and end-marker validity.
 
-    Reviewed (native review, issue #10 T5) as a possible false-positive for
-    Mermaid's undirected ``---`` links, which mmdc renders with no end
-    marker at all. Not a defect against this project's accepted contract:
-    the spec's "Endpoints and direction" requirement is unconditional --
-    "every connector MUST ... use a defined end marker whose orientation
-    follows the path" -- and the checked-in named RED fixture
-    (``mmdc-direction-bad.svg``) already encodes "no end marker" as a
-    failure by design. Supporting a legitimately undirected connector would
-    need a new spec scenario (there is no SVG-only signal to tell "renderer
-    correctly omitted the marker" from "marker generation broke"), not a
-    hardening fix to this check.
+    *link_directions* (see ``parse_link_directions``) is ``None`` when no
+    ``.mmd`` source was found: every edge is checked in full, the pre-#43
+    strict rule. When it is provided, an edge the source declared undirected
+    skips the endpoint-containment and end-marker checks entirely -- a
+    legitimately undirected connector renders with no end marker at all, and
+    the source is the only authority that can tell that apart from a broken
+    one (see the module-level note above ``_LINK_RE``).
     """
     issues: list[PageIssue] = []
     by_id = {node.id: node for node in diagram.nodes}
+    directed_by_edge = _match_declared_directions(diagram.edges, link_directions) if link_directions is not None else {}
     for edge in diagram.edges:
+        if link_directions is not None and not directed_by_edge.get(edge.id, True):
+            continue
         src, tgt = by_id.get(edge.source), by_id.get(edge.target)
         if src is not None and not _point_near_bbox(edge.points[0], (src.x0, src.y0, src.x1, src.y1)):
             issues.append(PageIssue(FAILURE, CONNECTOR_DIRECTION, f"edge '{edge.id}' starts off its declared source '{edge.source}'"))
@@ -817,17 +1152,49 @@ def direction_issues(diagram: Diagram) -> list[PageIssue]:
     return issues
 
 
-def audit_diagram(diagram: Diagram) -> list[PageIssue]:
+def audit_diagram(
+    diagram: Diagram, link_directions: dict[tuple[str, str], list[bool]] | None = None
+) -> list[PageIssue]:
     obstruction, obstructed_pairs = obstruction_issues(diagram)
     return (
         list(diagram.parse_issues)
         + obstruction
         + crossing_issues(diagram)
         + clearance_issues(diagram, obstructed_pairs)
-        + direction_issues(diagram)
+        + direction_issues(diagram, link_directions)
     )
 
 
 def audit_connector_geometry(svg: Path) -> list[PageIssue]:
     """Audit a rendered Mermaid SVG file for connector defects."""
-    return audit_diagram(parse_svg(svg.read_text(encoding="utf-8")))
+    link_directions = load_link_directions(svg)
+    issues = audit_diagram(parse_svg(svg.read_text(encoding="utf-8")), link_directions)
+    if link_directions is None:
+        issues.append(
+            PageIssue(
+                INFO, CONNECTOR_DIRECTION_NO_SOURCE,
+                f"'{svg.name}': no '.mmd' source found (sibling or mirrored visuals/specs tree); direction/marker check ran in strict mode",
+            )
+        )
+    return issues
+
+
+def run_geometry_audit(figure_name: str, audit: Callable[[], list[PageIssue]]) -> list[PageIssue]:
+    """Run *audit* (a zero-argument connector-geometry audit call) and turn
+    ANY exception it raises into one ``CONNECTOR_AUDIT_ERROR`` finding naming
+    *figure_name*, instead of letting it escape uncaught (#43 T2).
+
+    Both audit entry points -- ``visual_builder.py``'s isolated ``validate``
+    command and ``validate_report.py``'s final-size stage -- call this same
+    helper, so they can no longer diverge on which exceptions are "safe" to
+    catch. Deliberately broad (``except Exception``, not a narrow tuple): a
+    malformed-geometry crash is exactly what this guard exists to convert
+    into a reported finding, whatever shape it takes -- an XML parse error,
+    a decoding failure, or an arithmetic ``IndexError``/``ValueError`` deep
+    in path-sampling on corrupted point data, none of which are ever a
+    reason to abort an entire validation run over one bad file.
+    """
+    try:
+        return audit()
+    except Exception as exc:  # noqa: BLE001 - see docstring: deliberately broad
+        return [PageIssue(FAILURE, CONNECTOR_AUDIT_ERROR, f"'{figure_name}': {type(exc).__name__}: {exc}")]

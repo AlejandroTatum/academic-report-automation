@@ -805,7 +805,6 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     if config.backend != "latex" or not config.body_path.exists():
         return result
-    import xml.etree.ElementTree as ET
 
     from build_latex_report import (
         figure_references,
@@ -814,6 +813,7 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
         resolve_template,
         template_key_for,
     )
+    from connector_geometry import run_geometry_audit
     from connector_pdf_stage import audit_svg_at_final_size
     from visual_pdf_auditor import FAILURE as CONNECTOR_FAILURE
 
@@ -845,11 +845,12 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
         return result
 
     for svg_path in svg_figures:
-        try:
-            issues = audit_svg_at_final_size(svg_path, tex_source)
-        except (OSError, ValueError, ET.ParseError) as exc:
-            result.errors.append(f"No se pudo auditar '{svg_path}' en tamaño final impreso: {exc}")
-            continue
+        # ANY geometry exception (malformed XML, corrupted path/point data)
+        # becomes a reported finding here, through the same guard
+        # visual_builder.py's isolated validate command uses (#43 T2) — the
+        # two entry points can no longer diverge on which exceptions are
+        # safe to catch.
+        issues = run_geometry_audit(svg_path.name, lambda svg_path=svg_path: audit_svg_at_final_size(svg_path, tex_source))
         for issue in issues:
             if issue.level == CONNECTOR_FAILURE:
                 result.errors.append(f"[tamaño final] {issue.tag}: {issue.detail} ({svg_path.name})")

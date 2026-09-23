@@ -79,6 +79,27 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   wrapping, page geometry, overall composition) still needs inspection in the
   assembled PDF at normal zoom before insertion, per the photo/evidence rule
   above.
+- Direction and end-marker checks (#43, 2026-09-23 decision, supersedes the
+  earlier "every connector MUST use a defined end marker" rule): the `.mmd`
+  source is the sole authority on connector intent. The gate looks for it in
+  order — the sibling `.mmd` next to the SVG (same stem), then, since the
+  canonical layout above keeps specs and renders in parallel trees rather
+  than as siblings, the mirrored path under `visuals/specs/` obtained by
+  swapping the `assets/generated/` segment pair for `visuals/specs/` (same
+  relative subpath and stem). An undirected link (`---`, `-.-`, `===`, with
+  or without a label) declared there skips direction/marker checks; a link
+  declared with an arrowhead (`-->`, `-.->`, `==>`, `<-->`, `--o`, `--x`,
+  ...) keeps the full check. When neither location has a matching `.mmd`,
+  the check falls back to the strict pre-#43 rule and reports that it did
+  (an informational finding naming the figure, never silently different
+  behavior).
+- Necessary-crossing exemption (#43, conservative): a crossing between two
+  connectors is exempt only when an obstacle-aware visibility check, within
+  the diagram's own viewBox, proves every route for one of the two
+  connectors must cross the other (no way around the diagram's nodes and
+  protected regions). When that proof is inconclusive — a route around does
+  exist, or the obstacle count exceeds the bounded state budget — the
+  crossing keeps failing, exactly as before #43.
 
 ## Subject presets
 
