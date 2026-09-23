@@ -30,6 +30,7 @@ from pathlib import Path
 
 from approval_marker import approval_state, bound_file_names, sha256_file
 from report_config import ROOT, ReportConfig, read_yaml
+from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
 from structure_contract import structure_confirmation_state, structure_gate_engaged
 
 PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
@@ -108,6 +109,21 @@ def _phase_intake(folder: Path, config: ReportConfig, _documents_root: Path | No
 
 
 def _phase_research(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    # #11: once a report has written research/evidence.yml at all, the
+    # research phase stays incomplete until the matrix validates
+    # structurally -- unsupported, conflicting, or insufficient claims
+    # (R12) block this phase exactly like any other final-gate failure. A
+    # report that never wrote evidence.yml keeps the pre-existing,
+    # matrix.md-only behaviour untouched.
+    if evidence_gate_engaged(folder):
+        package = load_evidence_package(folder) or {}
+        result = validate_evidence_package(package)
+        if result.errors:
+            return PhaseState(
+                "research", PENDING, "evidence.yml invalid: " + "; ".join(result.errors)
+            )
+        return PhaseState("research", DONE, "research/evidence.yml validated")
+
     matrix = _read_text(folder / "research" / "evidence-matrix.md")
     if matrix is not None and matrix.strip():
         return PhaseState("research", DONE, "research/evidence-matrix.md present")

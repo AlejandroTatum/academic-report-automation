@@ -23,3 +23,9 @@ Compare sources addressing the same claim. Preserve contradiction rather than se
 ## 5. Package the handoff
 
 Write the completed matrix to `$REPORT_CONTENT_ROOT/reports/<work-folder>/research/evidence-matrix.md`. It carries the research question, scope, inclusion/exclusion criteria, source inventory with eligibility/status, source access notes, conflicts, limitations, and unresolved questions. Put only `eligible` bibliography-ready entries in the bibliography handoff; keep `lead` entries separately visible for follow-up, never in that handoff. Include citation keys only as traceability aids; `academic-report-builder` chooses the confirmed citation style and creates the document. The package is pre-document evidence, never confirmed intake, and never final report prose.
+
+## 6. Structured evidence package (#11)
+
+Alongside the prose matrix, write `research/evidence.yml`: one `claims:` entry per material claim, each carrying `claim_id`, `section`, `source_id`, `source_class`, `evidence`, `locator`, `identifier` (DOI, ISBN, or stable URL), `access_date` (required when `identifier` is a URL), `citation_key`, `use_type` (`quotation`, `paraphrase`, `synthesis`, or `common_knowledge`), `confidence`, and, when they apply, `conflicts`/`conflict_resolution`. A `common_knowledge` claim may omit source, locator, and identifier only with an explicit `justification`.
+
+Once `research/evidence.yml` exists, `academic-report-builder`'s research phase gate (`tools/doc_status.py`, `tools/evidence_contract.py`) validates it structurally: an unsupported claim (no `evidence`), an unresolved conflict, or insufficient confidence blocks drafting until it is fixed. A report that never writes `evidence.yml` keeps the pre-existing, matrix.md-only handoff.
