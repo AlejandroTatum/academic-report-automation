@@ -134,6 +134,47 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
     is shared via `load_link_directions`).
   - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1198 passed.
 
+- T5 (native review hardening, post-delivery) done, commit `9c1cf7e`
+  (5 files changed, 202 insertions(+), 51 deletions(-)). Native review of
+  #43 approved with 5 WARNINGs; all verified real (no skips) and fixed:
+  - R3-visibility-graph-omits-blocker-vertices: RED
+    `test_alternative_route_around_blockers_tip_is_found` (a direct-diagram
+    fixture with zero other obstacles — a trivial detour around a
+    2-point blocker was wrongly ruled "unavoidable"). GREEN after adding
+    blocker's own vertices to the visibility graph, exempting only the
+    one blocker segment adjacent to a shared pivot vertex.
+  - R2-no-bounds-inconclusive-contradiction /
+    R2-provably-necessary-docstring: RED
+    `test_no_declared_bounds_is_inconclusive_not_a_false_exemption`
+    (`_has_alternative_route(..., bounds=None)` returned `False`, i.e.
+    granted exemption, contradicting its own docstring). GREEN after
+    returning `None` immediately when bounds are absent; both docstrings
+    updated to state the inconclusive contract explicitly.
+  - R3-link-regex-o-x-node-prefix: RED
+    `test_link_regex_does_not_mistake_ox_prefixed_target_for_a_terminator`
+    (`"A --- ox"` parsed target as `"x"`, dropping the leading `o`).
+    GREEN after adding a negative lookahead so `o`/`x` only terminates as
+    a circle/cross marker when not immediately followed by another
+    identifier character.
+  - R4-mmd-read-failure-masks-geometry-audit: RED
+    `test_unreadable_mmd_source_falls_back_to_strict_mode` (a non-UTF-8
+    `.mmd` raised `UnicodeDecodeError` out of `load_link_directions`).
+    GREEN after catching `(OSError, UnicodeDecodeError)` per candidate
+    source and falling through to the next candidate / strict mode.
+  - R3-no-source-info-dropped-in-validate: RED
+    `test_no_source_informational_finding_is_shown` (`visual_builder.py
+    validate` filtered to `FAILURE`-only, dropping
+    `CONNECTOR_DIRECTION_NO_SOURCE` entirely). GREEN after printing INFO
+    findings alongside `VALIDATION_OK`/`VALIDATION FAILED`.
+  - Regression: the T3 `mmdc-crossing-necessary.svg` fixture broke under
+    the corrected (more sound) algorithm — its old topology relied on the
+    exact loophole R3 closed. Redesigned as a fully sealed pocket for N1
+    using overlapping wall pieces (each nominal wall corner buried inside
+    the neighbouring wall's interior) with blocker's own endpoints buried
+    the same way; `mmdc-crossing-avoidable.svg` and `mmdc-crossing-bad.svg`
+    remain correctly un-exempt.
+  - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1203 passed.
+
 ## Next step
-All four tasks (T1-T4) done. Remaining: push and open a PR (not done by
-this writer — see delivery contract).
+All tasks (T1-T5) done. Remaining: push and open a PR (not done by this
+writer — see delivery contract).
