@@ -21,7 +21,7 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 - [x] T1 catalog + selector (R1-R4). Route: delegated writer.
 - [x] T2 context model, override precedence, receipts (R5-R8). Route: delegated writer.
 - [x] T3 LaTeX tokens (R9 latex). Route: delegated writer.
-- [ ] T4 DOCX tokens (R9 docx). Route: delegated writer.
+- [x] T4 DOCX tokens (R9 docx). Route: delegated writer.
 - [ ] T5 HTML tokens + rendered corpus, multipage, grayscale/accessibility (R9 html, R10-R12). Route: delegated writer.
 
 ## Acceptance
@@ -236,5 +236,59 @@ Not attempted in this slice: no LaTeX compilation (Docker TeX Live) —
 T3's harness only proves `.tex` generation (`--tex-only`); PDF-level
 rendered-quality/accessibility evidence is T5's explicit scope (R10-R12).
 
+## T4 evidence (DOCX tokens, R9 docx)
+
+Commit 51319af `feat(tables): docx tokens` (7 files changed, +580/-1).
+
+- `tools/table_docx_tokens.py` — pure-ish `render_styled_table_docx`,
+  mirroring `table_latex_tokens.py` token for token: borders via
+  `w:tblBorders` (+ a header-only `w:tcBorders` bottom rule for `minimal`,
+  applied after the header row exists — first attempt crashed on
+  `table.rows[0]` before any row existed, fixed by splitting table-wide
+  border setup from the header-underline step), header shading via
+  `w:shd`, alignment via `WD_ALIGN_PARAGRAPH`, padding via `w:tcMar`,
+  density via `Pt` font size, alternating/column-emphasis row shading,
+  status indicators as a colored run + a same-text-color label run (never
+  color alone), caption/notes as paragraphs or a merged inline row. No
+  import from `build_docx_report.py` (avoids the circular import that
+  module already flags by importing from `build_latex_report.py`);
+  `fill_cell` is injected, matching `DocxRenderer._fill_cell`'s signature.
+- `tools/build_docx_report.py` (modified) — `DocxRenderer.__init__` builds
+  `self.table_styles` from `config.table_styles_enabled` (same opt-in as
+  LaTeX); `render_body`'s table branch mirrors `markdown_to_latex`'s:
+  directive lookup via `context_for_table`, `SystemExit` for an undirected
+  table, `render_styled_table` otherwise. The directive-comment line is
+  skipped unconditionally in the main loop (same fix as T3, applied
+  up front this time since the bug was already known).
+- Fixture: `tests/fixtures/table_styles/sample-reports/docx/` (same three
+  directed tables as the LaTeX fixture) +
+  `tools/test_table_styles_docx_fixture.py`, asserted against a **reopened**
+  `Document(path)` — this repository's own established DOCX test
+  convention (`tools/test_build_docx_report.py`), not the raw
+  `word/document.xml` diff tasks #6424 suggested: python-docx's XML
+  serialization is not byte-stable across environments (attribute
+  ordering), so a byte-diff golden would be more fragile than the
+  property-assertion style already used throughout this codebase's DOCX
+  tests. Documented in the test file's docstring.
+
+RED/GREEN: `tools/table_docx_tokens.py`'s tests live in
+`tools/test_table_backend_contracts.py` (`test_issue_13_backend_style_coherence_docx[<7 IDs>]`
++ 3 more: caption/notes, unknown marker, missing emphasis_column — 13
+total docx-suffixed tests), `tools/test_table_styles_docx_wiring.py` (4),
+`tools/test_table_styles_docx_fixture.py` (1). Both wiring and fixture
+tests observed a real failure before the fix each time (`table.rows[0]`
+`IndexError` for the border ordering bug;
+`_shd_fill(document.tables[0]...) == None` vs expected `EAEAEA` before
+realizing `tables[0]` is the academic cover table, not the body table —
+fixed by indexing `tables[-1]`/`tables[1:]`, not by weakening the
+assertion). Full suite: 1120 passed (1104 baseline for this slice + 16
+new tests).
+
+Not attempted in this slice: `.docx` cannot be opened/inspected visually
+in this environment; rendered readback (does it look coherent to a human)
+is T5's explicit scope for HTML, and there is no equivalent DOCX
+rendered-check task in #6424 — accepted as-is.
+
 ## Next step
-T4 (DOCX tokens — R9 docx).
+T5 (HTML tokens + rendered corpus, multipage, grayscale/accessibility —
+R9 html, R10-R12).
