@@ -22,10 +22,11 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 - [x] T2 context model, override precedence, receipts (R5-R8). Route: delegated writer.
 - [x] T3 LaTeX tokens (R9 latex). Route: delegated writer.
 - [x] T4 DOCX tokens (R9 docx). Route: delegated writer.
-- [ ] T5 HTML tokens + rendered corpus, multipage, grayscale/accessibility (R9 html, R10-R12). Route: delegated writer.
+- [x] T5 HTML tokens + rendered corpus, multipage, grayscale/accessibility (R9 html, R10-R12). Route: delegated writer.
 
 ## Acceptance
 - 7/7 requirements, 12/12 scenarios observed RED then GREEN; full suite green; auditor output is a precheck, never `VISUAL_PASS`.
+- Status after T1-T5 (see "What remains" below): all 12 named scenarios have a passing automated test. Receipt persistence into on-disk build evidence and human/contact-sheet `VISUAL_PASS` are explicitly not done — see "What remains" for the full list before treating issue #13 as closable.
 
 ## Progress / evidence
 - Branch `feat/contextual-table-styles` from `main` d185e29.
@@ -289,6 +290,122 @@ in this environment; rendered readback (does it look coherent to a human)
 is T5's explicit scope for HTML, and there is no equivalent DOCX
 rendered-check task in #6424 — accepted as-is.
 
+## T5 evidence (HTML tokens + rendered corpus + accessibility, R9 html, R10-R12)
+
+Commit 66417c1 `feat(tables): html validation evidence` (10 files changed,
++772/-8).
+
+- `tools/table_html_tokens.py` — pure `render_styled_table_html`, mirroring
+  the LaTeX/DOCX mappers token for token; emits a self-contained
+  `<table data-table-style="ID">` with inline CSS rather than a shared
+  class, so it never depends on or collides with
+  `templates/ensayo_unl.css`'s single generic `table`/`th`/`td` rule that
+  undirected tables still use unchanged.
+- `tools/build_report.py` (modified) — `apply_table_styles` rewrites the
+  Markdown body before `markdown.markdown()` runs: each DIRECTED table's
+  source span is replaced with its rendered HTML fragment; an UNDIRECTED
+  table is left untouched, byte-for-byte, and still renders through
+  python-markdown's own "tables" extension. **Architecture difference from
+  LaTeX/DOCX, by necessity, not shortcut**: this tool takes one bare
+  Markdown file, not a report folder — there is no `ReportConfig`, so
+  there is no `table_styles.enabled` opt-in flag and no teacher/institution
+  override here; only automatic contextual selection applies, and nothing
+  ever blocks this preview tool's build. `_inline_markdown` (a small
+  `markdown.markdown(text).strip("<p>...</p>")` helper) keeps directed
+  cells' inline formatting (bold/italic/links) at parity with what
+  undirected cells already get for free from the "tables" extension.
+- `tools/table_directives.py` (modified) — renamed the two internal
+  row-splitting helpers (`_split_row`→`split_table_row`,
+  `_is_separator`→`is_table_separator`) to public names: `build_report.py`
+  is now a third consumer needing them, alongside this module's own scan.
+- RED/GREEN: R9 html — `test_issue_13_backend_style_coherence_html[<7 IDs>]`
+  + 3 more (caption/notes, unknown marker, missing emphasis_column) in
+  `tools/test_table_backend_contracts.py` (10 total); wiring —
+  `tools/test_table_styles_html_wiring.py` (4).
+
+**R12 (`test_issue_13_grayscale_accessibility`)** —
+`tools/test_table_accessibility.py`: pure WCAG 2.1 contrast-ratio
+computation (relative luminance formula, no rendering) against every
+color this feature actually emits. Found two real accessibility defects
+this way, not by inspection: `warn` (`#F9A825`) reached only 1.97:1
+against white (WCAG 1.4.11 needs 3:1 for a graphical object) — fixed to
+`#B26A00` (4.24:1); `down` (`#EF6C00`) reached only 2.75:1 against the
+alternating-row tint `#F2F2F2` — fixed to `#A6420A` (5.51:1), chosen to
+stay luminance-distinct from `ok`'s green so grayscale printing keeps the
+two visually distinguishable. Both fixes are in
+`templates/table_styles.yml`'s `status_indicators` section, with the
+failing ratio recorded in a comment. 4 tests, all passing after the fix.
+
+**R10/R11 (`test_issue_13_rendered_context_corpus`,
+`test_issue_13_multipage_headers_and_captions`)** —
+`tools/test_table_rendered_corpus.py`, against real PDFs (WeasyPrint),
+inspected with `pdfinfo`/`pdftotext` (skips gracefully if either is
+unavailable, matching this repo's existing optional-tool convention):
+  - `tests/fixtures/table_styles/corpus/six-contexts.md` — one fixture per
+    named context class from `test_issue_13_context_matrix_is_deterministic`
+    (short/long/comparison/status/dense/multipage), each with its own
+    directive. Verified end-to-end: all six resolve to the expected IDs
+    (`TAB-CL-01`, `TAB-ZB-04`, `TAB-CE-05`, `TAB-ES-06`, `TAB-CC-07`,
+    `TAB-ZB-04`) — caught and fixed a fixture bug in the process (the
+    "dense" table's separator row used single dashes, below the 3-dash
+    minimum `is_table_separator` requires, so it silently fell through to
+    the undirected/legacy path; same class of bug as the RED-test fixture
+    fix in T1). Renders to a 4-page PDF; asserted section headings,
+    wrapped long-cell text, and status labels are all present as real
+    extractable PDF text.
+  - `tests/fixtures/table_styles/corpus/multipage.md` — 40-row directed
+    table (forces `pagination=multipage`), renders to 3 pages via
+    WeasyPrint; asserted the header text repeats on every page (not just
+    the first) and every row appears exactly once across the break (no
+    loss, no duplication).
+  - **Manually verified once, visually**: rasterized every page of both
+    PDFs (`pdftoppm`) and read them directly. Confirmed: zebra banding
+    (`TAB-ZB-04`) continues coherently across the page 1→2→3 break with
+    the header repeating each time; `TAB-CE-05`'s "Método recomendado"
+    column is visibly shaded and bold; `TAB-ES-06` renders
+    "✓ OK", "✗ Falla", "▲ Alerta" with a legend line below the table —
+    color, symbol and label together, matching "never color alone"; long
+    cells wrap onto two lines without clipping; `TAB-CC-07` is visibly
+    denser (smaller font, tighter padding) than the other five styles.
+  - **This is agent-level visual confirmation, not human sign-off.** The
+    design's own closure contract reserves `VISUAL_PASS` for "final
+    semantic contact-sheet/full-size inspection," explicitly naming
+    automation/auditor output as insufficient for that grant. The
+    automated tests here are a re-runnable structural proxy (page count,
+    per-page header text, no lost row) for what was visually confirmed
+    once, not a replacement for that reserved human authority.
+
+## What remains (disclosed, not silently dropped)
+
+- **Receipt persistence into build evidence.** `SelectionReceipt` (T2) is
+  computed correctly on every styled table (`resolve_table_style` inside
+  `build_latex_report.py`/`build_docx_report.py`/`build_report.py`) but is
+  discarded after rendering — never written to `backups/quality_report.md`
+  or a dedicated receipts file. The design's `tools/validate_report.py`
+  file-change entry ("Persist receipts and coordinate post-render
+  evidence") is not implemented. R8's own scenario (receipt *data
+  correctness*) is green; only the *persistence into on-disk evidence* is
+  outstanding.
+- **`tools/visual_pdf_auditor.py` integration** (semantic per-style
+  rendered checks beyond its existing `TABLE_SUSPECT` heuristic) — not
+  touched.
+- **LaTeX/DOCX rendered corpus** beyond the fixtures already built in T3/T4
+  (3 tables each, `--tex-only`/in-memory `Document` respectively): no
+  Docker-compiled six-context LaTeX PDF, no visual inspection of a real
+  DOCX render (Word itself was not available to open one in this
+  environment). The HTML/WeasyPrint corpus above is real rendered
+  evidence, but only for one of the three backends.
+- **Human/contact-sheet `VISUAL_PASS`** — explicitly out of this agent's
+  authority per the design's own closure contract; noted above.
+
+## Full suite (all five slices, final state)
+
+`.venv/bin/python -m pytest tools/ tests/`: 1141 passed. `git log --oneline
+e4d2588..HEAD` and `git status --short` reported in the final delivery
+message to the orchestrator.
+
 ## Next step
-T5 (HTML tokens + rendered corpus, multipage, grayscale/accessibility —
-R9 html, R10-R12).
+User decision: accept T1-T5 as delivered (with the disclosed remaining
+items above as explicit follow-up work), or request continuation on
+specific remaining items before considering issue #13 closable. Delivery
+(push/PR/review) was explicitly out of scope for this session.
