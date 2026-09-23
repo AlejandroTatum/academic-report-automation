@@ -27,7 +27,7 @@ from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_pa
 from structure_contract import parse_structure, structure_confirmation_state
 from table_directives import TableDirectiveError, parse_table_blocks
 from table_model import OverrideRejectedError, SelectionReceipt, TableStylesContext, resolve_table_style
-from table_styles import UnsupportedContextError
+from table_styles import CatalogError, UnsupportedContextError
 from validate_ieee_refs import ValidationResult, validate_ieee
 from visual_metadata import validate_visual_manifest
 
@@ -1048,6 +1048,10 @@ def table_style_receipts_validation(config: ReportConfig) -> tuple[list[Selectio
     ``tools/build_report.py`` (the HTML preview tool) has no ``ReportConfig``
     at all, so it is out of scope here by construction (see
     odd/tasks/contextual-table-styles.md).
+
+    A catalog load failure (a malformed ``templates/table_styles.yml``)
+    becomes a reported finding instead of aborting validation -- the same
+    contract every other check in this module already honours (issue #52).
     """
     result = ValidationResult()
     if not config.table_styles_enabled or not config.body_path.exists():
@@ -1060,7 +1064,12 @@ def table_style_receipts_validation(config: ReportConfig) -> tuple[list[Selectio
         result.errors.append(f"Directiva de estilo de tabla inválida en body.md: {exc}")
         return [], result
 
-    table_styles = TableStylesContext.from_config(config)
+    try:
+        table_styles = TableStylesContext.from_config(config)
+    except CatalogError as exc:
+        result.errors.append(f"No se pudo cargar el catálogo de estilos de tabla: {exc}")
+        return [], result
+
     receipts: list[SelectionReceipt] = []
     for block in blocks:
         if block.table_key is None or block.context is None:
@@ -1082,8 +1091,17 @@ def write_table_style_receipts(config: ReportConfig, receipts: list[SelectionRec
     filesystem path by construction; sorted by ``table_key`` so the same
     body.md always produces identical bytes regardless of dict iteration
     order.
+
+    Idempotent by design: called on every ``validate()`` run regardless of
+    ``table_styles.enabled``, so the file on disk always reflects the
+    current build. An empty ``receipts`` list (styles disabled, or no table
+    carries a directive) removes a previously written file instead of
+    leaving stale evidence behind (issue #52).
     """
     path = config.table_style_receipts_path
+    if not receipts:
+        path.unlink(missing_ok=True)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     ordered = sorted(receipts, key=lambda receipt: receipt.table_key)
     payload = {
@@ -1152,12 +1170,26 @@ def validate(config: ReportConfig) -> ReportValidation:
         validation.add("visual_pdf", visual_pdf_validation(config))
     if validators.get("docx", False):
         validation.add("docx", docx_validation(config))
-    if config.table_styles_enabled:
+
+    # A non-boolean `table_styles.enabled` (report.yml malformed by a typo,
+    # e.g. `"yes"`) must never crash validation before the quality report is
+    # written -- it becomes a reported finding, same as any other config
+    # error in this function (issue #52).
+    try:
+        table_styles_enabled = config.table_styles_enabled
+    except ValueError as exc:
+        validation.errors.append(f"table_styles.enabled inválido: {exc}")
+        table_styles_enabled = False
+
+    receipts: list[SelectionReceipt] = []
+    if table_styles_enabled:
         receipts, table_style_result = table_style_receipts_validation(config)
         validation.add("table_style_receipts", table_style_result)
-        validation.table_style_receipts = receipts
-        if receipts:
-            write_table_style_receipts(config, receipts)
+    validation.table_style_receipts = receipts
+    # Always idempotent: rewrites current evidence, or removes a stale file
+    # left by a previous build that had styles enabled (issue #52).
+    write_table_style_receipts(config, receipts)
+
     write_quality_report(config, validation)
     return validation
 

@@ -39,6 +39,7 @@ if TOOLS_DIR not in sys.path:
 
 from table_directives import (  # noqa: E402
     DIRECTIVE_RE as TABLE_STYLE_DIRECTIVE_RE,
+    FenceTracker,
     context_for_table,
     is_table_separator,
     split_table_row,
@@ -345,7 +346,10 @@ def apply_table_styles(body: str, catalog=None, warnings: list[str] | None = Non
 
     A fenced code block is skipped verbatim (directive-looking comments and
     pipe tables inside a code sample -- documentation about the syntax --
-    must never be mistaken for a real directive/table). The catalog is
+    must never be mistaken for a real directive/table), via the same
+    ``table_directives.FenceTracker`` ``parse_table_blocks`` uses, so this
+    rewrite and the shared directive parser can never disagree on where a
+    fence starts or ends. The catalog is
     loaded lazily, only once a directed table is actually found, so an HTML
     build with no tables (or only undirected ones) never depends on it. A
     style-validation ``ValueError`` (an unknown status marker, or a missing/
@@ -357,20 +361,12 @@ def apply_table_styles(body: str, catalog=None, warnings: list[str] | None = Non
     lines = body.splitlines()
     output: list[str] = []
     i = 0
-    fence: str | None = None
+    fence = FenceTracker()
     while i < len(lines):
         raw_line = lines[i]
         stripped = raw_line.strip()
 
-        marker = FENCE_PATTERN.match(raw_line)
-        if fence is None and marker:
-            fence = marker.group(0).strip()[:3]
-            output.append(raw_line)
-            i += 1
-            continue
-        if fence is not None:
-            if marker and marker.group(0).strip().startswith(fence):
-                fence = None
+        if fence.consume(raw_line):
             output.append(raw_line)
             i += 1
             continue

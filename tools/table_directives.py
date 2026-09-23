@@ -45,6 +45,42 @@ from table_styles import TableContext
 DIRECTIVE_RE = re.compile(r"^<!--\s*table-style:\s*(?P<key>[A-Za-z0-9_-]+)(?P<attrs>.*?)-->\s*$")
 ATTR_RE = re.compile(r"(?P<name>[a-z_]+)=(?P<value>\S+)")
 STATUS_MARKER_RE = re.compile(r"\[\[status:(?P<value>[A-Za-z0-9_-]+)\]\]")
+FENCE_PATTERN = re.compile(r"^\s*(?:```+|~~~+)")
+
+
+class FenceTracker:
+    """Tracks fenced-code-block state across a line-by-line Markdown scan.
+
+    Shared by every consumer that must skip fenced code -- a documentation
+    sample showing the directive/table syntax must never be mistaken for a
+    real directive or table. Before this, `build_report.py`'s
+    `apply_table_styles` hand-rolled this exact state machine on its own and
+    this module's own scan (`parse_table_blocks`) did not track fences at
+    all, so a fenced sample could still be misparsed as a real directive/
+    table by every consumer of `parse_table_blocks` (T4+T5 review
+    R3-fence-unaware-html-rewrite, generalized: the HTML rewrite's fix did
+    not cover the shared parser it sits on top of).
+    """
+
+    def __init__(self) -> None:
+        self._fence: str | None = None
+
+    def consume(self, line: str) -> bool:
+        """Advance state by one line; returns True while inside a fence.
+
+        A fence's own opening/closing line counts as "inside" too, so a
+        caller skipping "inside" lines never re-parses the fence marker
+        itself as directive/table content.
+        """
+        marker = FENCE_PATTERN.match(line)
+        if self._fence is None:
+            if marker:
+                self._fence = marker.group(0).strip()[:3]
+                return True
+            return False
+        if marker and marker.group(0).strip().startswith(self._fence):
+            self._fence = None
+        return True
 
 # Attribute name -> ("bool" | "int" | one of these string enums).
 _ATTR_ENUMS: dict[str, tuple[str, ...] | None] = {
@@ -202,9 +238,14 @@ def parse_table_blocks(markdown: str) -> list[TableBlock]:
     """
     lines = markdown.splitlines()
     blocks: list[TableBlock] = []
+    fence = FenceTracker()
 
     i = 0
     while i < len(lines):
+        if fence.consume(lines[i]):
+            i += 1
+            continue
+
         stripped = lines[i].strip()
 
         if not stripped:

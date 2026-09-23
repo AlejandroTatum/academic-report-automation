@@ -147,3 +147,21 @@ def test_context_for_table_returns_none_when_undirected() -> None:
     key, context = context_for_table(lines, table_start, ["Name", "Score"], [["Ana", "9"]])
     assert key is None
     assert context is None
+
+
+def test_parse_table_blocks_skips_a_directive_and_table_inside_a_fenced_code_block() -> None:
+    """A documentation code sample showing the directive/table syntax must
+    never be parsed as a real directive/table -- the same guarantee
+    `build_report.py`'s `apply_table_styles` already gave the HTML rewrite,
+    now shared with this module's own scan via `FenceTracker` (T4+T5 review
+    R3-fence-unaware-html-rewrite, generalized to the shared parser)."""
+    doc = (
+        "# Ejemplo\n\n"
+        "```markdown\n"
+        "<!-- table-style: example purpose=reference -->\n"
+        "| Name | Score |\n"
+        "| ---- | ----- |\n"
+        "| Ana  | 9     |\n"
+        "```\n"
+    )
+    assert parse_table_blocks(doc) == []
