@@ -19,7 +19,13 @@ The design predates the document-workflow phases (`tools/doc_status.py` intake �
 - RDD: on (global); review per slice.
 
 ## Tasks
-- [ ] T1 (PR1, #12) confirmed structure contract: R1-R8 in `tools/test_structure_contract.py` and routing tests; `validate_report.py` final structure validation; unconfirmed structure blocks downstream phases via `doc_status`. Reuse `661fa6e` where it fits. Route: delegated writer.
+- [x] T1 (PR1, #12) confirmed structure contract: R1-R8 in `tools/test_structure_contract.py` and routing tests; `validate_report.py` final structure validation; unconfirmed structure blocks downstream phases via `doc_status`. Reuse `661fa6e` where it fits. Route: delegated writer.
+  - Commit `32dca9d` `feat(structure): establish confirmed report contract`.
+  - New `tools/structure_contract.py` (combine sources, schema, confirmation state/staleness); `tools/validate_report.py` gains `structure_validation` wired into `metadata_validation`; `tools/doc_status.py::_phase_intake` gates on `structure_confirmation_state` only when a report declares `structure:` at all (zero blast radius on the 85 pre-existing `doc_status` tests, none of which set that key — verified).
+  - RED: `.venv/bin/python -m pytest tools/test_structure_contract.py -q` failed to collect (`ModuleNotFoundError: structure_contract`) with the implementation stashed; restored, then GREEN: `8 passed`.
+  - Full suite before: `1008 passed`. After T1: `1018 passed` (`.venv/bin/python -m pytest tools/ tests/ -q`).
+  - `git show 32dca9d --stat --shortstat`: 6 files changed, 832 insertions(+) — over the ~400 advisory heuristic (documented below).
+  - Deviation from design: no `report.yml.structure.version`/hash-store departure; kept design's additive `structure:` block as specified. Gate activation is presence-based (`structure:` key must exist) rather than unconditional, per the design's own migration note ("new gates activate only when the new structure/evidence contract is present") — this was necessary to avoid retrofitting ~85 unrelated `doc_status` fixtures; documented as an implementation-level bounding of R6, not a product-decision gap.
 - [ ] T2 (PR2, #11) evidence package matrix: R9-R12 in `tools/test_evidence_contract.py`; the research phase gate validates the matrix structurally. Route: delegated writer.
 - [ ] T3 (PR3, #11) source quality and citation reciprocity: R13-R16. Route: delegated writer.
 - [ ] T4 (PR4, #11) visual provenance through the final gate: R17. Route: delegated writer.
