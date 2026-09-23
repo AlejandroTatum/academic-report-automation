@@ -39,6 +39,11 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from lxml import etree
 
+from table_directives import DIRECTIVE_RE as TABLE_STYLE_DIRECTIVE_RE
+from table_directives import context_for_table
+from table_docx_tokens import render_styled_table_docx
+from table_model import TableStylesContext, resolve_table_style
+
 from build_latex_report import (
     ASSETS_DIR,
     FIGURE_SUFFIXES,
@@ -678,6 +683,12 @@ class DocxRenderer:
         self.bibliography: list[tuple[int, str, dict[str, str]]] = []
         self.bibliography_title = DEFAULT_BIBLIOGRAPHY_TITLE
         self._active_num_id: int | None = None
+        # Opt-in only (issue #13): a report that never declares
+        # `table_styles: {enabled: true}` keeps the exact legacy
+        # single-style table renderer (render_table, below).
+        self.table_styles: TableStylesContext | None = (
+            TableStylesContext.from_config(config) if config.table_styles_enabled else None
+        )
 
     # -- primitives --------------------------------------------------------
 
@@ -841,6 +852,22 @@ class DocxRenderer:
                     cell._tc.get_or_add_tcPr().append(shading)
         repeat_table_header(table.rows[0])
 
+    def render_styled_table(self, table_key: str, header: list[str], rows: list[list[str]], context) -> None:
+        assert self.table_styles is not None
+        request = self.table_styles.request_for(table_key, context)
+        receipt = resolve_table_style(request, self.table_styles.catalog)
+        style = self.table_styles.catalog.styles[receipt.style_id]
+        table = render_styled_table_docx(
+            document=self.document,
+            header=header,
+            rows=rows,
+            style=style,
+            status_indicators=self.table_styles.catalog.status_indicators,
+            fill_cell=self._fill_cell,
+            emphasis_column=context.emphasis_column,
+        )
+        repeat_table_header(table.rows[0])
+
     def render_figure(self, caption: str, source: str) -> None:
         if source.startswith(("http://", "https://", "data:")):
             self.warn(
@@ -934,6 +961,12 @@ class DocxRenderer:
                 index += 1
                 continue
 
+            # A table-style directive (issue #13) is an inert HTML comment:
+            # never visible text, whether or not table_styles is active.
+            if TABLE_STYLE_DIRECTIVE_RE.match(stripped):
+                index += 1
+                continue
+
             fence = CODE_FENCE_RE.match(stripped)
             if fence:
                 closing = find_closing_fence(fence.group("marker")[0], index + 1)
@@ -950,12 +983,25 @@ class DocxRenderer:
             if "|" in stripped and index + 1 < len(lines) and is_table_separator(lines[index + 1]):
                 flush_paragraph()
                 close_list()
+                table_start = index
                 rows = [split_table_row(stripped)]
                 index += 2
                 while index < len(lines) and lines[index].strip() and "|" in lines[index]:
                     rows.append(split_table_row(lines[index]))
                     index += 1
-                self.render_table(rows)
+                if self.table_styles is not None:
+                    header, body_rows = rows[0], rows[1:]
+                    table_key, context = context_for_table(lines, table_start, header, body_rows)
+                    if table_key is None:
+                        raise SystemExit(
+                            f"Tabla sin directiva table-style en la línea {table_start + 1}: "
+                            "con table_styles.enabled: true en report.yml, cada tabla debe "
+                            "declarar '<!-- table-style: <key> purpose=... -->' inmediatamente "
+                            "antes (issue #13; sin estilo genérico de reemplazo)."
+                        )
+                    self.render_styled_table(table_key, header, body_rows, context)
+                else:
+                    self.render_table(rows)
                 continue
 
             if stripped.startswith("finalanswer{") and stripped.endswith("}"):

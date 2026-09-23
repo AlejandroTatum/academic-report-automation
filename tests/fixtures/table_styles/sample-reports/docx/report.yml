@@ -1,0 +1,16 @@
+# Fixture report for issue #13's DOCX backend contract harness (T4).
+# Runs through the real build_docx_report.py pipeline.
+type: essay
+backend: docx
+output: docx
+route: academic
+
+table_styles:
+  enabled: true
+
+metadata:
+  title: "Fixture: contextual table styles (DOCX)"
+  subject: "Issue 13"
+  teacher: "N/A"
+  student: "Fixture"
+  date: "2026-09-22"
