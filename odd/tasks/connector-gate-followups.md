@@ -20,7 +20,7 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
 
 ## Tasks
 - [x] T1 undirected links: read the declared link type from the `.mmd` source (same stem as the SVG); skip direction/marker checks for undirected links; missing source falls back to the current strict rule and reports that it did. Route: delegated writer.
-- [ ] T2 one shared guard helper for both audit entry points that turns any geometry exception (including `IndexError`) into a finding. Route: delegated writer.
+- [x] T2 one shared guard helper for both audit entry points that turns any geometry exception (including `IndexError`) into a finding. Route: delegated writer.
 - [ ] T3 necessary-crossing exemption: exempt a crossing only when no alternative route around protected regions exists; otherwise fail. Route: delegated writer.
 
 ## Acceptance
@@ -48,5 +48,28 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
     no-source fallback case.
   - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1187 passed.
 
+- T2 done, commit `dd03ea5` (7 files changed, 119 insertions(+), 18 deletions(-)).
+  - RED: `test_malformed_path_data_raises_indexerror_uncaught` (documents the
+    underlying defect, stays RED forever by design),
+    `test_connector_audit_indexerror_becomes_a_reported_finding`
+    (tools/test_visual_builder_validate.py),
+    `test_indexerror_becomes_a_reported_error_not_a_crash`
+    (tools/test_validate_report_connector_wiring.py) — both observed
+    failing (uncaught `IndexError`) before wiring `run_geometry_audit` in.
+    Note: `run_geometry_audit` itself and its two direct unit tests
+    (`test_run_geometry_audit_converts_indexerror_into_a_finding`,
+    `..._passes_through_a_clean_result`) were written together with the
+    helper rather than test-first — a narrow TDD-ordering gap on that one
+    low-level function; the two entry-point wiring tests carried the real
+    RED/GREEN evidence for #43's reported behavior.
+  - GREEN: same tests pass after adding
+    `connector_geometry.run_geometry_audit` and wiring it into
+    `visual_builder.py`'s `command_validate` and
+    `validate_report.py`'s `connector_final_size_validation`, replacing
+    both previously-divergent `except (...)` tuples.
+  - Fixture: `mmdc-malformed-indexerror.svg` (synthetic, deliberately
+    malformed `d` path data — odd coordinate count triggers the crash).
+  - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1192 passed.
+
 ## Next step
-Delegate T2.
+Delegate T3.
