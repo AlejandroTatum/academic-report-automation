@@ -15,6 +15,7 @@ import pytest
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
+FIXTURES = TOOLS / "fixtures" / "connector_geometry"
 
 import visual_builder as vb  # noqa: E402
 
@@ -55,3 +56,18 @@ def test_connector_audit_indexerror_becomes_a_reported_finding(tmp_path) -> None
     message = str(excinfo.value)
     assert "VALIDATION FAILED" in message
     assert "corrupted.svg" in message or str(bad_svg) in message
+
+
+def test_no_source_informational_finding_is_shown(capsys) -> None:
+    """R3-no-source-info-dropped-in-validate (#43, native review): a clean
+    SVG with no matching ``.mmd`` still passes validation, but the
+    CONNECTOR_DIRECTION_NO_SOURCE informational finding must be visible in
+    the command's own output -- not silently dropped because it isn't a
+    FAILURE."""
+    clean_svg = FIXTURES / "mmdc-touching-clean.svg"
+    args = vb.build_parser().parse_args(["validate", str(clean_svg), "--no-metadata"])
+    rc = vb.command_validate(args)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "VALIDATION_OK" in out
+    assert "CONNECTOR_DIRECTION_NO_SOURCE" in out

@@ -498,3 +498,79 @@ def test_inconclusive_proof_keeps_failing_past_the_vertex_budget() -> None:
     )
     assert cg._has_alternative_route(edge.points[0], edge.points[-1], [(n.x0, n.y0, n.x1, n.y1) for n in obstacles], other, diagram.bounds) is None
     assert cg._crossing_is_provably_necessary(diagram, edge, other) is False
+
+
+# --- Native review hardening (#43, post-delivery) ------------------------------
+
+
+def test_alternative_route_around_blockers_tip_is_found() -> None:
+    """R3-visibility-graph-omits-blocker-vertices: with zero other
+    obstacles, a detour around EITHER end of the blocking connector
+    trivially exists in the open plane -- the visibility graph must
+    include the blocker's own vertices as candidate waypoints, or it has
+    nothing to route around its tip with and wrongly concludes "no
+    alternative route" (a false, fail-open exemption)."""
+    e1 = cg.Edge("L_A_B_0", "A", "B", [(10.0, 10.0), (90.0, 90.0)], "pointEnd")
+    e2 = cg.Edge("L_C_D_0", "C", "D", [(40.0, 60.0), (60.0, 40.0)], "pointEnd")
+    diagram = cg.Diagram(
+        nodes=[cg.Node("A", 5.0, 5.0, 15.0, 15.0), cg.Node("B", 85.0, 85.0, 95.0, 95.0)],
+        edges=[e1, e2],
+        markers={"pointEnd": "auto"},
+        regions=[],
+        parse_issues=[],
+        bounds=(0.0, 0.0, 100.0, 100.0),
+    )
+    assert cg._crossing_is_provably_necessary(diagram, e1, e2) is False
+    assert cg.CONNECTOR_CROSSING in failure_tags(cg.crossing_issues(diagram))
+
+
+def test_no_declared_bounds_is_inconclusive_not_a_false_exemption() -> None:
+    """R2-no-bounds-inconclusive-contradiction: the module's own docstring
+    says "no bounds to reason within" is one of the inconclusive cases, but
+    an undeclared viewBox used to fall through to an effectively unbounded
+    search instead of actually returning the documented inconclusive
+    result -- silently granting an exemption the decision never proves
+    (the #43 T3 rule only reasons "within the diagram's own bounds")."""
+    e1 = cg.Edge("L_A_B_0", "A", "B", [(10.0, 10.0), (90.0, 90.0)], "pointEnd")
+    e2 = cg.Edge("L_C_D_0", "C", "D", [(40.0, 60.0), (60.0, 40.0)], "pointEnd")
+    assert cg._has_alternative_route(e1.points[0], e1.points[-1], [], e2, None) is None
+    diagram = cg.Diagram(
+        nodes=[cg.Node("A", 5.0, 5.0, 15.0, 15.0), cg.Node("B", 85.0, 85.0, 95.0, 95.0)],
+        edges=[e1, e2],
+        markers={"pointEnd": "auto"},
+        regions=[],
+        parse_issues=[],
+        bounds=None,
+    )
+    assert cg._crossing_is_provably_necessary(diagram, e1, e2) is False
+
+
+def test_link_regex_does_not_mistake_ox_prefixed_target_for_a_terminator() -> None:
+    """R3-link-regex-o-x-node-prefix: a target id that merely STARTS with
+    'o' or 'x' (``ox``, ``xray``) must parse as that whole id, not as a
+    circle/cross line terminator swallowing the id's first letter."""
+    directions = cg.parse_link_directions("flowchart LR\n  A --- ox\n  A --> xray\n")
+    assert ("A", "ox") in directions
+    assert directions[("A", "ox")] == [False]
+    assert ("A", "xray") in directions
+    assert directions[("A", "xray")] == [True]
+
+
+def test_unreadable_mmd_source_falls_back_to_strict_mode(tmp_path) -> None:
+    """R4-mmd-read-failure-masks-geometry-audit: an unreadable/undecodable
+    ``.mmd`` (not merely a missing one) must not raise past
+    ``load_link_directions`` and abort or mask the whole geometry audit --
+    it must fall back to strict mode with the same informational finding a
+    genuinely missing source gets."""
+    svg_path = tmp_path / "diagram.svg"
+    svg_path.write_text(
+        (FIXTURES / "mmdc-undirected-clean.svg").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "diagram.mmd").write_bytes(b"\xff\xfe\x00not valid utf-8")
+
+    assert cg.load_link_directions(svg_path) is None
+    issues = cg.audit_connector_geometry(svg_path)
+    assert cg.CONNECTOR_AUDIT_ERROR not in failure_tags(issues)
+    assert cg.CONNECTOR_DIRECTION in failure_tags(issues)  # strict fallback: L_A_B_0 has no end marker
+    info = [i for i in issues if i.tag == cg.CONNECTOR_DIRECTION_NO_SOURCE]
+    assert len(info) == 1

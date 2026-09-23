@@ -24,7 +24,7 @@ from textwrap import dedent
 from connector_geometry import audit_connector_geometry, run_geometry_audit
 from report_config import CONTENT_ROOT
 from visual_metadata import validate_visual_manifest
-from visual_pdf_auditor import FAILURE
+from visual_pdf_auditor import FAILURE, INFO
 
 ROOT = Path(__file__).resolve().parents[1]
 # Toolchain: node_modules is reinstalled with the code, so it stays CODE.
@@ -391,11 +391,16 @@ def command_validate(args: argparse.Namespace) -> int:
             # reported finding here too, through the same guard
             # validate_report.py's final-size stage uses (#43 T2) — one bad
             # file must not crash an entire folder validate run.
-            errors.extend(
-                f"{i.tag}: {i.detail}"
-                for i in run_geometry_audit(file.name, lambda file=file: audit_connector_geometry(file))
-                if i.level == FAILURE
-            )
+            issues = run_geometry_audit(file.name, lambda file=file: audit_connector_geometry(file))
+            errors.extend(f"{i.tag}: {i.detail}" for i in issues if i.level == FAILURE)
+            # INFO findings (e.g. CONNECTOR_DIRECTION_NO_SOURCE) never block
+            # validation, but they must still be visible -- silently
+            # dropping them would hide that the direction/marker check ran
+            # in its strict fallback mode (R3-no-source-info-dropped-in-
+            # validate, native review).
+            for i in issues:
+                if i.level == INFO:
+                    print(f"INFO {i.tag}: {i.detail}")
     if target.is_dir() and not args.no_metadata:
         errors.extend(metadata_errors(target))
     if errors:

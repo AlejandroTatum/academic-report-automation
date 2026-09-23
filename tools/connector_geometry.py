@@ -710,10 +710,11 @@ def _edges_cross(e1: Edge, e2: Edge) -> bool:
 # the crossing still fails -- the pre-#43 always-fail behaviour, which this
 # only narrows, never widens past what is actually proven.
 
-# Hard cap on visibility-graph vertices (2 endpoints + 4 per obstacle): keeps
-# the O(V^2) all-pairs visibility check bounded on real diagrams carrying
-# many nodes/regions. Past this, the proof is inconclusive by construction --
-# the crossing keeps failing, the same safe default as having no proof at all.
+# Hard cap on visibility-graph vertices (2 endpoints + 4 per obstacle + every
+# blocker vertex): keeps the O(V^2) all-pairs visibility check bounded on
+# real diagrams carrying many nodes/regions. Past this, the proof is
+# inconclusive by construction -- the crossing keeps failing, the same safe
+# default as having no proof at all.
 MAX_VISIBILITY_VERTICES = 60
 
 
@@ -758,46 +759,69 @@ def _has_alternative_route(
     """Whether *start* can reach *end* by a route of straight segments that
     stays within *bounds*, never crosses an obstacle's interior, and never
     crosses *blocker*'s own polyline -- a standard corner visibility graph
-    over ``{start, end} + every obstacle corner``: the shortest route around
-    axis-aligned rectangles always bends only at their corners, so this
-    construction is exact, not a heuristic.
+    over ``{start, end} + every obstacle corner + every blocker vertex}``:
+    the shortest route around axis-aligned rectangles always bends only at
+    their corners, so this construction is exact, not a heuristic --
+    *blocker* contributes its own vertices too, since a zero-width obstacle
+    has no corners of its own to route around otherwise (a route legitimately
+    going around one of its ends must be able to pivot exactly there).
 
-    Returns ``None`` (inconclusive) once the vertex budget is exceeded; the
+    Returns ``None`` (inconclusive) when *bounds* is absent -- the #43 T3
+    decision only reasons "within the diagram's own bounds", so without a
+    declared viewBox there is nothing to prove within, not an unbounded
+    plane to search freely -- or once the vertex budget is exceeded; the
     caller must then treat the crossing as NOT proven necessary, never as
     proven exempt.
     """
-    if bounds is not None:
-        # *start*/*end* are the edge's own required endpoints, not part of
-        # the alternative route being searched for -- a declared viewBox
-        # that happens not to enclose one of them (a stray node placed
-        # outside it) must never trap the search into a false "no route
-        # exists" just because the endpoint itself sits outside bounds.
-        x0, y0, x1, y1 = bounds
-        xs, ys = (start[0], end[0]), (start[1], end[1])
-        bounds = (min(x0, *xs), min(y0, *ys), max(x1, *xs), max(y1, *ys))
+    if bounds is None:
+        return None
+    # *start*/*end* are the edge's own required endpoints, not part of the
+    # alternative route being searched for -- a declared viewBox that
+    # happens not to enclose one of them (a stray node placed outside it)
+    # must never trap the search into a false "no route exists" just
+    # because the endpoint itself sits outside bounds.
+    x0, y0, x1, y1 = bounds
+    xs, ys = (start[0], end[0]), (start[1], end[1])
+    bounds = (min(x0, *xs), min(y0, *ys), max(x1, *xs), max(y1, *ys))
+
     corners = [
         (x, y)
         for x0, y0, x1, y1 in obstacles
         for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
-        if bounds is None or _point_within_bounds((x, y), bounds)
+        if _point_within_bounds((x, y), bounds)
     ]
-    vertices = [start, end, *corners]
+    blocker_vertices = [p for p in blocker.points if _point_within_bounds(p, bounds)]
+    vertices = [start, end, *corners, *blocker_vertices]
     if len(vertices) > MAX_VISIBILITY_VERTICES:
         return None
 
     def blocked(a, b) -> bool:
-        if bounds is not None and not (_point_within_bounds(a, bounds) and _point_within_bounds(b, bounds)):
+        if not (_point_within_bounds(a, bounds) and _point_within_bounds(b, bounds)):
             return True
         if any(_segment_crosses_bbox_interior(a, b, box) for box in obstacles):
             return True
-        # Unlike an obstacle box (which has an interior/exterior, so merely
-        # touching its boundary while staying outside is a legitimate way to
-        # route around it), *blocker* is a zero-width curve: any shared
-        # point at all -- including a single tangent touch -- is contact a
-        # route claiming to "avoid" it cannot have. Strict-crossing-only
-        # here would let a route flip sides by grazing exactly one point of
-        # *blocker*, which is not a real alternative route.
-        return any(_segments_intersect(a, b, p1, p2) for p1, p2 in zip(blocker.points, blocker.points[1:]))
+        for p1, p2 in zip(blocker.points, blocker.points[1:]):
+            if a in (p1, p2) or b in (p1, p2):
+                # This visibility edge starts or ends exactly at one of
+                # *blocker*'s own vertices -- the intentional pivot point a
+                # route legitimately going around its tip bends at, not a
+                # crossing. Two segments sharing only that single endpoint
+                # can never strictly cross elsewhere along their length, so
+                # there is nothing further to check against this specific
+                # adjacent blocker segment.
+                continue
+            # Unlike an obstacle box (which has an interior/exterior, so
+            # merely touching its boundary while staying outside is a
+            # legitimate way to route around it), *blocker* is a
+            # zero-width curve: any OTHER shared point -- including a
+            # single tangent touch away from its own vertices -- is
+            # contact a route claiming to "avoid" it cannot have.
+            # Strict-crossing-only here would let a route flip sides by
+            # grazing exactly one point of *blocker*'s body, which is not
+            # a real alternative route.
+            if _segments_intersect(a, b, p1, p2):
+                return True
+        return False
 
     adjacency: list[list[int]] = [[] for _ in vertices]
     for i in range(len(vertices)):
@@ -819,11 +843,14 @@ def _has_alternative_route(
 
 
 def _crossing_is_provably_necessary(diagram: Diagram, e1: Edge, e2: Edge) -> bool:
-    """True only when the gate can PROVE neither edge has an alternative
-    route around the other. Checking just one edge's total routing freedom
-    against the other's fixed, as-rendered path is sufficient proof per the
-    accepted decision ("every route for one of the edges must cross the
-    other"); an inconclusive check never grants the exemption."""
+    """True only when the gate can PROVE, within the diagram's own declared
+    bounds, that neither edge has an alternative route around the other.
+    Checking just one edge's total routing freedom against the other's
+    fixed, as-rendered path is sufficient proof per the accepted decision
+    ("every route for one of the edges must cross the other"); a ``None``
+    (inconclusive) result -- no declared bounds to reason within, or the
+    visibility-graph vertex budget exceeded -- is never treated as ``False``
+    and never grants the exemption, only an explicit, proven ``False`` does."""
     for edge, blocker in ((e1, e2), (e2, e1)):
         obstacles = _obstacles_for_edge(diagram, edge)
         if _has_alternative_route(edge.points[0], edge.points[-1], obstacles, blocker, diagram.bounds) is False:
@@ -955,7 +982,15 @@ _LINK_SHAPE = (
 _LINK_ARROW = (
     r"(?P<lhead><)?(?P<lpunct>[-=.]{2,})"
     r"(?:\s*\|[^|]*\||\s+[^-=.\n]+?(?=\s*[-=.]{2,}))?"
-    r"\s*(?P<rpunct>[-=.]{0,})(?P<rhead>[>ox])?"
+    # 'o'/'x' end a circle/cross terminator only when NOT immediately
+    # followed by another identifier character -- otherwise it is the start
+    # of the target's own id (R3-link-regex-o-x-node-prefix, native review:
+    # "A --- ox" or "A --> xray" must parse "ox"/"xray" whole, not swallow
+    # their first letter as a terminator). A rare, accepted trade-off: a
+    # genuine circle/cross terminator glued directly to its target with no
+    # separating space (e.g. "A --oB") is not recognized either -- routine
+    # Mermaid usage always separates the target with whitespace.
+    r"\s*(?P<rpunct>[-=.]{0,})(?P<rhead>[>ox](?!\w))?"
     r"(?:\s*\|[^|]*\|)?"
 )
 _LINK_RE = re.compile(rf"(?P<src>{_LINK_ID}){_LINK_SHAPE}\s*{_LINK_ARROW}\s*(?P<tgt>{_LINK_ID})")
@@ -1061,10 +1096,26 @@ def _source_candidates(svg_path: Path) -> list[Path]:
 def load_link_directions(svg_path: Path) -> dict[tuple[str, str], list[bool]] | None:
     """Declared link directions from *svg_path*'s ``.mmd`` source (see
     ``_source_candidates``), or ``None`` when none of the candidate
-    locations exist."""
+    locations exist OR the ones that do exist cannot be read as text.
+
+    An unreadable/undecodable ``.mmd`` (permission error, binary garbage, a
+    non-UTF-8 encoding) is treated exactly like a missing one -- falling
+    back to the strict direction rule with its informational finding --
+    instead of raising past this function. A raised exception here would
+    otherwise escape all the way to ``run_geometry_audit``'s broad guard and
+    get reported as one opaque ``CONNECTOR_AUDIT_ERROR``, masking every
+    other, unrelated geometry finding (through-node, crossing, clearance)
+    the rest of the audit would have correctly produced for the same file
+    (R4-mmd-read-failure-masks-geometry-audit, native review).
+    """
     for source in _source_candidates(svg_path):
-        if source.exists():
-            return parse_link_directions(source.read_text(encoding="utf-8"))
+        try:
+            if not source.exists():
+                continue
+            text = source.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        return parse_link_directions(text)
     return None
 
 
