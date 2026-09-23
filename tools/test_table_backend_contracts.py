@@ -131,6 +131,32 @@ def test_issue_13_backend_style_coherence_latex_unknown_status_marker_blocks() -
         )
 
 
+def _braces_balanced(segment: str) -> bool:
+    return segment.count("{") == segment.count("}")
+
+
+@pytest.mark.parametrize(
+    "style_id",
+    sorted(sid for sid in APPROVED_STYLE_IDS if CATALOG.styles[sid].tokens["header"] == "dark_shaded"),
+)
+def test_issue_13_backend_style_coherence_latex_dark_header_braces_stay_in_cell(style_id: str) -> None:
+    """R3: a dark_shaded header group must not span `&` or the row terminator.
+
+    A TeX group opened before the first cell and closed after `\\\\` makes
+    `&` end that group early -- "Missing } inserted" / "Extra alignment
+    tab" when compiling.
+    """
+    style = CATALOG.styles[style_id]
+    lines = render_styled_table_latex(
+        header=HEADER, rows=ROWS, style=style,
+        status_indicators=CATALOG.status_indicators,
+        convert_inline=_identity_convert_inline,
+    )
+    header_row = lines[lines.index(r"\rowcolor[gray]{0.25}") + 1]
+    cells = header_row.rstrip().removesuffix(r" \\").split(" & ")
+    assert all(_braces_balanced(cell) for cell in cells), header_row
+
+
 def test_issue_13_backend_style_coherence_latex_column_emphasis_needs_index() -> None:
     style = CATALOG.styles["TAB-CE-05"]
     with pytest.raises(ValueError, match="emphasis_column"):

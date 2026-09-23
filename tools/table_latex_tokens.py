@@ -120,7 +120,8 @@ def render_styled_table_latex(
         lines.append(header_line)
     elif tokens["header"] == "dark_shaded":
         lines.append(r"\rowcolor[gray]{0.25}")
-        lines.append("{\\color{white} " + header_line + "}")
+        colored_cells = ["{\\color{white} " + cell + "}" for cell in header_cells]
+        lines.append(" & ".join(colored_cells) + r" \\")
     else:
         lines.append(header_line)
     lines.append(r"\hline")
