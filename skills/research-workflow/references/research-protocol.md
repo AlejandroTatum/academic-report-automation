@@ -12,6 +12,8 @@ Classify a local source with `inspected: true` as `eligible` for final citation.
 
 Do not use a search-result snippet as evidence. Do not represent a secondary description as a primary finding. If a source is unavailable, paywalled, undated, or unverifiable, flag that condition and its `lead` status in the source inventory.
 
+`tools/source_quality.py` (`evaluate_source_quality`) checks authority, relevance, currency, primary/secondary status, peer review, and accessibility, and rejects a fabricated, unverifiable, irrelevant, superseded, or unsuitable source with a named reason; a qualified source's judgment and rationale are retained.
+
 ## 3. Capture claim-level evidence
 
 Create one evidence-matrix row per claim. Give it a stable claim ID and record the exact claim, source locator, verbatim evidence, and the linked source's eligibility/status. If exact wording cannot be captured, label the entry `Paraphrase — verify against source`; never present it as a quotation. Record how the evidence supports, qualifies, or fails to support the claim, plus confidence and limitations.

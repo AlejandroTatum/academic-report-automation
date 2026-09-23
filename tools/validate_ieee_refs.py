@@ -12,6 +12,10 @@ from pathlib import Path
 
 from report_config import ReportConfig, load_report_config
 
+# `evidence_contract` imports `ValidationResult` from this module at its own
+# module scope, so importing it back here at module scope would cycle.
+# `validate_ieee` below imports it lazily instead.
+
 
 @dataclass
 class ValidationResult:
@@ -87,6 +91,82 @@ def has_bib_doi(bib_text: str, key: str) -> bool:
     return bool(entry and re.search(r"\bdoi\s*=", entry.group("body"), re.I))
 
 
+def malformed_bib_entries(bib_text: str) -> list[str]:
+    """BibTeX keys whose entry is missing ``author`` or ``title`` -- the
+    minimum an IEEE-rendered bibliography needs (#11 R16)."""
+    malformed: list[str] = []
+    for match in re.finditer(
+        r"@\w+\s*\{\s*([^,\s]+)\s*,(?P<body>.*?)(?=\n@\w+\s*\{|\Z)", bib_text, re.S
+    ):
+        key = match.group(1)
+        body = match.group("body")
+        if not re.search(r"\btitle\s*=", body, re.I) or not re.search(r"\bauthor\s*=", body, re.I):
+            malformed.append(key)
+    return malformed
+
+
+def claim_support_and_reciprocity(
+    claims: list[dict],
+    bib_text: str,
+    source_text: str,
+    justified_unused: set[str] | None = None,
+) -> ValidationResult:
+    """#11 R15/R16: claim support and citation/bibliography reciprocity.
+
+    Every drafted claim retains an in-text citation that resolves to one
+    BibTeX entry (missing ``citation_key``, a key absent from the body/tex,
+    or a key absent from BibTeX are each a named failure); every citation
+    used in the body resolves to a BibTeX entry; every BibTeX entry is
+    either cited or explicitly justified (``justified_unused``); a
+    duplicate ``citation_key`` across claims is rejected; a malformed
+    BibTeX entry (missing author/title) is rejected.
+    """
+    result = ValidationResult()
+    justified_unused = justified_unused or set()
+    keys = bib_keys(bib_text)
+    cited = cited_keys(source_text)
+
+    seen_citation_keys: dict[str, str] = {}
+    for claim in claims:
+        claim_id = str(claim.get("claim_id") or "<sin id>")
+        citation_key = str(claim.get("citation_key") or "").strip()
+        if not citation_key:
+            result.errors.append(f"Claim {claim_id}: sin citation_key (unsupported)")
+            continue
+        if citation_key in seen_citation_keys:
+            result.errors.append(
+                f"citation_key duplicado entre claims: '{citation_key}' "
+                f"({seen_citation_keys[citation_key]} y {claim_id})"
+            )
+        seen_citation_keys[citation_key] = claim_id
+        if citation_key not in cited:
+            result.errors.append(
+                f"Claim {claim_id}: citation_key '{citation_key}' no aparece citado en el cuerpo"
+            )
+        if citation_key not in keys:
+            result.errors.append(
+                f"Claim {claim_id}: citation_key '{citation_key}' no resuelve a una entrada BibTeX"
+            )
+
+    missing = sorted(cited - keys)
+    if missing:
+        result.errors.append("Citas sin entrada BibTeX: " + ", ".join(missing))
+
+    unused = sorted(keys - cited - justified_unused)
+    if unused:
+        result.errors.append(
+            "Entradas de bibliografía no citadas y sin justificación: " + ", ".join(unused)
+        )
+
+    malformed = malformed_bib_entries(bib_text)
+    if malformed:
+        result.errors.append(
+            "Entradas BibTeX mal formadas (falta author o title): " + ", ".join(malformed)
+        )
+
+    return result
+
+
 def validate_ieee(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     body_text = read_text(config.body_path)
@@ -97,6 +177,21 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
 
     if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and not config.bib_path and ("[@" in body_text or "\\cite" in tex_text):
         result.errors.append("Hay citas en el cuerpo, pero no existe sources.bib/bibliography configurada")
+
+    # #11 R15/R16: once a report has written research/evidence.yml, claim
+    # support and citation/bibliography reciprocity block the build exactly
+    # like any other IEEE failure. Lazy import: see the module-cycle note
+    # near the top of this file. Presence-gated like every other new gate
+    # in this feature -- a report without evidence.yml is untouched.
+    from evidence_contract import evidence_gate_engaged, load_evidence_package
+
+    if evidence_gate_engaged(config.folder):
+        package = load_evidence_package(config.folder) or {}
+        claims = package.get("claims") if isinstance(package, dict) else None
+        claims = claims if isinstance(claims, list) else []
+        justified_unused = set(config.raw.get("bibliography_justifications") or [])
+        reciprocity = claim_support_and_reciprocity(claims, bib_text, source_text, justified_unused)
+        result.errors.extend(reciprocity.errors)
 
     keys = bib_keys(bib_text)
     cited = cited_keys(source_text)
