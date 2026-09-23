@@ -18,7 +18,7 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 - RDD: on (global); review per slice.
 
 ## Tasks
-- [ ] T1 catalog + selector (R1-R4). Route: delegated writer.
+- [x] T1 catalog + selector (R1-R4). Route: delegated writer.
 - [ ] T2 context model, override precedence, receipts (R5-R8). Route: delegated writer.
 - [ ] T3 LaTeX tokens (R9 latex). Route: delegated writer.
 - [ ] T4 DOCX tokens (R9 docx). Route: delegated writer.
@@ -29,6 +29,33 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 
 ## Progress / evidence
 - Branch `feat/contextual-table-styles` from `main` d185e29.
+- T1 done (23788da `feat(tables): catalog selector`). RED confirmed on parent
+  (`ModuleNotFoundError: table_styles`) before `tools/table_styles.py`
+  existed; GREEN after implementation. `templates/table_styles.yml` +
+  `tools/table_styles.py` + `tools/test_table_styles.py`
+  (+648 lines: yml 205, table_styles.py 325, tests 118).
+  RED/GREEN tests: `test_issue_13_exact_versioned_catalog`,
+  `test_issue_13_catalog_is_runtime_self_contained`,
+  `test_issue_13_context_matrix_is_deterministic`,
+  `test_issue_13_applicability_and_avoidance`. Full suite: 1055 passed
+  (baseline before this slice, verified at e4d2588 in an isolated
+  worktree: 1050; +4 from `tools/test_table_styles.py`; +1 from
+  `tools/test_no_duplicate_definitions.py`'s existing parametrize picking
+  up the new `table_styles.py` module automatically).
+  Deviation from design: added an explicit `priority` field per catalog
+  entry (design's schema names only `label`, `deprecated`, `tokens`,
+  `applicability`, `avoidance`). Determinism requires an auditable
+  tie-break when two approved styles are both applicable and not avoided
+  for the same context (e.g. `TAB-CL-01` and `TAB-TC-02` both match a
+  plain short reference table); an explicit integer is simpler and more
+  reviewable than a computed specificity score. Documented in
+  `templates/table_styles.yml`'s header.
+  Tokens/applicability/avoidance were derived once from the private
+  human-review catalog's prose (`/home/alejo/devwork/.projects/university/.reports-system/automation/reports/catalogo-estilos-tablas/body.md`,
+  read only at authoring time, never at runtime) — matches design's
+  "derived once from the catalog" instruction; `test_issue_13_catalog_is_runtime_self_contained`
+  asserts no private-path/PDF-parsing dependency survives in the shipped
+  loader or YAML.
 
 ## Next step
-Delegate T1-T5.
+T2 (context model, override precedence, receipts — R5-R8).
