@@ -1,0 +1,205 @@
+# Versioned catalog of approved contextual table styles (issue #13).
+#
+# This is the executable source of truth: it replaces runtime dependence on
+# the private evaluation PDF/body.md that originally proposed these seven
+# styles. Every entry here is derived once, by hand, from that human review
+# artifact; nothing in this repository parses a PDF or reads a private path
+# at runtime (spec `test_issue_13_catalog_is_runtime_self_contained`).
+#
+# Schema (strict — `tools/table_styles.py` rejects anything outside this
+# shape, an unapproved ID set, or a missing token/enum value):
+#
+#   schema_version: 1
+#   catalog_version: "<free string, bumped whenever tokens/rules change>"
+#   styles:
+#     <one of the seven approved IDs>:
+#       label: <human name>
+#       deprecated: <bool>
+#       priority: <int, lower wins automatic-selection ties; deliberate
+#                   extension beyond the four keys the design named, needed
+#                   because deterministic selection requires an explicit,
+#                   auditable tie-break — see odd/tasks/contextual-table-styles.md>
+#       tokens:
+#         borders: full_grid | horizontal_only | minimal
+#         header: gray_shaded | dark_shaded | plain
+#         alignment: centered | left | numeric_right
+#         padding: generous | standard | compact | minimal
+#         density: low | medium | high
+#         row_rhythm: uniform | alternating | column_emphasis
+#         palette: monochrome | functional_color | accent_color
+#         indicators: none | symbol_color
+#         caption: above | below
+#         notes: below | inline
+#       applicability:              # ALL given constraints must hold
+#         purposes: [reference | comparison | status | evidence | dense, ...]
+#         lengths: [short | long, ...]
+#         max_columns: <int>        # optional
+#         meanings: [none | comparison | status, ...]   # optional
+#         emphasis: [none | column, ...]                # optional
+#         density: [low | medium | high, ...]           # optional
+#       avoidance:                  # ANY given constraint that matches excludes the style
+#         purposes: [...]
+#         lengths: [...]
+#         meanings: [...]
+#         emphasis: [...]
+#         density: [...]
+#         color_policy: [color | grayscale, ...]
+#
+# Tokens are derived from the catalog's "Fortalezas"/"Limitaciones" prose;
+# applicability/avoidance come from its "Aplicación"/"Evitar cuando" prose.
+
+schema_version: 1
+catalog_version: "2026.09.1"
+
+styles:
+  TAB-CL-01:
+    label: "Clásico académico refinado"
+    deprecated: false
+    priority: 10
+    tokens:
+      borders: full_grid
+      header: gray_shaded
+      alignment: centered
+      padding: generous
+      density: low
+      row_rhythm: uniform
+      palette: monochrome
+      indicators: none
+      caption: above
+      notes: below
+    applicability:
+      purposes: [reference]
+      lengths: [short, long]
+      max_columns: 4
+    avoidance:
+      density: [high]
+      meanings: [status]
+      emphasis: [column]
+
+  TAB-TC-02:
+    label: "Técnico funcional con color"
+    deprecated: false
+    priority: 30
+    tokens:
+      borders: horizontal_only
+      header: dark_shaded
+      alignment: numeric_right
+      padding: standard
+      density: medium
+      row_rhythm: uniform
+      palette: functional_color
+      indicators: symbol_color
+      caption: above
+      notes: below
+    applicability:
+      purposes: [reference, comparison, status]
+      lengths: [short, long]
+    avoidance:
+      color_policy: [grayscale]
+
+  TAB-MN-03:
+    label: "Minimalista sin rejilla completa"
+    deprecated: false
+    priority: 20
+    tokens:
+      borders: minimal
+      header: plain
+      alignment: left
+      padding: standard
+      density: low
+      row_rhythm: uniform
+      palette: monochrome
+      indicators: none
+      caption: above
+      notes: below
+    applicability:
+      purposes: [reference]
+      lengths: [short]
+      max_columns: 3
+    avoidance:
+      lengths: [long]
+      meanings: [status]
+
+  TAB-ZB-04:
+    label: "Filas cebra"
+    deprecated: false
+    priority: 5
+    tokens:
+      borders: horizontal_only
+      header: gray_shaded
+      alignment: left
+      padding: standard
+      density: medium
+      row_rhythm: alternating
+      palette: monochrome
+      indicators: none
+      caption: above
+      notes: below
+    applicability:
+      purposes: [reference]
+      lengths: [long]
+    avoidance:
+      emphasis: [column]
+
+  TAB-CE-05:
+    label: "Énfasis por columna"
+    deprecated: false
+    priority: 8
+    tokens:
+      borders: full_grid
+      header: gray_shaded
+      alignment: centered
+      padding: standard
+      density: medium
+      row_rhythm: column_emphasis
+      palette: accent_color
+      indicators: none
+      caption: above
+      notes: below
+    applicability:
+      purposes: [comparison]
+      emphasis: [column]
+    avoidance:
+      purposes: [dense]
+
+  TAB-ES-06:
+    label: "Matriz de estado con indicadores"
+    deprecated: false
+    priority: 8
+    tokens:
+      borders: full_grid
+      header: gray_shaded
+      alignment: centered
+      padding: standard
+      density: medium
+      row_rhythm: uniform
+      palette: functional_color
+      indicators: symbol_color
+      caption: above
+      notes: inline
+    applicability:
+      purposes: [status]
+      meanings: [status]
+    avoidance:
+      purposes: [dense]
+
+  TAB-CC-07:
+    label: "Compacto para datos densos"
+    deprecated: false
+    priority: 10
+    tokens:
+      borders: full_grid
+      header: gray_shaded
+      alignment: left
+      padding: minimal
+      density: high
+      row_rhythm: uniform
+      palette: monochrome
+      indicators: none
+      caption: above
+      notes: below
+    applicability:
+      purposes: [dense, reference]
+      density: [high]
+    avoidance:
+      density: [low]
