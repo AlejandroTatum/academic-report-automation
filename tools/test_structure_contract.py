@@ -114,6 +114,37 @@ def test_intake_combines_supplied_assignment_sources() -> None:
     assert "words" not in resumen["limits"], "a conflicting key is never silently merged"
 
 
+def test_intake_combine_surfaces_order_conflict() -> None:
+    """A source that orders shared sections differently is a conflict too
+    (document-intake.md: "a section required by one and forbidden or
+    reordered by another blocks confirmation"), not a silently-resolved
+    first-source-wins pick."""
+    rubric = {
+        "kind": "rubric",
+        "path": "research/rubric.pdf",
+        "sections": [
+            {"title": "Resumen", "criteria": ["Summarize"]},
+            {"title": "Desarrollo", "criteria": ["Explain the solution"]},
+        ],
+    }
+    brief = {
+        "kind": "brief",
+        "path": "research/brief.pdf",
+        "sections": [
+            # Same two sections, reversed order.
+            {"title": "Desarrollo", "criteria": ["State the context"]},
+            {"title": "Resumen", "criteria": ["State objectives"]},
+        ],
+    }
+
+    combined = combine_assignment_sources([rubric, brief])
+
+    assert has_blocking_conflicts(combined), "conflicting cross-source order must block confirmation"
+    order_conflicts = [c for c in combined["conflicts"] if c.get("type") == "order"]
+    assert order_conflicts, "the order disagreement must be named as its own conflict"
+    assert order_conflicts[0]["source"] == "research/brief.pdf"
+
+
 # ---------------------------------------------------------------------------
 # R2/R3 — confirmed schema: exact titles, order, criteria, optional limits
 # ---------------------------------------------------------------------------
@@ -179,6 +210,60 @@ def test_structure_omits_unsupplied_quantitative_limits() -> None:
     assert any("al menos un criterio" in e for e in no_criteria_result.errors)
 
 
+def test_structure_rejects_non_numeric_limit_values() -> None:
+    """A limit value that is not a number (or a {min, max} of numbers) is a
+    schema error, never a crash at final validation time."""
+    bad_scalar = {
+        "version": 1,
+        "sections": [
+            {
+                "title": "Resumen",
+                "criteria": [{"text": "x", "source_ref": "rubric.pdf"}],
+                "limits": {"words": "muchas"},
+            },
+        ],
+    }
+    result = validate_structure_schema(bad_scalar)
+    assert any("words" in e and "Resumen" in e for e in result.errors)
+
+    bad_dict = {
+        "version": 1,
+        "sections": [
+            {
+                "title": "Resumen",
+                "criteria": [{"text": "x", "source_ref": "rubric.pdf"}],
+                "limits": {"words": {"max": "cincuenta"}},
+            },
+        ],
+    }
+    dict_result = validate_structure_schema(bad_dict)
+    assert any("words" in e and "Resumen" in e for e in dict_result.errors)
+
+
+def test_structure_rejects_malformed_sources_shape() -> None:
+    """A malformed 'sources' value is a schema error, not a crash when
+    confirmation state later inspects it for staleness."""
+    bad_sources = {
+        "version": 1,
+        "sources": "rubric.pdf",  # must be a list, not a bare string
+        "sections": [
+            {"title": "Resumen", "criteria": [{"text": "x", "source_ref": "rubric.pdf"}]},
+        ],
+    }
+    result = validate_structure_schema(bad_sources)
+    assert any("sources" in e for e in result.errors)
+
+    bad_entries = {
+        "version": 1,
+        "sources": ["rubric.pdf"],  # entries must be mappings, not strings
+        "sections": [
+            {"title": "Resumen", "criteria": [{"text": "x", "source_ref": "rubric.pdf"}]},
+        ],
+    }
+    entries_result = validate_structure_schema(bad_entries)
+    assert any("sources" in e for e in entries_result.errors)
+
+
 # ---------------------------------------------------------------------------
 # R4 — proposed structure requires explicit confirmation
 # ---------------------------------------------------------------------------
@@ -237,6 +322,33 @@ def test_structure_change_requires_reconfirmation(temp_report_folder: Path) -> N
     config = load_report_config(folder)
     changed_state, detail = structure_confirmation_state(config)
     assert changed_state == "stale"
+    assert "rubric.pdf" in detail
+
+
+def test_structure_missing_source_file_is_stale_not_confirmed(temp_report_folder: Path) -> None:
+    """A recorded source that disappeared from disk must never fail open
+    into 'confirmed' -- the teacher's requirement can no longer be
+    re-verified, so reconfirmation is required exactly like a changed hash."""
+    folder = temp_report_folder
+    rubric_path = folder / "rubric.pdf"
+    rubric_path.write_bytes(b"original rubric bytes")
+
+    structure = {
+        "version": 1,
+        "sources": [{"kind": "rubric", "path": "rubric.pdf", "sha256": sha256_file(rubric_path)}],
+        "sections": [
+            {"title": "Resumen", "criteria": [{"text": "Summarize", "source_ref": "rubric.pdf"}]},
+        ],
+    }
+    write_academic_report(folder, structure=structure)
+    config = load_report_config(folder)
+    state, _ = structure_confirmation_state(config)
+    assert state == "confirmed"
+
+    rubric_path.unlink()
+    config = load_report_config(folder)
+    state, detail = structure_confirmation_state(config)
+    assert state == "stale"
     assert "rubric.pdf" in detail
 
 
@@ -382,3 +494,42 @@ def test_final_structure_validation_rejects_each_mismatch(temp_report_folder: Pa
     config = _write_structured_report(overlimit_folder, COMPLIANT_STRUCTURE, long_body)
     errors = structure_validation(config).errors
     assert any("límite de palabras" in e and "Resumen" in e for e in errors)
+
+
+def test_final_structure_validation_rejects_stale_structure(temp_report_folder: Path) -> None:
+    """A confirmed-but-now-stale contract must fail final validation, never
+    silently validate the body against a superseded structure."""
+    folder = temp_report_folder
+    rubric_path = folder / "rubric.pdf"
+    rubric_path.write_bytes(b"original rubric bytes")
+    structure = {
+        "version": 1,
+        "sources": [{"kind": "rubric", "path": "rubric.pdf", "sha256": sha256_file(rubric_path)}],
+        "sections": [
+            {"title": "Resumen", "criteria": [{"text": "Summarize", "source_ref": "rubric.pdf"}]},
+        ],
+    }
+    body = "# Resumen\n\nEl resumen del trabajo.\n"
+    config = _write_structured_report(folder, structure, body)
+    assert structure_validation(config).errors == []
+
+    # The teacher revises the rubric after confirmation -- the contract is
+    # now stale, and final validation must refuse to certify against it.
+    rubric_path.write_bytes(b"revised rubric bytes -- new requirement added")
+    config = load_report_config(folder)
+    errors = structure_validation(config).errors
+    assert any("confirmad" in e.lower() or "stale" in e.lower() for e in errors)
+
+
+def test_final_structure_validation_ignores_subsection_headings(temp_report_folder: Path) -> None:
+    """A subsection heading nested under a required section must not split
+    that section's text bucket -- content criteria and word counts inside
+    the subsection still belong to the enclosing required section."""
+    body = (
+        "# Resumen\n\n"
+        "## Contexto\n\n"
+        "El objetivo del trabajo y sus resultados se explican aqui.\n\n"
+        "# Desarrollo\n\nLa solucion implementada se explica aqui.\n"
+    )
+    config = _write_structured_report(temp_report_folder, COMPLIANT_STRUCTURE, body)
+    assert structure_validation(config).errors == []

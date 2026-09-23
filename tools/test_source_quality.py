@@ -58,3 +58,38 @@ def test_research_rejects_unverifiable_or_unfit_sources() -> None:
     for judgment in (fabricated, unverifiable, irrelevant, superseded, unsuitable):
         assert judgment.rationale
         assert not judgment.eligible
+
+
+def test_research_rejects_source_with_missing_quality_fields() -> None:
+    """An unevaluated field (absent, never explicitly True) must not
+    silently pass as if it had been positively confirmed -- only a field
+    that fabrication defaults to false-when-absent (you cannot accuse
+    fabrication without evidence); verifiable/relevant/accessible must each
+    be positively established."""
+    missing_verifiable = evaluate_source_quality(qualified_source(verifiable=None))
+    assert missing_verifiable.status == "rejected"
+    assert "unverifiable" in missing_verifiable.reasons
+
+    missing_relevant = evaluate_source_quality(qualified_source(relevant=None))
+    assert missing_relevant.status == "rejected"
+    assert "irrelevant" in missing_relevant.reasons
+
+    missing_accessible = evaluate_source_quality(qualified_source(accessible=None))
+    assert missing_accessible.status == "rejected"
+    assert "unsuitable" in missing_accessible.reasons
+
+    # A source that never mentions any of these fields at all is rejected
+    # the same way -- omission is not evidence of quality.
+    unevaluated = {"authority": "IEEE", "primary_or_secondary": "primary"}
+    result = evaluate_source_quality(unevaluated)
+    assert result.status == "rejected"
+
+
+def test_research_eligible_rationale_reports_actual_year_not_unverified_currency() -> None:
+    """The rationale for an eligible source must not assert 'vigente'
+    (current) unconditionally -- currency/year is never actually evaluated
+    here, so claiming it is verified overclaims. The rationale should
+    surface the recorded year transparently instead."""
+    judgment = evaluate_source_quality(qualified_source(year=2024))
+    assert "vigente" not in judgment.rationale
+    assert "2024" in judgment.rationale

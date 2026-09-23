@@ -137,6 +137,30 @@ def test_drafting_blocks_unsupported_conflicting_or_insufficient_claims() -> Non
     assert any("C-013" in e and "insuficiente" in e.lower() for e in result.errors)
 
 
+def test_declared_insufficient_confidence_is_not_also_a_schema_error() -> None:
+    """``confidence: insufficient`` is a deliberate, recognized declaration
+    (a researcher explicitly refusing to assess evidence as high/medium/low)
+    -- not a violation of the confidence enum. It must block drafting
+    exactly once, via the drafting-block reason, not also be rejected by
+    ``validate_claim``'s confidence-level check as an invalid value."""
+    claim = complete_claim(claim_id="C-014", confidence="insufficient")
+    assert validate_claim(claim) == [], "a declared 'insufficient' confidence is schema-valid"
+
+
+def test_matrix_quotation_missing_locator_reports_once() -> None:
+    """A quotation without a locator is a single, specific failure -- not
+    the same missing-field reported twice (once generically, once by the
+    quotation-specific rule)."""
+    quotation_no_locator = complete_claim(use_type="quotation", locator="")
+    errors = validate_claim(quotation_no_locator)
+    quotation_errors = [e for e in errors if "quotation" in e]
+    assert len(quotation_errors) == 1
+    assert not any("locator" in e and "quotation" not in e for e in errors), (
+        "the generic 'faltan campos requeridos' message must not also name "
+        "locator once the quotation-specific message already covers it"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Integration — the research phase gate validates the matrix structurally
 # ---------------------------------------------------------------------------

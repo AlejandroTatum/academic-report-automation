@@ -43,6 +43,17 @@ REQUIRED_CLAIM_FIELDS = (
 
 CONFIDENCE_LEVELS = ("high", "medium", "low")
 
+# A researcher MAY declare confidence as "insufficient" -- a deliberate
+# refusal to assess (distinct from simply omitting `confidence`, which
+# `_drafting_block_reason` handles separately). It intentionally is not
+# part of `CONFIDENCE_LEVELS`: that tuple names an assessed evidence
+# strength, while this is an explicit "I could not assess this" signal.
+# `validate_claim`'s enum check accepts it alongside the real levels so a
+# legitimately declared "insufficient" claim is not ALSO rejected as an
+# invalid confidence value -- `_drafting_block_reason` is the sole place
+# that turns it into a drafting block.
+CONFIDENCE_INSUFFICIENT = "insufficient"
+
 
 def evidence_path(folder: Path) -> Path:
     return Path(folder) / EVIDENCE_RELATIVE_PATH
@@ -90,6 +101,13 @@ def validate_claim(claim: dict[str, Any]) -> list[str]:
         required = REQUIRED_CLAIM_FIELDS
 
     missing = [field for field in required if not str(claim.get(field) or "").strip()]
+    is_quotation = use_type == "quotation"
+    quotation_missing_locator = is_quotation and not str(claim.get("locator") or "").strip()
+    if quotation_missing_locator and "locator" in missing:
+        # The quotation-specific message below already names this exact
+        # condition; reporting it a second time via the generic missing-
+        # fields list would duplicate one root cause under two messages.
+        missing = [field for field in missing if field != "locator"]
     if missing:
         errors.append(f"Claim {claim_id}: faltan campos requeridos: {', '.join(missing)}")
 
@@ -101,11 +119,11 @@ def validate_claim(claim: dict[str, Any]) -> list[str]:
         elif _requires_access_date(claim) and not str(claim.get("access_date") or "").strip():
             errors.append(f"Claim {claim_id}: falta access_date para un identifier basado en URL")
 
-    if use_type == "quotation" and not str(claim.get("locator") or "").strip():
+    if quotation_missing_locator:
         errors.append(f"Claim {claim_id}: una cita textual (quotation) requiere locator exacto")
 
     confidence = str(claim.get("confidence") or "").strip().lower()
-    if confidence and confidence not in CONFIDENCE_LEVELS:
+    if confidence and confidence not in CONFIDENCE_LEVELS and confidence != CONFIDENCE_INSUFFICIENT:
         errors.append(
             f"Claim {claim_id}: confidence debe ser uno de {', '.join(CONFIDENCE_LEVELS)}"
         )
@@ -122,7 +140,7 @@ def _drafting_block_reason(claim: dict[str, Any]) -> str | None:
     if conflicts and not str(claim.get("conflict_resolution") or "").strip():
         return f"Claim {claim_id}: conflicto de fuentes sin resolver"
     confidence = str(claim.get("confidence") or "").strip().lower()
-    if confidence == "insufficient" or (not confidence and not claim.get("justification")):
+    if confidence == CONFIDENCE_INSUFFICIENT or (not confidence and not claim.get("justification")):
         return f"Claim {claim_id}: evidencia insuficiente (confidence no declarada)"
     return None
 

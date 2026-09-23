@@ -120,6 +120,29 @@ def claim_support_and_reciprocity(
     either cited or explicitly justified (``justified_unused``); a
     duplicate ``citation_key`` across claims is rejected; a malformed
     BibTeX entry (missing author/title) is rejected.
+
+    A claim entry that is not itself a mapping is a named error, never a
+    crash -- ``evidence_contract.validate_evidence_package`` applies the
+    same guard to this identical ``claims`` list.
+
+    A justified common-knowledge claim (``use_type == "common_knowledge"``
+    with a non-empty ``justification``) legitimately carries no
+    ``citation_key`` at all -- ``evidence_contract.validate_claim`` already
+    exempts it from every source/locator/identifier requirement for the
+    same reason (spec: "Common knowledge MAY omit a source only with
+    justification"). Treating its absent citation as "unsupported" here
+    would contradict that contract, so it is skipped instead.
+
+    A ``citation_key`` two DIFFERENT claims declare identically is still
+    rejected (spec scenario: "duplicate mapping"). This is not about the
+    same reference being cited by multiple claims in the rendered document
+    -- ordinary IEEE writing does that constantly, and body-level citation
+    reuse is untouched. It is about the evidence MATRIX: each row is
+    supposed to be its own distinct, individually traceable grounding, so
+    two claims sharing one ``citation_key`` signal an under-differentiated
+    or duplicated matrix entry rather than two independently verified
+    claims -- a research judgment call this validator flags for a human,
+    not a crash-worthy defect.
     """
     result = ValidationResult()
     justified_unused = justified_unused or set()
@@ -128,9 +151,18 @@ def claim_support_and_reciprocity(
 
     seen_citation_keys: dict[str, str] = {}
     for claim in claims:
+        if not isinstance(claim, dict):
+            result.errors.append("cada claim debe ser un mapeo")
+            continue
         claim_id = str(claim.get("claim_id") or "<sin id>")
+        use_type = str(claim.get("use_type") or "").strip().lower()
+        justified_common_knowledge = use_type == "common_knowledge" and str(
+            claim.get("justification") or ""
+        ).strip()
         citation_key = str(claim.get("citation_key") or "").strip()
         if not citation_key:
+            if justified_common_knowledge:
+                continue
             result.errors.append(f"Claim {claim_id}: sin citation_key (unsupported)")
             continue
         if citation_key in seen_citation_keys:
@@ -189,7 +221,8 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
         package = load_evidence_package(config.folder) or {}
         claims = package.get("claims") if isinstance(package, dict) else None
         claims = claims if isinstance(claims, list) else []
-        justified_unused = set(config.raw.get("bibliography_justifications") or [])
+        raw_justifications = config.raw.get("bibliography_justifications")
+        justified_unused = set(raw_justifications) if isinstance(raw_justifications, list) else set()
         reciprocity = claim_support_and_reciprocity(claims, bib_text, source_text, justified_unused)
         result.errors.extend(reciprocity.errors)
 

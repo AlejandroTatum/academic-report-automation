@@ -74,20 +74,28 @@ def combine_assignment_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
     the same section/key is NOT silently merged: it is recorded as a
     conflict and excluded from the combined limits, so confirmation cannot
     proceed until a human resolves it (spec: "contradictions block
-    confirmation pending resolution").
+    confirmation pending resolution"). The relative ORDER two sources imply
+    for their shared sections is a contradiction too (document-intake.md:
+    "a section required by one and forbidden or reordered by another blocks
+    confirmation") — the combined order keeps first-seen-source precedence,
+    but a later source that disagrees with it is recorded as its own
+    ``"order"`` conflict rather than silently overruled.
     """
     combined: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     provenance: list[dict[str, str]] = []
     conflicts: list[dict[str, Any]] = []
+    source_sequences: list[tuple[str, list[str]]] = []
 
     for source in sources:
         kind = source.get("kind")
         path = source.get("path")
         provenance.append({"kind": kind, "path": path})
+        sequence: list[str] = []
         for section in source.get("sections", []):
             title = str(section.get("title") or "").strip()
             norm = fold_title(title)
+            sequence.append(norm)
             if norm not in combined:
                 combined[norm] = {"title": title, "criteria": [], "limits": {}}
                 order.append(norm)
@@ -110,12 +118,39 @@ def combine_assignment_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
                 if key in entry.get("_rejected_limits", set()):
                     continue
                 entry["limits"][key] = value
+        source_sequences.append((path, sequence))
 
     sections = []
     for norm in order:
         entry = combined[norm]
         entry.pop("_rejected_limits", None)
         sections.append(entry)
+
+    # Order conflict pass: a source's own sequence, restricted to sections
+    # that ended up in the combined structure, must be non-decreasing under
+    # the combined order's index -- otherwise this source ordered a shared
+    # section differently than the combined draft does.
+    order_index = {norm: index for index, norm in enumerate(order)}
+    for path, sequence in source_sequences:
+        relative = [norm for norm in sequence if norm in order_index]
+        last_index = -1
+        for norm in relative:
+            index = order_index[norm]
+            if index < last_index:
+                conflicts.append(
+                    {
+                        "type": "order",
+                        "source": path,
+                        "section_title": combined[norm]["title"],
+                        "detail": (
+                            f"assignment source '{path}' orders "
+                            f"'{combined[norm]['title']}' differently than "
+                            "the combined structure"
+                        ),
+                    }
+                )
+                break
+            last_index = index
 
     return {"sections": sections, "provenance": provenance, "conflicts": conflicts}
 
@@ -130,6 +165,12 @@ def has_blocking_conflicts(combined: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _is_number(value: Any) -> bool:
+    """True for an int/float limit value -- excluding bool, which is
+    technically an int subclass but never a meaningful word/page/etc count."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def validate_structure_schema(structure: Any) -> ValidationResult:
     """Structural checks for a ``structure:`` contract (confirmed or draft).
 
@@ -137,7 +178,17 @@ def validate_structure_schema(structure: Any) -> ValidationResult:
     content/rubric ``criteria`` entry (#6408: criteria are mandatory).
     ``limits`` stays entirely optional per section, and only the recognised
     quantitative keys may appear — no limit is ever invented for a key the
-    assignment never declared (R3).
+    assignment never declared (R3). Every declared limit value must itself
+    be numeric (or a ``{min, max}`` mapping of numbers): a non-numeric value
+    is rejected here, as a schema error, rather than crashing later when
+    final validation compares a rendered section's word count against it.
+
+    This function only validates the confirmed/draft MAPPING form. The
+    ``"proposed"`` marker string is a separate, caller-level case (handled
+    by ``structure_confirmation_state`` before this function is ever
+    invoked) — the error message below names it only to describe every
+    value ``structure:`` may legally hold in ``report.yml``, not because
+    this function accepts it.
     """
     result = ValidationResult()
     if not isinstance(structure, dict):
@@ -150,6 +201,15 @@ def validate_structure_schema(structure: Any) -> ValidationResult:
     if not isinstance(sections, list) or not sections:
         result.errors.append("structure.sections debe ser una lista no vacía de secciones")
         return result
+
+    sources = structure.get("sources")
+    if sources is not None:
+        if not isinstance(sources, list):
+            result.errors.append("structure.sources debe ser una lista de fuentes")
+        else:
+            for source in sources:
+                if not isinstance(source, dict):
+                    result.errors.append("cada fuente de structure.sources debe ser un mapeo")
 
     seen_titles: set[str] = set()
     for section in sections:
@@ -192,6 +252,25 @@ def validate_structure_schema(structure: Any) -> ValidationResult:
                         f"La sección '{title}' declara límites no reconocidos: "
                         + ", ".join(unknown)
                     )
+                for key, value in limits.items():
+                    if key not in RECOGNIZED_LIMIT_KEYS:
+                        continue
+                    if isinstance(value, dict):
+                        bad = [
+                            bound
+                            for bound in ("min", "max")
+                            if bound in value and not _is_number(value[bound])
+                        ]
+                        if bad or any(k not in ("min", "max") for k in value):
+                            result.errors.append(
+                                f"La sección '{title}' declara un límite '{key}' inválido: "
+                                "debe ser {min, max} numéricos"
+                            )
+                    elif not _is_number(value):
+                        result.errors.append(
+                            f"La sección '{title}' declara un límite '{key}' inválido: "
+                            "debe ser un número o un mapeo {min, max}"
+                        )
     return result
 
 
@@ -214,7 +293,11 @@ def declared_limit(section: dict[str, Any], key: str) -> Any:
 
 def _stale_reason(folder: Path, structure: dict[str, Any]) -> str | None:
     """A confirmed contract is stale when a recorded source no longer hashes
-    to the value it was confirmed against."""
+    to the value it was confirmed against -- including a source that
+    disappeared entirely. A missing source can no longer be re-verified
+    against the frozen confirmation, so it must never fail open into
+    "confirmed"; it is exactly as stale as a source whose bytes changed.
+    """
     for source in structure.get("sources", []) or []:
         path = source.get("path")
         recorded = source.get("sha256")
@@ -222,7 +305,7 @@ def _stale_reason(folder: Path, structure: dict[str, Any]) -> str | None:
             continue
         candidate = Path(folder) / path
         if not candidate.is_file():
-            continue
+            return f"assignment source '{path}' is missing since structure was confirmed"
         if sha256_file(candidate) != recorded:
             return f"assignment source '{path}' changed since structure was confirmed"
     return None
