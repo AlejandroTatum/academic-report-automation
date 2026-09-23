@@ -820,3 +820,28 @@ def test_documented_root_discovery_snippet_runs_from_an_unrelated_cwd(tmp_path: 
 
     assert overridden.returncode == 0, overridden.stderr
     assert overridden.stdout.strip().splitlines()[-1] == f"REPORT_CONTENT_ROOT={override}"
+
+
+# --------------------------------------------------------------------------
+# C2 #12 — teacher-required structure contract
+# --------------------------------------------------------------------------
+
+
+def test_intake_documents_structure_confirmation() -> None:
+    """Intake must cover combined sources, mandatory criteria, optional
+    limits, proposal/confirmation, and blocked downstream phases."""
+    intake_text = plain(read(INTAKE_MD))
+    intake_flat = re.sub(r"\s+", " ", intake_text).lower()
+    assert "structure confirmation" in intake_flat
+    assert "combine requirements from every supplied source" in intake_flat
+    assert "contradiction between" in intake_flat, (
+        "conflicting requirements from different sources must block confirmation"
+    )
+    assert "stay entirely optional" in intake_flat, (
+        "quantitative limits must be documented as optional, never inferred"
+    )
+    assert "provisional structure" in intake_flat
+    assert "stay blocked" in intake_flat, (
+        "downstream phases must be documented as blocked while unconfirmed"
+    )
+    assert "reconfirmation" in intake_flat
