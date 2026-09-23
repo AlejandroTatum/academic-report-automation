@@ -23,6 +23,7 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 - [x] T3 LaTeX tokens (R9 latex). Route: delegated writer.
 - [x] T4 DOCX tokens (R9 docx). Route: delegated writer.
 - [x] T5 HTML tokens + rendered corpus, multipage, grayscale/accessibility (R9 html, R10-R12). Route: delegated writer.
+- [x] T6 close #13: receipt persistence + T1-T5 native review hardening. Route: delegated writer.
 
 ## Acceptance
 - 7/7 requirements, 12/12 scenarios observed RED then GREEN; full suite green; auditor output is a precheck, never `VISUAL_PASS`.
@@ -52,8 +53,8 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
   reviewable than a computed specificity score. Documented in
   `templates/table_styles.yml`'s header.
   Tokens/applicability/avoidance were derived once from the private
-  human-review catalog's prose (`/home/alejo/devwork/.projects/university/.reports-system/automation/reports/catalogo-estilos-tablas/body.md`,
-  read only at authoring time, never at runtime) — matches design's
+  human-review catalog, read once at authoring time, never at runtime —
+  matches design's
   "derived once from the catalog" instruction; `test_issue_13_catalog_is_runtime_self_contained`
   asserts no private-path/PDF-parsing dependency survives in the shipped
   loader or YAML.
@@ -375,37 +376,188 @@ unavailable, matching this repo's existing optional-tool convention):
     per-page header text, no lost row) for what was visually confirmed
     once, not a replacement for that reserved human authority.
 
-## What remains (disclosed, not silently dropped)
+## What remains after T1-T5 (resolved in T6, see below)
 
-- **Receipt persistence into build evidence.** `SelectionReceipt` (T2) is
-  computed correctly on every styled table (`resolve_table_style` inside
-  `build_latex_report.py`/`build_docx_report.py`/`build_report.py`) but is
-  discarded after rendering — never written to `backups/quality_report.md`
-  or a dedicated receipts file. The design's `tools/validate_report.py`
-  file-change entry ("Persist receipts and coordinate post-render
-  evidence") is not implemented. R8's own scenario (receipt *data
-  correctness*) is green; only the *persistence into on-disk evidence* is
-  outstanding.
+- ~~**Receipt persistence into build evidence.**~~ `SelectionReceipt` (T2)
+  was computed correctly on every styled table (`resolve_table_style`
+  inside `build_latex_report.py`/`build_docx_report.py`) but discarded
+  after rendering — never written to `backups/quality_report.md` or a
+  dedicated receipts file. Correction (T4+T5 review R2: this sentence
+  previously also named `build_report.py` — wrong. That tool has no
+  `ReportConfig` and calls `select_style` directly, never
+  `resolve_table_style`/`SelectionReceipt`; it produces no receipt to
+  persist and stays out of scope here). Fixed in T6.
 - **`tools/visual_pdf_auditor.py` integration** (semantic per-style
   rendered checks beyond its existing `TABLE_SUSPECT` heuristic) — not
-  touched.
+  touched, still open.
 - **LaTeX/DOCX rendered corpus** beyond the fixtures already built in T3/T4
   (3 tables each, `--tex-only`/in-memory `Document` respectively): no
   Docker-compiled six-context LaTeX PDF, no visual inspection of a real
   DOCX render (Word itself was not available to open one in this
   environment). The HTML/WeasyPrint corpus above is real rendered
-  evidence, but only for one of the three backends.
+  evidence, but only for one of the three backends. Still open.
 - **Human/contact-sheet `VISUAL_PASS`** — explicitly out of this agent's
-  authority per the design's own closure contract; noted above.
+  authority per the design's own closure contract; noted above. Still open.
 
-## Full suite (all five slices, final state)
+## T6 evidence (close #13: receipt persistence + native review hardening)
 
-`.venv/bin/python -m pytest tools/ tests/`: 1141 passed. `git log --oneline
-e4d2588..HEAD` and `git status --short` reported in the final delivery
-message to the orchestrator.
+Native reviews on T1-T5 (stacked-to-main PRs #10-#13/#51) raised findings
+across two review passes (T1+T2, T4+T5). This slice fixes every finding
+verified real, and records why each unverified one was skipped instead of
+changed. Strict TDD: RED confirmed on the pre-fix code (via `git stash` of
+just the production file(s), test re-run, `stash pop`) before every
+behavior-changing fix; a pure test-coverage addition (no behavior change
+expected) is marked as such.
+
+**A. Receipt persistence (acceptance gap).** `tools/validate_report.py`
+gains `table_style_receipts_validation(config)` — pure, read-only:
+re-parses `body.md` via `table_directives.parse_table_blocks` and
+re-resolves each directed table's `SelectionReceipt` through the same
+`TableStylesContext`/`resolve_table_style` either renderer used (no
+wiring into `build_latex_report.py`/`build_docx_report.py` needed, since
+`resolve_table_style` is pure and reproducible from the same body.md +
+report.yml/academic_format.yml). No-op for a report that never opted into
+`table_styles.enabled` — every existing report's evidence stays
+byte-for-byte unchanged. `write_table_style_receipts` persists the result
+as path-free, byte-stable JSON at the new `ReportConfig.table_style_receipts_path`
+(`backups/table_style_receipts.json`, sorted by `table_key`), and
+`write_quality_report` gained a "## Estilos de tabla" section listing each
+table's selected ID, precedence source, and rationale — the spec's "The
+selected ID and rationale appear in validation evidence" line, now true.
+New `tools/test_table_style_receipts.py` (6 tests, RED confirmed: the
+functions did not exist before this change).
+
+**B. T4+T5 review findings** (`tools/table_docx_tokens.py`,
+`tools/table_html_tokens.py`, `tools/build_report.py`, plus shared color
+constants in `tools/table_styles.py`):
+- R3-ooxml-child-order — fixed. OOXML requires `w:tblPr`/`w:tcPr` children
+  in schema order or Word repairs/rejects the file; python-docx does not
+  expose `tblBorders`/`tcBorders`/`shd`/`tcMar` as typed accessors, so this
+  module now inserts each via `insert_element_before` (the same mechanism
+  python-docx's own generated accessors use) keyed on each element's
+  `docx.oxml.table.CT_TblPr`/`CT_TcPr` schema successors — order-
+  independent of which helper runs first. Also fixed the *child* order
+  inside `w:tblBorders`/`w:tcMar` themselves (was `top, bottom, left,
+  right`; schema is `top, left, bottom, right`). RED confirmed (`git stash`
+  the production file): `AssertionError: ['tblStyle', 'tblW', 'jc',
+  'tblLook', 'tblBorders'] not in schema order` — `tblBorders` landed after
+  `tblLook`. New `test_issue_13_backend_style_coherence_docx_ooxml_child_order`
+  in `tools/test_table_backend_contracts.py`, parametrized over all seven
+  styles, asserting every `tblPr`/`tcPr` child stays in schema order.
+- R3-docx-row-wider-than-header — fixed. A body row with more cells than
+  the header silently overran `columns - len(values)` (negative padding)
+  and crashed with a raw `IndexError` once python-docx ran out of cells.
+  `_emit_row` now raises a clear `ValueError` naming the row/header cell
+  counts. RED confirmed: `IndexError: tuple index out of range`. New
+  `test_issue_13_backend_style_coherence_docx_row_wider_than_header_blocks`.
+- R3-fence-unaware-html-rewrite — fixed. `build_report.py`'s
+  `apply_table_styles` now tracks fenced-code-block state the same way
+  `_apply_outside_code` already does elsewhere in that file, so a
+  documentation code sample showing the directive/table syntax renders as
+  literal code, never mistaken for a real directive/table. RED confirmed:
+  the fixture's fenced sample was rewritten into a live
+  `data-table-style="TAB-CL-01"` table before the fix.
+- R3/R4-html-preview-crash — fixed. A `ValueError` from `select_style`/
+  `render_styled_table_html` (unapproved status marker, missing/out-of-
+  range `emphasis_column`) is now caught in `apply_table_styles` and
+  collected into the existing `warnings` banner mechanism (matching how a
+  missing image is already reported) instead of crashing the whole HTML
+  preview build; the table's original Markdown is left untouched. RED
+  confirmed: `TypeError: apply_table_styles() got an unexpected keyword
+  argument 'warnings'` (parameter did not exist), then an uncaught
+  `ValueError` once added positionally.
+- R4-unconditional-catalog-load — fixed. `load_catalog()` now runs only
+  once a directed table is actually found mid-scan, not unconditionally at
+  the top of `apply_table_styles` — an HTML build with no tables (or only
+  undirected ones) no longer depends on the catalog. RED confirmed via a
+  `monkeypatch` that fails the test if `load_catalog` runs for an
+  undirected-only body.
+- R2-html-docx token drift — fixed. `table_html_tokens.py`'s
+  `gray_shaded` header hand-copied a *different* hex (`#ededed`) than
+  `table_docx_tokens.py`'s `EAEAEA` for the identical token — a real
+  cross-backend coherence defect (spec: "backend mappings MUST preserve
+  meaning"). New `tools/table_styles.py` constants (`HEADER_FILL_HEX`,
+  `ROW_ALTERNATING_FILL_HEX`, `COLUMN_EMPHASIS_FILL_HEX`) are now the one
+  shared source both `table_docx_tokens.py` and `table_html_tokens.py`
+  derive their own literal spelling from. Updated
+  `test_issue_13_backend_style_coherence_html`'s `#ededed` assertion to
+  `#eaeaea` (RED: it asserted the pre-fix, wrong-but-passing value).
+- R2-a11y-test-copied-constants — fixed. `tools/test_table_accessibility.py`
+  now imports the same `table_styles` constants above instead of hand-
+  copied hex literals, so a future color change cannot silently desync the
+  accessibility proof from what production code actually renders.
+- R3-corpus-test-doesnt-prove-selection — fixed.
+  `test_issue_13_rendered_context_corpus` (`tools/test_table_rendered_corpus.py`)
+  now asserts `data-table-style="<expected ID>"` for all six named context
+  classes (same expected-ID mapping as
+  `test_issue_13_context_matrix_is_deterministic`) against the rendered
+  HTML, not just that some heading/status text survived rendering.
+- R2-receipt-doc-misstates-html-path — fixed. Corrected in "What remains"
+  above: `build_report.py` never produced a `SelectionReceipt`.
+
+**C. T1+T2 review findings** (`tools/table_model.py`, `templates/table_styles.yml`
+via new tests, `tools/report_config.py` via new tests, `tools/table_styles.py`):
+- R1-private-path-disclosure — fixed. `odd/tasks/contextual-table-styles.md`'s
+  T1 evidence named the private human-review catalog's absolute filesystem
+  path; replaced with a neutral description ("the private human-review
+  catalog, read once at authoring time").
+- R3-override-ignores-avoidance — fixed. `_validate_override` in
+  `tools/table_model.py` checked only `_matches_all(context,
+  style.applicability)`; an override matching applicability but hitting the
+  style's own *avoidance* rules was silently accepted — the same context
+  rule `eligible_candidates` enforces for automatic selection, bypassed for
+  an override. Now checks `_matches_any(context, style.avoidance)` too. RED
+  confirmed: `Failed: DID NOT RAISE OverrideRejectedError` for a
+  `TAB-ZB-04` override on a column-emphasis context (applicability alone
+  matches; avoidance excludes it). New parametrize case in
+  `test_issue_13_invalid_override_rejection`.
+- R4-institution-default-hard-blocks — **verified, not a defect; skipped.**
+  Checked spec #6421 as instructed: `test_issue_13_invalid_override_rejection`
+  states "GIVEN an override is unapproved, deprecated, missing, or
+  incompatible WHEN selection runs THEN generation blocks with the rejected
+  ID and reason" — uniformly, with no per-source (teacher vs. institution)
+  exception. An institution default that does not fit one table's context
+  falling through to automatic selection for that table only, instead of
+  blocking, would contradict this scenario's literal text. Design #6422 does
+  not carve out an exception either. Current behavior (block, name the
+  table/source/reason) is spec-compliant; not changed.
+- R3-catalog-coverage-gaps — fixed via new test coverage (no behavior
+  change; catalog rules already worked correctly, just unexercised). New
+  `test_issue_13_avoidance_and_applicability_coverage` in
+  `tools/test_table_styles.py`: generic over the catalog, so it proves
+  every avoidance/applicability constraint every style actually declares
+  really excludes/admits it, and would catch a future rule added without a
+  matching test.
+- Untested loader rejections — fixed via new test coverage (no behavior
+  change). None of `load_catalog`'s ~28 `CatalogError` raise sites had a
+  test; new `test_issue_13_loader_rejects_every_malformed_shape` in
+  `tools/test_table_styles.py`, parametrized over 22 malformed-shape
+  mutations of the real catalog (bad top-level/style/token/applicability/
+  avoidance/status-indicator shapes), each asserting the exact rejection
+  message.
+- Untested config accessors — fixed via new test coverage (no behavior
+  change). `tools/test_table_styles_config.py` gained
+  `test_table_styles_enabled_rejects_a_non_boolean_value` and
+  `test_table_style_overrides_ignores_a_malformed_non_mapping_value`
+  (documents the existing, deliberately permissive `dig`-backed default).
+- R2 readability (`table_model.py:34`, `table_styles.py:124-129`) —
+  fixed. `table_model.py` imported `UnsupportedContextError` but never
+  referenced it as a symbol (only in docstring prose, already fully
+  qualified there); removed the dead import. `table_styles.py`'s
+  `TableContext` field comments (inline enum lists) now carry a docstring
+  note naming `_CONSTRAINT_ENUMS`/`TOKEN_ENUMS` as the authoritative source,
+  so the comments read as a convenience, not a second source of truth that
+  could silently drift.
+
+**Full suite**: `.venv/bin/python -m pytest tools/ tests/`: 1180 passed
+(1141 baseline for T1-T5 + 39 new/added tests). Commit sha, `git log
+--oneline`, `git status --short`, and `git diff --shortstat` reported in
+the final delivery message to the orchestrator.
 
 ## Next step
-User decision: accept T1-T5 as delivered (with the disclosed remaining
-items above as explicit follow-up work), or request continuation on
-specific remaining items before considering issue #13 closable. Delivery
+Issue #13 is closable pending review of this T6 slice: every disclosed T1-T5
+"What remains" item except `visual_pdf_auditor.py` integration, the
+Docker-compiled LaTeX/full DOCX rendered corpus, and human/contact-sheet
+`VISUAL_PASS` (all three explicitly out of this agent's authority or
+scope) is now resolved. Delivery
 (push/PR/review) was explicitly out of scope for this session.
