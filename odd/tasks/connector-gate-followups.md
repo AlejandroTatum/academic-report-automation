@@ -22,6 +22,7 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
 - [x] T1 undirected links: read the declared link type from the `.mmd` source (same stem as the SVG); skip direction/marker checks for undirected links; missing source falls back to the current strict rule and reports that it did. Route: delegated writer.
 - [x] T2 one shared guard helper for both audit entry points that turns any geometry exception (including `IndexError`) into a finding. Route: delegated writer.
 - [x] T3 necessary-crossing exemption: exempt a crossing only when no alternative route around protected regions exists; otherwise fail. Route: delegated writer.
+- [x] T4 (coordinator follow-up, post-delivery review) mirrored-specs-tree lookup: the real pipeline stores `.mmd` specs under `visuals/specs/<materia>/<tarea>/` and renders under `assets/generated/<materia>/<tarea>/`, never as siblings, so T1's sibling-only lookup never found a real source. Try the sibling first, then the mirrored `visuals/specs` path derived from the SVG's own path. Route: delegated writer.
 
 ## Acceptance
 - #43 expected behavior holds with tests observed RED then GREEN; full suite green; spec note updated in the visual-builder references.
@@ -120,6 +121,19 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
     (`git diff --stat`), well inside the ~350-line advisory budget.
   - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1196 passed.
 
+- T4 done, commit `b6a9b3c` (4 files changed, 93 insertions(+), 18 deletions(-)).
+  - RED: `test_mirrored_specs_tree_source_is_found_when_no_sibling_exists`
+    (observed failing: fell back to strict + `CONNECTOR_DIRECTION_NO_SOURCE`
+    before the fix). `test_sibling_source_takes_priority_over_the_mirrored_specs_tree`
+    passed immediately (no new behavior exercised there, sibling lookup
+    already worked) — added as a regression pin, not RED evidence.
+  - GREEN: same test passes after `connector_geometry.py`'s
+    `_mirrored_specs_path`/`_source_candidates`/`load_link_directions`
+    changes; `connector_pdf_stage.py`'s informational-finding message text
+    updated to match (no behavior change there, sibling-then-mirror lookup
+    is shared via `load_link_directions`).
+  - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1198 passed.
+
 ## Next step
-All three tasks (T1-T3) done. Remaining: push and open a PR (not done by
+All four tasks (T1-T4) done. Remaining: push and open a PR (not done by
 this writer — see delivery contract).
