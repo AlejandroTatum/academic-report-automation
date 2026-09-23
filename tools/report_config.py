@@ -440,6 +440,22 @@ class ReportConfig:
         return validators
 
     @property
+    def table_styles_enabled(self) -> bool:
+        """Opt-in switch for issue #13 contextual table styles.
+
+        Declared as ``table_styles: {enabled: true}`` in report.yml.
+        Defaults to ``False``, which keeps every existing report's LaTeX,
+        DOCX and HTML output byte-for-byte unchanged: opting in is what
+        activates directive-driven per-table style selection (and, once
+        opted in, requires every table to declare a directive -- see
+        ``tools/table_directives.py``).
+        """
+        value = dig(self.raw, ("table_styles", "enabled"))
+        if value is MISSING:
+            return False
+        return strict_bool(value, "table_styles.enabled")
+
+    @property
     def table_style_overrides(self) -> dict[str, str]:
         """Teacher per-table style overrides: ``table_key -> approved style ID``.
 

@@ -1,0 +1,17 @@
+# Fixture report for issue #13's LaTeX backend contract harness (T3).
+# Runs through the real build_latex_report.py pipeline, --tex-only
+# (compile_pdf=False), never through the generic (opt-out) renderer.
+type: essay
+backend: latex
+output: pdf
+route: academic
+
+table_styles:
+  enabled: true
+
+metadata:
+  title: "Fixture: contextual table styles (LaTeX)"
+  subject: "Issue 13"
+  teacher: "N/A"
+  student: "Fixture"
+  date: "2026-09-22"

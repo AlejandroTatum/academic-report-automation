@@ -23,6 +23,7 @@ filesystem/time reads inside ``select_style`` itself.
 """
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,7 +92,7 @@ _CONSTRAINT_FIELD = {
     "color_policy": "color_policy",
 }
 
-_TOP_LEVEL_KEYS = frozenset({"schema_version", "catalog_version", "styles"})
+_TOP_LEVEL_KEYS = frozenset({"schema_version", "catalog_version", "styles", "status_indicators"})
 _STYLE_KEYS = frozenset({"label", "deprecated", "priority", "tokens", "applicability", "avoidance"})
 
 
@@ -127,6 +128,7 @@ class TableContext:
     meaning: str = "none"  # none | comparison | status
     color_policy: str = "color"  # color | grayscale
     accessibility_needs: bool = False
+    emphasis_column: int | None = None  # 0-indexed protagonist column for TAB-CE-05
 
 
 @dataclass(frozen=True)
@@ -141,10 +143,26 @@ class StyleDefinition:
 
 
 @dataclass(frozen=True)
+class StatusIndicator:
+    """One approved `[[status:<value>]]` marker: symbol, color, accessible label.
+
+    Never color alone (approved 2026-09-22): the symbol and the label both
+    carry the meaning independently of the color, so grayscale or
+    colorblind rendering never loses information.
+    """
+
+    value: str
+    symbol: str
+    color: str
+    label: str
+
+
+@dataclass(frozen=True)
 class Catalog:
     schema_version: int
     catalog_version: str
     styles: dict[str, StyleDefinition]
+    status_indicators: dict[str, StatusIndicator]
     source_path: Path
 
 
@@ -257,10 +275,50 @@ def load_catalog(path: Path | None = None) -> Catalog:
         )
 
     styles = {style_id: _validate_style(style_id, body) for style_id, body in raw_styles.items()}
+    status_indicators = _validate_status_indicators(source_path, raw["status_indicators"])
     return Catalog(
         schema_version=schema_version, catalog_version=catalog_version,
-        styles=styles, source_path=source_path,
+        styles=styles, status_indicators=status_indicators, source_path=source_path,
     )
+
+
+_STATUS_INDICATOR_KEYS = frozenset({"symbol", "color", "label"})
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _validate_status_indicators(source_path: Path, raw: Any) -> dict[str, StatusIndicator]:
+    """Validate `status_indicators:` -- the approved `[[status:<value>]]` vocabulary.
+
+    Each value must define a distinct symbol, a hex color, and an accessible
+    label: the inline-marker authoring convention (approved 2026-09-22)
+    never renders color alone, so an incomplete entry blocks the catalog
+    load rather than silently degrading to color-only meaning.
+    """
+    if not isinstance(raw, dict) or not raw:
+        raise CatalogError(f"{source_path}: 'status_indicators' must be a non-empty mapping")
+    indicators: dict[str, StatusIndicator] = {}
+    seen_symbols: set[str] = set()
+    for value, body in raw.items():
+        if not isinstance(body, dict):
+            raise CatalogError(f"status_indicators.{value}: must be a mapping")
+        unknown = set(body) - _STATUS_INDICATOR_KEYS
+        if unknown:
+            raise CatalogError(f"status_indicators.{value}: unknown keys {sorted(unknown)}")
+        missing = _STATUS_INDICATOR_KEYS - set(body)
+        if missing:
+            raise CatalogError(f"status_indicators.{value}: missing keys {sorted(missing)}")
+        symbol, color, label = body["symbol"], body["color"], body["label"]
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise CatalogError(f"status_indicators.{value}: 'symbol' must be a non-empty string")
+        if symbol in seen_symbols:
+            raise CatalogError(f"status_indicators.{value}: symbol {symbol!r} reused -- color must never be the only signal")
+        seen_symbols.add(symbol)
+        if not isinstance(color, str) or not _HEX_COLOR_RE.match(color):
+            raise CatalogError(f"status_indicators.{value}: 'color' must be a #RRGGBB hex string")
+        if not isinstance(label, str) or not label.strip():
+            raise CatalogError(f"status_indicators.{value}: 'label' must be a non-empty string")
+        indicators[value] = StatusIndicator(value=value, symbol=symbol, color=color, label=label)
+    return indicators
 
 
 def _matches_all(context: TableContext, constraints: dict[str, Any]) -> bool:
