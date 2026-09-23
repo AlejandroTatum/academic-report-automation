@@ -187,7 +187,7 @@ def audit_svg_at_final_size(svg_path: Path, tex_source: str) -> list[PageIssue]:
         issues.append(
             PageIssue(
                 INFO, CONNECTOR_DIRECTION_NO_SOURCE,
-                f"'{svg_path.name}': no '.mmd' source next to the SVG; direction/marker check ran in strict mode",
+                f"'{svg_path.name}': no '.mmd' source found (sibling or mirrored visuals/specs tree); direction/marker check ran in strict mode",
             )
         )
     return issues

@@ -81,14 +81,18 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   above.
 - Direction and end-marker checks (#43, 2026-09-23 decision, supersedes the
   earlier "every connector MUST use a defined end marker" rule): the `.mmd`
-  source sitting next to the SVG (same stem) is the sole authority on
-  connector intent. An undirected link (`---`, `-.-`, `===`, with or without
-  a label) declared there skips direction/marker checks; a link declared
-  with an arrowhead (`-->`, `-.->`, `==>`, `<-->`, `--o`, `--x`, ...) keeps
-  the full check. When no matching `.mmd` is found, the check falls back to
-  the strict pre-#43 rule and reports that it did (an informational finding
-  naming the figure, never silently different behavior) — keep the source
-  next to its rendered SVG so undirected links validate correctly.
+  source is the sole authority on connector intent. The gate looks for it in
+  order — the sibling `.mmd` next to the SVG (same stem), then, since the
+  canonical layout above keeps specs and renders in parallel trees rather
+  than as siblings, the mirrored path under `visuals/specs/` obtained by
+  swapping the `assets/generated/` segment pair for `visuals/specs/` (same
+  relative subpath and stem). An undirected link (`---`, `-.-`, `===`, with
+  or without a label) declared there skips direction/marker checks; a link
+  declared with an arrowhead (`-->`, `-.->`, `==>`, `<-->`, `--o`, `--x`,
+  ...) keeps the full check. When neither location has a matching `.mmd`,
+  the check falls back to the strict pre-#43 rule and reports that it did
+  (an informational finding naming the figure, never silently different
+  behavior).
 - Necessary-crossing exemption (#43, conservative): a crossing between two
   connectors is exempt only when an obstacle-aware visibility check, within
   the diagram's own viewBox, proves every route for one of the two

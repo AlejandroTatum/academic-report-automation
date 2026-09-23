@@ -366,6 +366,47 @@ def test_no_sibling_source_reports_strict_mode_informational_finding() -> None:
     assert "mmdc-direction-clean.svg" in info[0].detail
 
 
+def test_mirrored_specs_tree_source_is_found_when_no_sibling_exists(tmp_path) -> None:
+    """The real pipeline renders under ``assets/generated/<materia>/<tarea>/``
+    and keeps specs under ``visuals/specs/<materia>/<tarea>/`` -- not
+    siblings. Without this mirror, the #43 T1 decision never applies to a
+    real run: the lookup must also try the mirrored specs path, same
+    relative subpath and stem, before falling back to strict."""
+    svg_dir = tmp_path / "assets" / "generated" / "materia" / "tarea"
+    svg_dir.mkdir(parents=True)
+    spec_dir = tmp_path / "visuals" / "specs" / "materia" / "tarea"
+    spec_dir.mkdir(parents=True)
+    svg_path = svg_dir / "diagram.svg"
+    svg_path.write_text((FIXTURES / "mmdc-undirected-clean.svg").read_text(encoding="utf-8"), encoding="utf-8")
+    (spec_dir / "diagram.mmd").write_text(
+        (FIXTURES / "mmdc-undirected-clean.mmd").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    issues = cg.audit_connector_geometry(svg_path)
+    assert cg.CONNECTOR_DIRECTION not in failure_tags(issues)
+    assert cg.CONNECTOR_DIRECTION_NO_SOURCE not in {i.tag for i in issues}
+
+
+def test_sibling_source_takes_priority_over_the_mirrored_specs_tree(tmp_path) -> None:
+    """When both exist, the sibling ``.mmd`` (cheaper, no path surgery)
+    wins -- the mirrored specs tree is a fallback, not a replacement."""
+    svg_dir = tmp_path / "assets" / "generated" / "materia" / "tarea"
+    svg_dir.mkdir(parents=True)
+    spec_dir = tmp_path / "visuals" / "specs" / "materia" / "tarea"
+    spec_dir.mkdir(parents=True)
+    svg_path = svg_dir / "diagram.svg"
+    svg_path.write_text((FIXTURES / "mmdc-undirected-clean.svg").read_text(encoding="utf-8"), encoding="utf-8")
+    # Sibling declares everything directed (no undirected links at all);
+    # the mirrored spec (if wrongly preferred) would exempt L_A_B_0.
+    (svg_dir / "diagram.mmd").write_text("flowchart LR\n  A --> B\n  A --> C\n", encoding="utf-8")
+    (spec_dir / "diagram.mmd").write_text(
+        (FIXTURES / "mmdc-undirected-clean.mmd").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    issues = cg.audit_connector_geometry(svg_path)
+    assert cg.CONNECTOR_DIRECTION in failure_tags(issues)
+
+
 def test_multiple_links_between_same_pair_match_by_ordinal() -> None:
     """Two links between the same nodes -- one arrowed, one open -- must map
     onto the right SVG edge each, not both-or-neither: mmdc assigns the

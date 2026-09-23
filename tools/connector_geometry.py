@@ -1024,18 +1024,48 @@ def _match_declared_directions(
 
 
 def _source_path_for(svg_path: Path) -> Path:
-    """The ``.mmd`` source authoritative for *svg_path*'s connector intent:
-    same directory, same stem."""
+    """The sibling ``.mmd``: same directory, same stem."""
     return svg_path.with_suffix(".mmd")
 
 
+def _mirrored_specs_path(svg_path: Path) -> Path | None:
+    """The ``.mmd`` under the mirrored ``visuals/specs/`` tree, for a
+    rendered asset stored under ``assets/generated/`` (the canonical
+    asset-class layout, see visual-workflow.md's "Asset classes" section):
+    same relative subpath and stem, only the leading ``assets/generated``
+    path-segment pair replaced by ``visuals/specs``. ``None`` when
+    *svg_path* does not sit under an ``assets/generated`` prefix at all --
+    derived purely from the path, no config or flag.
+    """
+    parts = svg_path.parts
+    for i in range(len(parts) - 1):
+        if parts[i] == "assets" and parts[i + 1] == "generated":
+            mirrored = (*parts[:i], "visuals", "specs", *parts[i + 2:])
+            return Path(*mirrored).with_suffix(".mmd")
+    return None
+
+
+def _source_candidates(svg_path: Path) -> list[Path]:
+    """Every place *svg_path*'s ``.mmd`` source could legitimately live, in
+    lookup order: the cheaper sibling first, then the mirrored specs tree
+    real pipeline runs actually use (renders and specs live in parallel
+    directory trees, never siblings there -- see
+    ``_mirrored_specs_path``)."""
+    candidates = [_source_path_for(svg_path)]
+    mirrored = _mirrored_specs_path(svg_path)
+    if mirrored is not None:
+        candidates.append(mirrored)
+    return candidates
+
+
 def load_link_directions(svg_path: Path) -> dict[tuple[str, str], list[bool]] | None:
-    """Declared link directions from the ``.mmd`` sitting next to
-    *svg_path*, or ``None`` when no such source exists."""
-    source = _source_path_for(svg_path)
-    if not source.exists():
-        return None
-    return parse_link_directions(source.read_text(encoding="utf-8"))
+    """Declared link directions from *svg_path*'s ``.mmd`` source (see
+    ``_source_candidates``), or ``None`` when none of the candidate
+    locations exist."""
+    for source in _source_candidates(svg_path):
+        if source.exists():
+            return parse_link_directions(source.read_text(encoding="utf-8"))
+    return None
 
 
 def direction_issues(
@@ -1092,7 +1122,7 @@ def audit_connector_geometry(svg: Path) -> list[PageIssue]:
         issues.append(
             PageIssue(
                 INFO, CONNECTOR_DIRECTION_NO_SOURCE,
-                f"'{svg.name}': no '.mmd' source next to the SVG; direction/marker check ran in strict mode",
+                f"'{svg.name}': no '.mmd' source found (sibling or mirrored visuals/specs tree); direction/marker check ran in strict mode",
             )
         )
     return issues
