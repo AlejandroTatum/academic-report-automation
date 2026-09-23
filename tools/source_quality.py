@@ -47,11 +47,17 @@ def evaluate_source_quality(source: dict[str, Any]) -> QualityJudgment:
     """
     reasons: list[str] = []
 
+    # `fabricated` defaults to false when absent: you cannot accuse a
+    # source of fabrication without positive evidence. `verifiable`,
+    # `relevant`, and `accessible` are the opposite: eligibility requires
+    # each to be POSITIVELY established as True, so an unevaluated
+    # (absent/None) field never silently passes as if it had been checked
+    # and confirmed.
     if bool(source.get("fabricated")):
         reasons.append(REJECTED_FABRICATED)
-    if source.get("verifiable") is False:
+    if source.get("verifiable") is not True:
         reasons.append(REJECTED_UNVERIFIABLE)
-    if source.get("relevant") is False:
+    if source.get("relevant") is not True:
         reasons.append(REJECTED_IRRELEVANT)
     if source.get("superseded_by"):
         reasons.append(REJECTED_SUPERSEDED)
@@ -59,7 +65,7 @@ def evaluate_source_quality(source: dict[str, Any]) -> QualityJudgment:
     authority = str(source.get("authority") or "").strip()
     accessible = source.get("accessible")
     primary_or_secondary = str(source.get("primary_or_secondary") or "").strip().lower()
-    if not authority or accessible is False or primary_or_secondary not in (
+    if not authority or accessible is not True or primary_or_secondary not in (
         "primary",
         "secondary",
     ):
@@ -73,8 +79,13 @@ def evaluate_source_quality(source: dict[str, Any]) -> QualityJudgment:
         )
 
     peer_reviewed = "revisada por pares" if source.get("peer_reviewed") else "no revisada por pares"
+    # Currency/recency is never actually evaluated against a threshold here
+    # -- claiming the source is "vigente" (current) would overclaim what
+    # was checked. Report the recorded year transparently instead.
+    year = source.get("year")
+    year_note = f"año {year}" if year else "año no registrado"
     rationale = (
         f"Fuente elegible: autoridad '{authority}', {primary_or_secondary}, "
-        f"{peer_reviewed}, accesible, verificable, relevante, vigente"
+        f"{peer_reviewed}, accesible, verificable, relevante, {year_note}"
     )
     return QualityJudgment(status="eligible", rationale=rationale, reasons=[])

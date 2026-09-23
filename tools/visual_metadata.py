@@ -79,53 +79,81 @@ def validate_visual_evidence_provenance(
     Presence-gated on the figure, not on the report: only a figure that
     declares ``evidence_package_sha256`` and/or ``claim_ids`` is checked. A
     figure with no such declaration never engaged the research handoff and
-    is untouched (same pattern as ``structure_contract``/``evidence_contract``).
+    is untouched (same pattern as ``structure_contract``/``evidence_contract``,
+    and documented in ``figures-yml-schema.md`` as opt-in per figure — not
+    every figure traces to research evidence, so this is a deliberate,
+    consistent gate activation, never widened to "every figure once
+    evidence.yml exists").
+
+    Once a figure DOES engage (declares either field), the schema promises
+    both are required and validated together
+    (``figures-yml-schema.md``: "Once a figure declares either field, both
+    are required and validated") — a figure that declares only ``claim_ids``
+    is rejected for the missing hash exactly like one that declares only
+    the hash is rejected for missing ``claim_ids``; neither ever fails open.
 
     Rejects: no ``research/evidence.yml`` at all despite the figure
-    declaring provenance; a ``claim_ids`` entry the current package never
-    declares; and a mutated package -- the figure's recorded
-    ``evidence_package_sha256`` no longer matches ``evidence.yml``'s current
-    bytes. Visual tooling never repairs or approves past this: every finding
-    here is an error, never a warning, so report readiness is not granted.
+    declaring provenance; a missing/stale ``evidence_package_sha256``; a
+    ``claim_ids`` entry the current package never declares. Visual tooling
+    never repairs or approves past this: every finding here is an error,
+    never a warning, so report readiness is not granted. Every error names
+    the offending figure so a multi-figure manifest is diagnosable.
     """
     from evidence_contract import evidence_gate_engaged, evidence_package_sha256, load_evidence_package
 
     outcome = VisualMetadataValidation()
+    if not isinstance(figures, list):
+        return outcome
+
     engaged = [
-        figure
-        for figure in figures
+        (index, figure)
+        for index, figure in enumerate(figures, start=1)
         if isinstance(figure, dict) and (figure.get("evidence_package_sha256") or figure.get("claim_ids"))
     ]
     if not engaged:
         return outcome
 
+    def _label(index: int, figure: dict[str, Any]) -> str:
+        name = _text(figure.get("file"))
+        return f"Figura {index} ({name})" if name else f"Figura {index}"
+
     if not evidence_gate_engaged(folder):
-        outcome.errors.append(
-            "Figura declara evidence_package_sha256/claim_ids pero no existe research/evidence.yml"
-        )
+        for index, figure in engaged:
+            outcome.errors.append(
+                f"{_label(index, figure)}: declara evidence_package_sha256/claim_ids "
+                "pero no existe research/evidence.yml"
+            )
         return outcome
 
     current_hash = evidence_package_sha256(folder)
-    package = load_evidence_package(folder) or {}
+    try:
+        package = load_evidence_package(folder) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        for index, figure in engaged:
+            outcome.errors.append(
+                f"{_label(index, figure)}: no se pudo leer research/evidence.yml ({exc})"
+            )
+        return outcome
     known_claim_ids = _claim_ids(package)
 
-    for figure in engaged:
+    for index, figure in engaged:
+        prefix = _label(index, figure)
         declared_hash = _text(figure.get("evidence_package_sha256"))
-        if declared_hash and declared_hash != current_hash:
+        if not declared_hash:
+            outcome.errors.append(f"{prefix}: debe declarar evidence_package_sha256")
+        elif declared_hash != current_hash:
             outcome.errors.append(
-                "Figura con evidence_package_sha256 desactualizado: research/evidence.yml "
+                f"{prefix}: evidence_package_sha256 desactualizado: research/evidence.yml "
                 "mutó desde que se generó la solicitud (paquete de evidencia inválido)"
             )
         claim_ids = figure.get("claim_ids")
         if not isinstance(claim_ids, list) or not claim_ids:
-            outcome.errors.append(
-                "Figura con evidence_package_sha256 debe declarar al menos un claim_id"
-            )
+            outcome.errors.append(f"{prefix}: debe declarar al menos un claim_id")
             continue
         unknown = [str(cid) for cid in claim_ids if str(cid) not in known_claim_ids]
         if unknown:
             outcome.errors.append(
-                "Figura referencia claim_ids desconocidos en evidence.yml: " + ", ".join(unknown)
+                f"{prefix}: referencia claim_ids desconocidos en evidence.yml: " + ", ".join(unknown)
             )
 
     return outcome

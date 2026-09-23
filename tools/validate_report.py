@@ -22,7 +22,7 @@ from report_config import (
     unknown_route_message,
 )
 from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_path
-from structure_contract import parse_structure, validate_structure_schema
+from structure_contract import parse_structure, structure_confirmation_state
 from validate_ieee_refs import ValidationResult, validate_ieee
 from visual_metadata import validate_visual_manifest
 
@@ -93,7 +93,13 @@ PLACEHOLDER_RE = re.compile(r"^\[.*\]$")
 
 # Teacher-required structure (#12): body headings are the source proof that
 # the rendered document carries every section the confirmed contract froze.
-BODY_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+# Only top-level (H1, a single '#') headings count as section boundaries.
+# Every required section title is itself a top-level heading, and a
+# subsection (##, ###, ...) lives INSIDE its enclosing section -- matching
+# every heading level here used to split a section's text bucket at its
+# first subsection, truncating the content criteria/word-count checks for
+# everything after it (#12 hardening).
+BODY_HEADING_RE = re.compile(r"^(#)\s+(.+?)\s*$")
 
 
 @dataclass(frozen=True)
@@ -266,7 +272,11 @@ def pdfinfo(pdf: Path) -> dict[str, str]:
 
 
 def _split_body_by_heading(body: str) -> dict[str, str]:
-    """Map each folded heading title to the text between it and the next heading."""
+    """Map each folded top-level (H1) heading title to the text between it
+    and the next top-level heading. A subsection heading (##, ###, ...)
+    never matches ``BODY_HEADING_RE`` here, so its text -- and its
+    subsection line itself -- stays inside the enclosing section's bucket
+    rather than starting a new one."""
     from build_latex_report import fold_heading
 
     sections: dict[str, str] = {}
@@ -295,20 +305,26 @@ def structure_validation(config: ReportConfig) -> ValidationResult:
     confirmed. A malformed/unconfirmed draft (e.g. the ``"proposed"`` marker)
     is reported as a schema error rather than silently skipped, so a report
     can never reach final validation with an unconfirmed contract in force.
+    A confirmed-but-now-stale contract (a recorded source changed or
+    disappeared since confirmation) is rejected the same way: final
+    validation never certifies a report against a superseded structure.
 
-    Checks, in order: schema, section presence under the exact declared
-    name, declared order, each criterion's optional ``content_anchor``
-    (declared but missing content), and each declared quantitative limit
-    (currently ``words``; unsupplied limits are never enforced, #6408/R3).
+    Checks, in order: confirmation state (schema + staleness), section
+    presence under the exact declared name, declared order, each
+    criterion's optional ``content_anchor`` (declared but missing content),
+    and each declared quantitative limit (currently ``words``; unsupplied
+    limits are never enforced, #6408/R3).
     """
     result = ValidationResult()
     structure = parse_structure(config.raw)
     if structure is None:
         return result
 
-    schema_result = validate_structure_schema(structure)
-    if schema_result.errors:
-        result.errors.extend(schema_result.errors)
+    state, detail = structure_confirmation_state(config)
+    if state != "confirmed":
+        result.errors.append(
+            f"La estructura del reporte no está confirmada ({state}): {detail}"
+        )
         return result
 
     from build_latex_report import fold_heading

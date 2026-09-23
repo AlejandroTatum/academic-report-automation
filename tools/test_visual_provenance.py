@@ -94,6 +94,59 @@ def test_visual_handoff_rejects_invalid_or_mutated_evidence(report_folder: Path)
     assert any("mut" in e.lower() for e in outcome.errors)
 
 
+def test_visual_provenance_requires_hash_once_engaged_via_claim_ids_alone(
+    report_folder: Path,
+) -> None:
+    """figures-yml-schema.md: 'Once a figure declares either field, both are
+    required and validated.' A figure that engages provenance by declaring
+    only claim_ids -- omitting evidence_package_sha256 -- must not silently
+    skip hash verification (fail-open); it is exactly as invalid as one
+    that declares only the hash and omits claim_ids."""
+    write_evidence(report_folder, ["C-001"])
+    figure = {"file": "figure.svg", "claim_ids": ["C-001"]}  # no hash declared
+
+    outcome = validate_visual_evidence_provenance(report_folder, [figure])
+    assert outcome.errors, "omitting evidence_package_sha256 once engaged must be rejected"
+
+
+def test_visual_provenance_errors_name_the_offending_figure(report_folder: Path) -> None:
+    """Every provenance error must identify which figure it concerns -- a
+    manifest with several figures otherwise leaves the author guessing."""
+    write_evidence(report_folder, ["C-001"])
+    unknown_figure = figure_referencing(report_folder, ["C-999"])
+    unknown_figure["file"] = "chart-b.svg"
+
+    outcome = validate_visual_evidence_provenance(report_folder, [unknown_figure])
+    assert any("chart-b.svg" in e for e in outcome.errors)
+
+
+def test_visual_provenance_rejects_malformed_evidence_yml_without_crashing(
+    report_folder: Path,
+) -> None:
+    """A research/evidence.yml with invalid YAML syntax is a reported error,
+    never an uncaught crash, once a figure engages provenance."""
+    (report_folder / "research").mkdir()
+    (report_folder / "research" / "evidence.yml").write_text(
+        "claims: [unclosed", encoding="utf-8"
+    )
+    figure = {
+        "file": "figure.svg",
+        "evidence_package_sha256": "0" * 64,
+        "claim_ids": ["C-001"],
+    }
+
+    outcome = validate_visual_evidence_provenance(report_folder, [figure])
+    assert outcome.errors
+
+
+def test_visual_provenance_rejects_non_list_figures_without_crashing(
+    report_folder: Path,
+) -> None:
+    """A malformed (non-list) ``figures`` argument must not crash."""
+    outcome = validate_visual_evidence_provenance(report_folder, None)  # type: ignore[arg-type]
+    assert outcome.errors == []
+
+
 # ---------------------------------------------------------------------------
 # Integration -- the composed manifest/final gate rejects it too
 # ---------------------------------------------------------------------------
