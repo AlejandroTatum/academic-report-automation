@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import json
 import os
 import re
 import subprocess
@@ -23,6 +25,9 @@ from report_config import (
 )
 from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_path
 from structure_contract import parse_structure, structure_confirmation_state
+from table_directives import TableDirectiveError, parse_table_blocks
+from table_model import OverrideRejectedError, SelectionReceipt, TableStylesContext, resolve_table_style
+from table_styles import UnsupportedContextError
 from validate_ieee_refs import ValidationResult, validate_ieee
 from visual_metadata import validate_visual_manifest
 
@@ -239,6 +244,7 @@ class ReportValidation:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     checks: list[str] = field(default_factory=list)
+    table_style_receipts: list[SelectionReceipt] = field(default_factory=list)
 
     def add(self, name: str, result: ValidationResult) -> None:
         self.checks.append(name)
@@ -1024,6 +1030,77 @@ def visual_pdf_validation(config: ReportConfig) -> ValidationResult:
     return result
 
 
+def table_style_receipts_validation(config: ReportConfig) -> tuple[list[SelectionReceipt], ValidationResult]:
+    """Re-resolve every directed table's SelectionReceipt, read-only, from body.md.
+
+    Issue #13 acceptance gap: the design's ``tools/validate_report.py``
+    file-change entry ("Persist receipts and coordinate post-render
+    evidence") was never implemented -- ``SelectionReceipt`` was computed
+    correctly by ``build_latex_report.py``/``build_docx_report.py`` but
+    discarded after rendering. Rather than thread a receipt collector
+    through both renderers, this re-derives the identical receipt
+    ``resolve_table_style`` is pure: same body.md + same report.yml/
+    academic_format.yml always resolves the same style, teacher/institution
+    override precedence included. A no-op (``[]``, no errors) for a report
+    that never opted into ``table_styles: {enabled: true}`` -- every
+    existing report's validation evidence stays byte-for-byte unchanged.
+    ``tools/build_report.py`` (the HTML preview tool) has no ``ReportConfig``
+    at all, so it is out of scope here by construction (see
+    odd/tasks/contextual-table-styles.md).
+    """
+    result = ValidationResult()
+    if not config.table_styles_enabled or not config.body_path.exists():
+        return [], result
+
+    markdown = config.body_path.read_text(encoding="utf-8", errors="ignore")
+    try:
+        blocks = parse_table_blocks(markdown)
+    except TableDirectiveError as exc:
+        result.errors.append(f"Directiva de estilo de tabla inválida en body.md: {exc}")
+        return [], result
+
+    table_styles = TableStylesContext.from_config(config)
+    receipts: list[SelectionReceipt] = []
+    for block in blocks:
+        if block.table_key is None or block.context is None:
+            continue  # undirected -- build_latex_report/build_docx_report already block this
+        request = table_styles.request_for(block.table_key, block.context)
+        try:
+            receipts.append(resolve_table_style(request, table_styles.catalog))
+        except (OverrideRejectedError, UnsupportedContextError) as exc:
+            result.errors.append(f"Estilo de tabla '{block.table_key}': {exc}")
+    return receipts, result
+
+
+def write_table_style_receipts(config: ReportConfig, receipts: list[SelectionReceipt]) -> None:
+    """Persist every table's SelectionReceipt as path-free, byte-stable JSON evidence.
+
+    Design: "Receipts beside quality evidence... JSON receipts for
+    deterministic machine comparison and human-readable rationale without
+    leaking paths." ``SelectionReceipt``/``TableContext`` carry no
+    filesystem path by construction; sorted by ``table_key`` so the same
+    body.md always produces identical bytes regardless of dict iteration
+    order.
+    """
+    path = config.table_style_receipts_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ordered = sorted(receipts, key=lambda receipt: receipt.table_key)
+    payload = {
+        "catalog_version": ordered[0].catalog_version if ordered else None,
+        "tables": [
+            {
+                "table_key": receipt.table_key,
+                "style_id": receipt.style_id,
+                "precedence_source": receipt.precedence_source,
+                "rationale": receipt.rationale,
+                "context": dataclasses.asdict(receipt.context),
+            }
+            for receipt in ordered
+        ],
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def write_quality_report(config: ReportConfig, validation: ReportValidation) -> None:
     path = config.quality_report_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1037,6 +1114,12 @@ def write_quality_report(config: ReportConfig, validation: ReportValidation) -> 
         "## Validaciones ejecutadas",
     ]
     lines.extend(f"- {check}" for check in validation.checks)
+    if validation.table_style_receipts:
+        lines.extend(["", "## Estilos de tabla"])
+        lines.extend(
+            f"- {receipt.table_key}: {receipt.style_id} ({receipt.precedence_source}) — {receipt.rationale}"
+            for receipt in sorted(validation.table_style_receipts, key=lambda receipt: receipt.table_key)
+        )
     if validation.errors:
         lines.extend(["", "## Errores", *[f"- {error}" for error in validation.errors]])
     if validation.warnings:
@@ -1068,6 +1151,12 @@ def validate(config: ReportConfig) -> ReportValidation:
         validation.add("visual_pdf", visual_pdf_validation(config))
     if validators.get("docx", False):
         validation.add("docx", docx_validation(config))
+    if config.table_styles_enabled:
+        receipts, table_style_result = table_style_receipts_validation(config)
+        validation.add("table_style_receipts", table_style_result)
+        validation.table_style_receipts = receipts
+        if receipts:
+            write_table_style_receipts(config, receipts)
     write_quality_report(config, validation)
     return validation
 

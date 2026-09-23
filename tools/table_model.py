@@ -31,8 +31,8 @@ from table_styles import (
     APPROVED_STYLE_IDS,
     Catalog,
     TableContext,
-    UnsupportedContextError,
     _matches_all,
+    _matches_any,
     select_style,
 )
 
@@ -87,7 +87,12 @@ def _validate_override(table_key: str, source: str, override_id: str, context: T
     style = catalog.styles[override_id]
     if style.deprecated:
         raise OverrideRejectedError(table_key, source, override_id, "deprecated")
-    if not _matches_all(context, style.applicability):
+    # Both applicability (must hold) and avoidance (must not match) decide
+    # eligibility for automatic selection (see table_styles.eligible_candidates);
+    # an override bypasses automatic selection but not the same context rules
+    # -- checking applicability alone let an explicitly avoided style through
+    # silently (T1+T2 review R3-override-ignores-avoidance).
+    if not _matches_all(context, style.applicability) or _matches_any(context, style.avoidance):
         raise OverrideRejectedError(table_key, source, override_id, "incompatible with this table's context")
 
 

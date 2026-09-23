@@ -77,6 +77,19 @@ def test_issue_13_override_precedence() -> None:
             "TAB-MN-03",
             "incompatible",
         ),
+        (
+            # TAB-ZB-04's applicability (purpose=reference, length=long)
+            # matches this context on its own, but its avoidance explicitly
+            # excludes column-emphasis contexts -- an override must be
+            # rejected by avoidance too, not applicability alone (T1+T2
+            # review R3-override-ignores-avoidance).
+            {"teacher_override": "TAB-ZB-04", "context": TableContext(
+                purpose="reference", length="long", density="medium",
+                columns=3, rows=10, pagination="single", emphasis="column",
+            )},
+            "TAB-ZB-04",
+            "incompatible",
+        ),
     ],
 )
 def test_issue_13_invalid_override_rejection(override_kwargs, expected_id, expected_reason_fragment) -> None:
