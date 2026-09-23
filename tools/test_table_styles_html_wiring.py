@@ -72,3 +72,58 @@ def test_mixed_directed_and_undirected_tables_both_render(tmp_path: Path) -> Non
     html = _render(tmp_path, markdown_text)
     assert 'data-table-style="TAB-CL-01"' in html
     assert html.count("<table") == 2
+
+
+def test_table_style_directive_inside_a_fenced_code_block_is_left_alone(tmp_path: Path) -> None:
+    """A documentation code sample showing the directive/table syntax must
+    render as literal code, never be rewritten as a real styled table
+    (T4+T5 review R3-fence-unaware-html-rewrite)."""
+    markdown_text = (
+        "# Ejemplo\n\n"
+        "```markdown\n"
+        "<!-- table-style: example purpose=reference -->\n"
+        "| Name | Score |\n"
+        "| ---- | ----- |\n"
+        "| Ana  | 9     |\n"
+        "```\n"
+    )
+    html = build_report.apply_table_styles(markdown_text)
+    assert "data-table-style" not in html
+    assert "<!-- table-style: example purpose=reference -->" in html
+    assert "| Name | Score |" in html
+
+
+def test_undirected_body_never_loads_the_style_catalog(tmp_path: Path, monkeypatch) -> None:
+    """The catalog is loaded only once a directed table is actually found,
+    so an HTML build with no styled tables never depends on it (T4+T5
+    review R4-unconditional-catalog-load)."""
+    def _fail() -> None:
+        raise AssertionError("load_catalog() must not run for a body with no directed tables")
+
+    monkeypatch.setattr(build_report, "load_catalog", _fail)
+    body = build_report.apply_table_styles(UNDIRECTED_MD)
+    assert "| Name | Score |" in body  # left untouched -- no rewrite attempted
+
+
+def test_invalid_table_style_is_a_reported_finding_not_a_crash(tmp_path: Path) -> None:
+    """An unapproved ``[[status:...]]`` marker must surface as a warning the
+    caller collects, not an uncaught ``ValueError`` crashing the whole HTML
+    preview build (T4+T5 review R3/R4-html-preview-crash)."""
+    markdown_text = (
+        "<!-- table-style: bad-marker purpose=status meaning=status -->\n"
+        "| Componente | Estado |\n"
+        "| ---------- | ------ |\n"
+        "| API        | [[status:mystery]] |\n"
+    )
+    warnings: list[str] = []
+    html = build_report.apply_table_styles(markdown_text, warnings=warnings)
+    assert "data-table-style" not in html
+    assert "[[status:mystery]]" in html  # left untouched, not silently dropped
+    assert any("bad-marker" in warning for warning in warnings)
+
+    # And through the full render() pipeline: the banner carries the
+    # warning instead of the process crashing.
+    md_path = tmp_path / "body.md"
+    md_path.write_text(markdown_text, encoding="utf-8")
+    rendered = build_report.render(md_path, tmp_path / "missing.css")
+    assert "bad-marker" in rendered

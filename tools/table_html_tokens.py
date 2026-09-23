@@ -23,15 +23,23 @@ if TYPE_CHECKING:
     from table_styles import StatusIndicator, StyleDefinition
 
 from table_directives import strip_status_markers
+from table_styles import COLUMN_EMPHASIS_FILL_HEX, HEADER_FILL_HEX, ROW_ALTERNATING_FILL_HEX
 
 _ALIGN_CSS = {"centered": "center", "left": "left", "numeric_right": "right"}
 _PADDING_PX = {"generous": "10px 12px", "standard": "6px 8px", "compact": "4px 6px", "minimal": "2px 4px"}
 _FONT_SIZE_PT = {"low": "11pt", "medium": "9.5pt", "high": "8pt"}
+# Derived from table_styles.HEADER_FILL_HEX (shared with table_docx_tokens)
+# so "gray_shaded"/"dark_shaded" paint the identical color in both backends
+# -- previously hand-copied here as a slightly different literal (#ededed
+# vs DOCX's #EAEAEA), a coherence drift `test_issue_13_backend_style_coherence`
+# is meant to catch.
 _HEADER_STYLE = {
-    "gray_shaded": "background:#ededed;",
-    "dark_shaded": "background:#404040;color:#ffffff;",
+    "gray_shaded": f"background:#{HEADER_FILL_HEX['gray_shaded'].lower()};",
+    "dark_shaded": f"background:#{HEADER_FILL_HEX['dark_shaded'].lower()};color:#ffffff;",
     "plain": "",
 }
+_ROW_ALTERNATING_CSS = f"#{ROW_ALTERNATING_FILL_HEX.lower()}"
+_COLUMN_EMPHASIS_CSS = f"#{COLUMN_EMPHASIS_FILL_HEX.lower()}"
 
 
 def _cell_border(borders_token: str) -> str:
@@ -106,7 +114,7 @@ def render_styled_table_html(
         cell_style = f"{border_css}{padding_css}{font_css}{align_css}vertical-align:top;"
         is_emphasis_cell = is_emphasis_style and column_index == emphasis_column
         if is_emphasis_cell:
-            cell_style += "background:#d9d9d9;font-weight:700;"
+            cell_style += f"background:{_COLUMN_EMPHASIS_CSS};font-weight:700;"
             content = f"<strong>{content}</strong>" if not is_header else content
         if is_header:
             cell_style += "font-weight:700;text-align:center;" + _HEADER_STYLE[tokens["header"]]
@@ -128,7 +136,7 @@ def render_styled_table_html(
         padded = row + [""] * (columns - len(row))
         row_style = ""
         if tokens["row_rhythm"] == "alternating" and row_index % 2 == 1:
-            row_style = ' style="background:#f2f2f2;"'
+            row_style = f' style="background:{_ROW_ALTERNATING_CSS};"'
         lines.append(f"    <tr{row_style}>")
         lines.extend(_cell(cell, is_header=False, column_index=idx) for idx, cell in enumerate(padded))
         lines.append("    </tr>")

@@ -27,19 +27,27 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 
-from table_styles import load_catalog  # noqa: E402
+from table_styles import (  # noqa: E402
+    COLUMN_EMPHASIS_FILL_HEX,
+    HEADER_FILL_HEX,
+    ROW_ALTERNATING_FILL_HEX,
+    load_catalog,
+)
 
 CATALOG = load_catalog()
 
 WHITE = "#FFFFFF"
 BLACK = "#000000"
 
-# Backgrounds the token mappers actually paint, and the WCAG threshold that
-# applies to whatever renders on top of them.
-HEADER_GRAY_SHADED = "#EAEAEA"      # table_docx_tokens._HEADER_FILL["gray_shaded"], table_html_tokens/_HEADER_STYLE
-HEADER_DARK_SHADED = "#404040"      # ditto, "dark_shaded" -- white bold header text on top
-ROW_ALTERNATING = "#F2F2F2"         # table_docx_tokens._shade_cell/table_html_tokens alternating rows
-COLUMN_EMPHASIS = "#D9D9D9"         # table_docx_tokens/table_html_tokens column_emphasis cell shading
+# Backgrounds the token mappers actually paint, imported from the single
+# shared source both table_docx_tokens.py and table_html_tokens.py derive
+# their own literal from -- not hand-copied hex strings that could silently
+# drift from what production code actually renders (T4+T5 review
+# R2-a11y-test-copied-constants).
+HEADER_GRAY_SHADED = f"#{HEADER_FILL_HEX['gray_shaded']}"
+HEADER_DARK_SHADED = f"#{HEADER_FILL_HEX['dark_shaded']}"      # white bold header text on top
+ROW_ALTERNATING = f"#{ROW_ALTERNATING_FILL_HEX}"
+COLUMN_EMPHASIS = f"#{COLUMN_EMPHASIS_FILL_HEX}"
 
 
 def _channel(value: int) -> float:

@@ -277,6 +277,54 @@ def test_issue_13_backend_style_coherence_docx_unknown_status_marker_blocks() ->
         )
 
 
+def test_issue_13_backend_style_coherence_docx_row_wider_than_header_blocks() -> None:
+    """A body row with more cells than the header must block with a clear
+    message, not crash with a raw ``IndexError`` once python-docx runs out
+    of cells to write into (T4+T5 review R3-docx-row-wider-than-header)."""
+    style = CATALOG.styles["TAB-CL-01"]
+    document = Document()
+    with pytest.raises(ValueError, match="row has 3 cells but the header defines 2"):
+        render_styled_table_docx(
+            document=document, header=HEADER, rows=[["Widget A", "ok", "extra"]],
+            style=style, status_indicators=CATALOG.status_indicators, fill_cell=_plain_fill_cell,
+        )
+
+
+def test_issue_13_backend_style_coherence_docx_ooxml_child_order() -> None:
+    """OOXML (ECMA-376) requires `w:tblPr`/`w:tcPr` children in schema
+    order; Word repairs/rejects a document that violates it (T4+T5 review
+    R3-ooxml-child-order). Exercises every style so every borders/header/
+    row_rhythm token combination is checked, not just one style."""
+    tbl_pr_seq = (
+        "tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize",
+        "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders",
+        "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription", "tblPrChange",
+    )
+    tc_pr_seq = (
+        "cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap",
+        "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark", "headers",
+        "cellIns", "cellDel", "cellMerge", "tcPrChange",
+    )
+
+    def _assert_schema_order(element, allowed_seq) -> None:
+        seen = [child.tag.split("}", 1)[-1] for child in element]
+        positions = [allowed_seq.index(tag) for tag in seen if tag in allowed_seq]
+        assert positions == sorted(positions), f"{seen} not in schema order {allowed_seq}"
+
+    for style_id in sorted(APPROVED_STYLE_IDS):
+        style = CATALOG.styles[style_id]
+        document = Document()
+        table = render_styled_table_docx(
+            document=document, header=HEADER, rows=ROWS, style=style,
+            status_indicators=CATALOG.status_indicators, fill_cell=_plain_fill_cell,
+            emphasis_column=1 if style.tokens["row_rhythm"] == "column_emphasis" else None,
+        )
+        _assert_schema_order(table._tbl.tblPr, tbl_pr_seq)
+        for row in table.rows:
+            for cell in row.cells:
+                _assert_schema_order(cell._tc.get_or_add_tcPr(), tc_pr_seq)
+
+
 # ---------------------------------------------------------------------------
 # HTML (T5)
 # ---------------------------------------------------------------------------
@@ -296,7 +344,10 @@ def test_issue_13_backend_style_coherence_html(style_id: str) -> None:
     assert f'data-table-style="{style_id}"' in html
 
     if tokens["header"] == "gray_shaded":
-        assert "#ededed" in html
+        # Same hex as the DOCX header fill (table_styles.HEADER_FILL_HEX) --
+        # backends must agree on the color for one token, not each pick a
+        # visually-close-but-different shade.
+        assert "#eaeaea" in html
     elif tokens["header"] == "dark_shaded":
         assert "#404040" in html
         assert "#ffffff" in html
