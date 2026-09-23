@@ -20,7 +20,7 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 ## Tasks
 - [x] T1 catalog + selector (R1-R4). Route: delegated writer.
 - [x] T2 context model, override precedence, receipts (R5-R8). Route: delegated writer.
-- [ ] T3 LaTeX tokens (R9 latex). Route: delegated writer.
+- [x] T3 LaTeX tokens (R9 latex). Route: delegated writer.
 - [ ] T4 DOCX tokens (R9 docx). Route: delegated writer.
 - [ ] T5 HTML tokens + rendered corpus, multipage, grayscale/accessibility (R9 html, R10-R12). Route: delegated writer.
 
@@ -118,11 +118,123 @@ change, not an implementation detail, and did not choose (b) either
 because it would silently under-deliver two of the seven approved styles.
 Stopping T3-T5 here rather than guessing.
 
+**Resolved 2026-09-22 — user selected option (a).** Authoring convention
+(documented in
+`skills/academic-report-builder/references/quality-gates.md`, "Contextual
+table styles (issue #13)"):
+- `emphasis_column: <0-indexed int>` directive attribute for
+  `TAB-CE-05`'s protagonist column. Required whenever that style applies;
+  out of range blocks with a finding.
+- `[[status:<value>]]` inline cell markers for `TAB-TC-02`/`TAB-ES-06`.
+  Approved values are versioned in `templates/table_styles.yml`'s new
+  `status_indicators:` section (`ok`, `fail`, `warn`, `up`, `down`); every
+  value carries a distinct symbol AND an accessible label alongside its
+  color — never color alone, so grayscale/colorblind rendering keeps
+  meaning. An unknown marker value blocks with a finding.
+
+## T3 evidence (LaTeX tokens, R9 latex)
+
+Commit 9275bbe `feat(tables): latex tokens` (20 files changed, +1400/-5).
+New production modules, each with a preceding failing test observed before
+implementation:
+
+- `tools/table_directives.py` — Markdown directive/marker parser.
+  `<!-- table-style: <key> purpose=... [meaning=] [emphasis=]
+  [color_policy=] [accessibility_needs=] [emphasis_column=] -->`
+  immediately before a table (blank lines only in between); structural
+  facts (columns/rows/length/pagination/density) always derived, never
+  declared. `context_for_table` (backward-scan from a table's start line)
+  is reused both by `parse_table_blocks` (whole-document scan, used by the
+  CLI checker) and directly by `build_latex_report.py`'s existing
+  line-scanning loop, so there is exactly one table-detection pass driving
+  the actual renderer — no risk of two independent scanners disagreeing on
+  table boundaries.
+- `tools/table_styles.py` (extended) — `status_indicators:` catalog
+  section (symbol + `#RRGGBB` color + accessible label per approved
+  value, duplicate-symbol load blocked) and `TableContext.emphasis_column`
+  (optional, default `None`, backward-compatible with T1).
+- `tools/table_latex_tokens.py` — pure `render_styled_table_latex`: maps
+  all ten style tokens to LaTeX (borders → vertical rules/`\hline`
+  placement, header → `\rowcolor`/`\color{white}`, alignment →
+  `\centering`/`\raggedright`/`\raggedleft`, padding →
+  `\tabcolsep`/`\arraystretch`, density → font size, row_rhythm →
+  `\rowcolors`/`\cellcolor`, indicators → inline symbol+color+label plus a
+  trailing legend, caption/notes → above/below/inline). Keeps the existing
+  longtable(≤2 cols)/xltabular(>2 cols) choice (#26) so wrapping/pagination
+  behavior is unchanged. No import from `build_latex_report.py` (avoids a
+  circular import) — `convert_inline` is injected.
+- `tools/build_latex_report.py` (modified) — `markdown_to_latex` gains an
+  optional `table_styles: TableStylesContext | None = None` parameter
+  (default `None`, so every existing call site and every report without
+  `table_styles: {enabled: true}` is byte-for-byte unchanged); when given,
+  the table-detection branch looks up the table's directive via
+  `context_for_table` and either renders through
+  `render_styled_table_latex` or raises `SystemExit` for a table with no
+  directive. `render_tex` constructs the context only when
+  `config.table_styles_enabled`.
+- `tools/table_model.py` (extended) — `TableStylesContext` (catalog +
+  per-table teacher overrides + institution default) and `.request_for`.
+- `tools/report_config.py` (extended) — `table_styles_enabled` property
+  (default `False`).
+- `tools/check_table_contexts.py` — read-only migration CLI:
+  `scan_directory` reports directed/undirected tables per file and
+  malformed-directive errors; exit code reflects only real errors
+  (undirected is a migration note, not a failure). Verified against the
+  fixture corpus: `.venv/bin/python tools/check_table_contexts.py
+  tests/fixtures/table_styles` → "Tablas con directiva: 3 / sin
+  directiva: 0 / inválidas: 0".
+- `tests/fixtures/table_styles/sample-reports/latex/` — fixture report
+  (`table_styles: {enabled: true}`, three directed tables: reference,
+  column-emphasis comparison, status). Named `sample-reports/`, not the
+  tasks-suggested `reports/`: `.gitignore` has an unanchored `reports/`
+  rule for the private content tree that silently swallowed the first
+  attempt (`git status` showed nothing after `git add`) — caught before
+  committing by checking `git diff --cached --stat` line counts against
+  expectation. `tests/fixtures/table_styles/golden/latex/results-summary.tex`
+  — golden fragment captured from a real `build_latex_report.build(...,
+  compile_pdf=False)` run (the harness command from tasks #6424,
+  `--tex-only` equivalent) and hand-reviewed before being pinned.
+
+**Bug found and fixed during golden capture, not from a named scenario**:
+the first capture attempt showed the *next* table's directive comment
+(`<!-- table-style: method-comparison ... -->`) rendered as literal
+escaped text in the `.tex` output — directive lines were falling through
+`markdown_to_latex`'s generic paragraph path. Fixed by skipping any line
+matching the directive regex at the top of the main loop (before fence/
+heading/etc. handling), unconditionally — a directive is inert whether or
+not `table_styles` is enabled for that build. Regression test added:
+`test_directive_comment_never_renders_as_visible_text` in
+`tools/test_table_styles_latex_wiring.py` (passes after the fix; the raw
+leaked comment text in the pre-fix golden capture is the RED evidence —
+not re-derived by reverting, to avoid re-breaking a since-fixed file).
+
+RED/GREEN tests (all named per-module, not spec `R`-numbers — R9 is
+covered by `test_issue_13_backend_style_coherence_latex`, parametrized
+over the seven approved IDs): `tools/test_table_directives.py` (9),
+`tools/test_table_backend_contracts.py` (10, incl.
+`test_issue_13_backend_style_coherence_latex[<7 IDs>]`),
+`tools/test_table_styles_config.py` (7, incl. 2 pre-existing-but-untested
+T2 properties retroactively covered), `tools/test_table_styles_latex_wiring.py`
+(5), `tools/test_table_styles_latex_fixture.py` (2, incl. the golden
+comparison), `tools/test_check_table_contexts.py` (3), plus one new test
+in `tools/test_table_styles.py` (`status_indicators`) and one in
+`tools/test_table_model.py` (`TableStylesContext.request_for`). Full
+suite: 1104 passed (1063 baseline for this slice + 41 new tests incl.
+duplicate-top-level-function parametrize hits for
+`table_directives.py`/`table_latex_tokens.py`/`check_table_contexts.py`).
+
+Deviation from the ~400-line advisory: this slice landed at +1400/-5
+(commit shortstat); the golden `.tex` fragment itself is 18 of those
+lines. Reason: T3 absorbed the
+directive parser and `check_table_contexts.py` deferred from T2, plus all
+ten LaTeX tokens across seven styles plus the two newly-approved
+authoring-convention tokens, in one slice — splitting further would have
+left an unusable half-wired state (a parser with no renderer, or a
+renderer with no way to reach `emphasis_column`/status markers).
+
+Not attempted in this slice: no LaTeX compilation (Docker TeX Live) —
+T3's harness only proves `.tex` generation (`--tex-only`); PDF-level
+rendered-quality/accessibility evidence is T5's explicit scope (R10-R12).
+
 ## Next step
-Ask the user to pick an option above for the two per-cell/per-column
-semantic tokens, then resume T3 (LaTeX tokens — R9 latex) with the
-deferred table-directive parser and `tools/check_table_contexts.py`,
-followed by T4 (DOCX) and T5 (HTML + rendered validation). T1 and T2 are
-merge-ready independently: they add no wiring into `build_latex_report.py`,
-`build_docx_report.py`, or `build_report.py`, so no existing report's
-output changed.
+T4 (DOCX tokens — R9 docx).

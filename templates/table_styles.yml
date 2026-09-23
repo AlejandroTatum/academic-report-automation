@@ -51,6 +51,34 @@
 schema_version: 1
 catalog_version: "2026.09.1"
 
+# Approved `[[status:<value>]]` inline markers (authoring convention approved
+# 2026-09-22, see odd/tasks/contextual-table-styles.md). Used by TAB-TC-02
+# and TAB-ES-06's `indicators: symbol_color` token: an unknown marker value
+# blocks rendering rather than being dropped or guessed. Every entry carries
+# a symbol AND a label alongside its color, so meaning survives grayscale
+# printing and colorblind rendering -- color is never the only signal.
+status_indicators:
+  ok:
+    symbol: "✓"
+    color: "#2E7D32"
+    label: "OK"
+  fail:
+    symbol: "✗"
+    color: "#C62828"
+    label: "Falla"
+  warn:
+    symbol: "▲"
+    color: "#F9A825"
+    label: "Alerta"
+  up:
+    symbol: "↑"
+    color: "#1565C0"
+    label: "Sube"
+  down:
+    symbol: "↓"
+    color: "#EF6C00"
+    label: "Baja"
+
 styles:
   TAB-CL-01:
     label: "Clásico académico refinado"

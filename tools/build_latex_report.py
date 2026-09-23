@@ -24,6 +24,10 @@ from report_config import (
     load_report_config,
     relative_subpath,
 )
+from table_directives import DIRECTIVE_RE as TABLE_STYLE_DIRECTIVE_RE
+from table_directives import context_for_table
+from table_latex_tokens import render_styled_table_latex
+from table_model import TableStylesContext, resolve_table_style
 
 DEFAULT_TEMPLATE = ROOT / "templates" / "unl-report.tex"
 PLAIN_TEMPLATE = ROOT / "templates" / "plain-report.tex"
@@ -255,6 +259,7 @@ def markdown_to_latex(
     markdown: str,
     suppress_bibliography_heading: bool = False,
     build_dir: Path | None = None,
+    table_styles: TableStylesContext | None = None,
 ) -> str:
     lines = markdown.splitlines()
     output: list[str] = []
@@ -404,6 +409,14 @@ def markdown_to_latex(
             i += 1
             continue
 
+        # A table-style directive (issue #13) is an inert HTML comment: it
+        # must never render as visible paragraph text, whether or not
+        # table_styles is active for this build (context_for_table already
+        # consumes it when it is; a disabled/undirected build just drops it).
+        if TABLE_STYLE_DIRECTIVE_RE.match(stripped):
+            i += 1
+            continue
+
         # Fences come first: a code line may contain anything, including the
         # pipes, hashes and dashes every other block rule keys on.
         fence = CODE_FENCE_RE.match(stripped)
@@ -432,12 +445,35 @@ def markdown_to_latex(
 
         if "|" in stripped and i + 1 < len(lines) and is_table_separator(lines[i + 1]):
             flush_paragraph(); close_list()
+            table_start = i
             table_rows = [split_table_row(stripped)]
             i += 2
             while i < len(lines) and "|" in lines[i].strip() and lines[i].strip():
                 table_rows.append(split_table_row(lines[i]))
                 i += 1
-            render_table(table_rows)
+            if table_styles is not None:
+                header, body_rows = table_rows[0], table_rows[1:]
+                table_key, context = context_for_table(lines, table_start, header, body_rows)
+                if table_key is None:
+                    raise SystemExit(
+                        f"Tabla sin directiva table-style en la línea {table_start + 1}: "
+                        "con table_styles.enabled: true en report.yml, cada tabla debe "
+                        "declarar '<!-- table-style: <key> purpose=... -->' inmediatamente "
+                        "antes (issue #13; sin estilo genérico de reemplazo)."
+                    )
+                request = table_styles.request_for(table_key, context)
+                receipt = resolve_table_style(request, table_styles.catalog)
+                selected_style = table_styles.catalog.styles[receipt.style_id]
+                output.extend(render_styled_table_latex(
+                    header=header,
+                    rows=body_rows,
+                    style=selected_style,
+                    status_indicators=table_styles.catalog.status_indicators,
+                    convert_inline=convert_inline,
+                    emphasis_column=context.emphasis_column,
+                ))
+            else:
+                render_table(table_rows)
             continue
 
         # finalanswer{...} —→ answerbox environment (before display_math)
@@ -676,11 +712,15 @@ def render_tex(config: ReportConfig) -> str:
     # rendered output carries \cite prints the bibliography (and suppresses a
     # bibliography-named Markdown heading the template title would duplicate).
     build_dir = config.tex_path.parent
-    body = markdown_to_latex(markdown_source, build_dir=build_dir)
+    # Opt-in only (issue #13): a report that never declares `table_styles:
+    # {enabled: true}` keeps the exact legacy single-style table renderer.
+    table_styles = TableStylesContext.from_config(config) if config.table_styles_enabled else None
+    body = markdown_to_latex(markdown_source, build_dir=build_dir, table_styles=table_styles)
     emit_bibliography = r"\cite{" in body and config.bib_path is not None
     if emit_bibliography:
         body = markdown_to_latex(
-            markdown_source, suppress_bibliography_heading=True, build_dir=build_dir
+            markdown_source, suppress_bibliography_heading=True, build_dir=build_dir,
+            table_styles=table_styles,
         )
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.

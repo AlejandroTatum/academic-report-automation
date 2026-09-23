@@ -137,6 +137,49 @@ should no longer occur for any table long enough to need a real split —
 verify tables that DO break across a page boundary still show the repeated
 header and an unbroken bottom rule on every chunk.
 
+### Contextual table styles (issue #13)
+
+Opt-in only — a report that never declares `table_styles: {enabled: true}`
+in `report.yml` renders every table through the legacy single generic style
+above, byte-for-byte unchanged. Once opted in, EVERY table in `body.md`
+must carry a directive immediately before it (blank lines allowed in
+between, nothing else): there is no fallback to the generic style.
+
+```markdown
+<!-- table-style: <key> purpose=<reference|comparison|status|evidence|dense>
+     [meaning=<none|comparison|status>] [emphasis=<none|column>]
+     [color_policy=<color|grayscale>] [accessibility_needs=<true|false>]
+     [emphasis_column=<0-indexed int>] -->
+| header | ... |
+| ------ | --- |
+| cell [[status:ok]] | ... |
+```
+
+- `key` must be unique per document (it is the table's identity in
+  evidence receipts and in per-table teacher overrides:
+  `table_styles: {overrides: {<key>: <ID>}}` in report.yml).
+- `purpose` is required; every other attribute is optional. Structural
+  facts (columns, rows, short/long, single/multipage) are always derived
+  from the table itself, never declared.
+- `emphasis_column` (authoring convention approved 2026-09-22) names the
+  0-indexed protagonist column for `TAB-CE-05` (column-emphasis row
+  rhythm). Required whenever that style applies; an out-of-range index
+  blocks the build with a finding.
+- `[[status:<value>]]` inline markers (same approval) mark a cell's
+  status/comparison meaning for `TAB-TC-02`/`TAB-ES-06` (symbol+color
+  indicators). Approved values are versioned in
+  `templates/table_styles.yml`'s `status_indicators:` section (e.g. `ok`,
+  `fail`, `warn`, `up`, `down`); every value renders a distinct symbol AND
+  an accessible text label alongside its color, so grayscale printing and
+  colorblind rendering never lose meaning. An unapproved value blocks the
+  build with a finding rather than being dropped or guessed.
+- Run `.venv/bin/python tools/check_table_contexts.py <dir>` to find
+  tables still missing a directive before opting a report in.
+
+See `odd/tasks/contextual-table-styles.md` for the full design record and
+`tools/table_directives.py`/`tools/table_styles.py`/`tools/table_model.py`
+for the parser, catalog and override-resolution implementation.
+
 Recommended split for wide requirement tables — avoid six compressed columns by using two tables sharing the same code:
 
 ```

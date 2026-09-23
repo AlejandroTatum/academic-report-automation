@@ -19,6 +19,7 @@ sys.path.insert(0, str(TOOLS))
 from table_model import (  # noqa: E402
     OverrideRejectedError,
     TableRequest,
+    TableStylesContext,
     resolve_table_style,
 )
 from table_styles import TableContext, UnsupportedContextError, load_catalog  # noqa: E402
@@ -96,6 +97,7 @@ def test_issue_13_deprecated_override_rejection() -> None:
                 **{**CATALOG.styles["TAB-CL-01"].__dict__, "deprecated": True}
             ),
         },
+        status_indicators=CATALOG.status_indicators,
         source_path=CATALOG.source_path,
     )
     request = _request(teacher_override="TAB-CL-01")
@@ -117,6 +119,21 @@ def test_issue_13_unsupported_context_blocks() -> None:
     message = str(excinfo.value)
     assert "purpose" in message
     assert "density" in message
+
+
+def test_table_styles_context_request_for_applies_teacher_then_institution() -> None:
+    styles_context = TableStylesContext(
+        catalog=CATALOG,
+        teacher_overrides={"results-summary": "TAB-MN-03"},
+        institution_override="TAB-TC-02",
+    )
+    with_teacher = styles_context.request_for("results-summary", SHORT_REFERENCE)
+    assert with_teacher.teacher_override == "TAB-MN-03"
+    assert with_teacher.institution_override == "TAB-TC-02"
+
+    without_teacher = styles_context.request_for("other-table", SHORT_REFERENCE)
+    assert without_teacher.teacher_override is None
+    assert without_teacher.institution_override == "TAB-TC-02"
 
 
 def test_issue_13_selection_evidence_receipt() -> None:

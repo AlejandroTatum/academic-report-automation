@@ -26,6 +26,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from report_config import ReportConfig
 from table_styles import (
     APPROVED_STYLE_IDS,
     Catalog,
@@ -88,6 +89,40 @@ def _validate_override(table_key: str, source: str, override_id: str, context: T
         raise OverrideRejectedError(table_key, source, override_id, "deprecated")
     if not _matches_all(context, style.applicability):
         raise OverrideRejectedError(table_key, source, override_id, "incompatible with this table's context")
+
+
+@dataclass(frozen=True)
+class TableStylesContext:
+    """One report's resolved table-style configuration: catalog + overrides.
+
+    Built once per build (``TableStylesContext.from_config``) and threaded
+    into a backend renderer's Markdown-to-native pass; ``request_for``
+    turns a parsed table's key/context into the ``TableRequest``
+    ``resolve_table_style`` needs, applying that report's teacher override
+    (per table key) ahead of its institution-wide default.
+    """
+
+    catalog: Catalog
+    teacher_overrides: dict[str, str]
+    institution_override: str | None
+
+    @classmethod
+    def from_config(cls, config: ReportConfig, catalog: Catalog | None = None) -> "TableStylesContext":
+        from table_styles import load_catalog
+
+        return cls(
+            catalog=catalog or load_catalog(),
+            teacher_overrides=dict(config.table_style_overrides),
+            institution_override=config.institution_table_style,
+        )
+
+    def request_for(self, table_key: str, context: TableContext) -> TableRequest:
+        return TableRequest(
+            table_key=table_key,
+            context=context,
+            teacher_override=self.teacher_overrides.get(table_key),
+            institution_override=self.institution_override,
+        )
 
 
 def resolve_table_style(request: TableRequest, catalog: Catalog) -> SelectionReceipt:

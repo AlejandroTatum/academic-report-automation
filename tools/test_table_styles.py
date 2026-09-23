@@ -96,6 +96,23 @@ def test_issue_13_context_matrix_is_deterministic() -> None:
         assert first.rationale.strip()
 
 
+def test_status_indicators_are_versioned_symbol_plus_color_plus_label() -> None:
+    """Extends R1: status markers (`[[status:<value>]]`) never rely on color
+    alone -- every approved value defines a distinct symbol and an
+    accessible text label alongside its color (authoring convention
+    approved 2026-09-22, see odd/tasks/contextual-table-styles.md)."""
+    catalog = load_catalog()
+
+    assert catalog.status_indicators
+    for value, indicator in catalog.status_indicators.items():
+        assert indicator.symbol.strip()
+        assert indicator.color.strip()
+        assert indicator.label.strip()
+    # Every symbol is visually distinct -- color is never the only signal.
+    symbols = [indicator.symbol for indicator in catalog.status_indicators.values()]
+    assert len(symbols) == len(set(symbols))
+
+
 def test_issue_13_applicability_and_avoidance() -> None:
     catalog = load_catalog()
 
