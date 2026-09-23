@@ -659,6 +659,8 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     if config.backend != "latex" or not config.body_path.exists():
         return result
+    import xml.etree.ElementTree as ET
+
     from build_latex_report import (
         figure_references,
         normalize_template_key,
@@ -675,10 +677,17 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
     for reference in figure_references(markdown):
         resolved = resolve_figure(reference, build_dir)
         if resolved is None:
+            result.warnings.append(
+                f"No se pudo resolver la figura '{reference}' para el gate de conectores en tamaño final; queda sin auditar"
+            )
             continue
         candidate = resolved if resolved.suffix.lower() == ".svg" else resolved.with_suffix(".svg")
         if candidate.exists():
             svg_figures.append(candidate)
+        else:
+            result.warnings.append(
+                f"No se encontró '{candidate.name}' junto a '{resolved.name}' para el gate de conectores en tamaño final; queda sin auditar"
+            )
     if not svg_figures:
         return result
 
@@ -692,7 +701,7 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
     for svg_path in svg_figures:
         try:
             issues = audit_svg_at_final_size(svg_path, tex_source)
-        except ValueError as exc:
+        except (OSError, ValueError, ET.ParseError) as exc:
             result.errors.append(f"No se pudo auditar '{svg_path}' en tamaño final impreso: {exc}")
             continue
         for issue in issues:

@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from textwrap import dedent
 
@@ -386,10 +387,16 @@ def command_validate(args: argparse.Namespace) -> int:
         errors.extend(validate_image(file))
         if file.suffix.lower() == ".svg":
             # Connector geometry is a FAILURE-severity gate for diagrams; chart
-            # SVGs simply carry no nodes/edges and stay silent.
-            errors.extend(
-                f"{i.tag}: {i.detail}" for i in audit_connector_geometry(file) if i.level == FAILURE
-            )
+            # SVGs simply carry no nodes/edges and stay silent. A parse
+            # exception (malformed XML, corrupted path data) becomes a
+            # reported finding here too — one bad file must not crash an
+            # entire folder validate run with an unguarded traceback.
+            try:
+                errors.extend(
+                    f"{i.tag}: {i.detail}" for i in audit_connector_geometry(file) if i.level == FAILURE
+                )
+            except (ET.ParseError, ValueError, KeyError, TypeError) as exc:
+                errors.append(f"CONNECTOR_AUDIT_ERROR: {file}: {exc}")
     if target.is_dir() and not args.no_metadata:
         errors.extend(metadata_errors(target))
     if errors:

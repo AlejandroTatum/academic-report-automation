@@ -69,10 +69,13 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   independently re-audits every diagram SVG at its real final print scale
   through `connector_pdf_stage` (the 0.80-SVG-unit rule's final-scale
   equivalent, derived from the template's own page geometry), blocking the
-  report there too. The isolated run is precheck evidence only; the
-  final-size run is the mandatory, independent enforcement — neither
-  substitutes for the other, and passing both is still not `VISUAL_PASS` (see
-  the report skill's `quality-gates.md`). Non-connector legibility (label
+  report there too. A figure reference that cannot be resolved, or has no
+  matching SVG next to it, is reported as a warning naming the figure — never
+  silently skipped, so the gate cannot pass having audited nothing. The
+  isolated run is precheck evidence only; the final-size run is the
+  mandatory, independent enforcement — neither substitutes for the other, and
+  passing both is still not `VISUAL_PASS` (see the report skill's
+  `quality-gates.md`). Non-connector legibility (label
   wrapping, page geometry, overall composition) still needs inspection in the
   assembled PDF at normal zoom before insertion, per the photo/evidence rule
   above.

@@ -184,3 +184,123 @@ def test_connector_failure_evidence_is_actionable() -> None:
 def test_clean_chart_without_connectors_is_silent() -> None:
     """A chart SVG with no diagram nodes/edges never trips the connector gate."""
     assert failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-chart-clean.svg")) == set()
+
+
+# --- T4: native-review hardening findings on the T1 parser --------------------
+
+
+def test_edge_ids_with_underscored_node_labels_resolve() -> None:
+    """A node label containing its own underscore (e.g. ``my_node``, a valid
+    Mermaid id) must not hard-fail L_<source>_<target>_<ordinal> parsing."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="nodes">'
+        '<g class="node" id="my-svg-flowchart-my_node-0"><rect x="0" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-your_node-1"><rect x="50" y="0" width="10" height="10"/></g>'
+        "</g>"
+        '<g class="edgePaths"><path data-id="L_my_node_your_node_0" d="M 10 5 L 50 5" marker-end="url(#pointEnd)"/></g>'
+        "</svg>"
+    )
+    diagram = cg.parse_svg(svg)
+    assert diagram.parse_issues == []
+    assert {(e.id, e.source, e.target) for e in diagram.edges} == {("L_my_node_your_node_0", "my_node", "your_node")}
+
+
+def test_sample_path_supports_relative_and_line_only_commands() -> None:
+    """Relative m/l and the H/V/Z line-only commands must not corrupt the
+    current point for whatever draws after them."""
+    assert cg.sample_path("M 5 5 l 10 0 L 25 5") == [(5.0, 5.0), (15.0, 5.0), (25.0, 5.0)]
+    assert cg.sample_path("M 0 0 H 10 V 10 Z") == [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 0.0)]
+
+
+def test_circle_node_shape_is_resolved() -> None:
+    """A circle-shaped node (start/end states, some flowchart shapes) must
+    resolve to a bounding box, not be silently dropped as an unrecognized shape."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="nodes"><g class="node" id="my-svg-flowchart-C-0">'
+        '<circle cx="50" cy="50" r="20"/></g></g></svg>'
+    )
+    diagram = cg.parse_svg(svg)
+    assert len(diagram.nodes) == 1
+    node = diagram.nodes[0]
+    assert (node.x0, node.y0, node.x1, node.y1) == (30.0, 30.0, 70.0, 70.0)
+
+
+def test_multi_segment_endpoint_graze_is_exempt() -> None:
+    """A graze contiguous from the true source/target, spanning more than one
+    polyline segment (routine for a curved departure), must total against
+    CONTACT_EPS as one run -- not be checked segment-by-segment, which would
+    flag the second segment as a fresh, unrelated traversal."""
+    assert failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-graze-clean.svg")) == set()
+
+
+def test_multi_segment_graze_beyond_epsilon_still_fails() -> None:
+    """The same contiguous-run rule must not become a loophole: a multi-segment
+    graze that totals beyond CONTACT_EPS is still a traversal."""
+    assert cg.CONNECTOR_THROUGH_NODE in failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-graze-bad.svg"))
+
+
+# --- T5: native-review hardening findings on phases 2-3 ------------------------
+
+
+def test_transversal_crossing_through_a_shared_vertex_is_detected() -> None:
+    """A polyline whose crossing point coincides exactly with the OTHER
+    edge's vertex must not escape detection: per-segment-pair strict
+    crossing alone only ever sees two endpoint-only touches there, one per
+    side of the vertex, and neither alone qualifies as a strict crossing."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="100" viewBox="0 0 260 100">'
+        '<defs><marker id="pointEnd" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>'
+        '<g class="node" id="my-svg-flowchart-N1-0"><rect x="150" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-N2-0"><rect x="220" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-N3-0"><rect x="190" y="-40" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-N4-0"><rect x="190" y="40" width="10" height="10"/></g>'
+        '<g class="edgePaths"><path data-id="L_N1_N2_0" d="M 160 5 L 220 5" marker-end="url(#pointEnd)"/></g>'
+        '<g class="edgePaths"><path data-id="L_N3_N4_0" d="M 195 -30 L 195 5 L 195 40" marker-end="url(#pointEnd)"/></g>'
+        "</svg>"
+    )
+    issues = cg.audit_diagram(cg.parse_svg(svg))
+    tags = failure_tags(issues)
+    assert cg.CONNECTOR_CROSSING in tags
+    details = " | ".join(i.detail for i in issues if i.tag == cg.CONNECTOR_CROSSING)
+    assert "L_N1_N2_0" in details and "L_N3_N4_0" in details
+
+
+def test_collinear_overlapping_segments_are_detected_as_crossing() -> None:
+    """Two unrelated connectors routed along the same line for an
+    overlapping stretch are a routing defect (indistinguishable overlapping
+    lines), not a silent touch -- strict crossing alone excludes every
+    collinear case, including a genuine nonzero-length overlap."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="150" height="60" viewBox="0 0 150 60">'
+        '<defs><marker id="pointEnd" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>'
+        '<g class="node" id="my-svg-flowchart-N1-0"><rect x="0" y="4" width="10" height="1"/></g>'
+        '<g class="node" id="my-svg-flowchart-N2-0"><rect x="140" y="5" width="10" height="1"/></g>'
+        '<g class="node" id="my-svg-flowchart-N3-0"><rect x="40" y="54" width="10" height="1"/></g>'
+        '<g class="node" id="my-svg-flowchart-N4-0"><rect x="100" y="54" width="10" height="1"/></g>'
+        '<g class="edgePaths"><path data-id="L_N1_N2_0" d="M 5 5 L 5 30 L 145 30 L 145 5" marker-end="url(#pointEnd)"/></g>'
+        '<g class="edgePaths"><path data-id="L_N3_N4_0" d="M 45 55 L 45 30 L 105 30 L 105 55" marker-end="url(#pointEnd)"/></g>'
+        "</svg>"
+    )
+    issues = cg.audit_diagram(cg.parse_svg(svg))
+    tags = failure_tags(issues)
+    assert cg.CONNECTOR_CROSSING in tags
+    details = " | ".join(i.detail for i in issues if i.tag == cg.CONNECTOR_CROSSING)
+    assert "L_N1_N2_0" in details and "L_N3_N4_0" in details
+
+
+def test_cluster_label_region_has_no_owner_id() -> None:
+    """``ProtectedRegion``'s own documented contract: ``owner_id`` is empty
+    for cluster/legend/annotation regions, which no connector owns. A
+    cluster's own id is bookkeeping only, never a legitimate adjacency."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="cluster" id="my-svg-cluster-A">'
+        '<g class="cluster-label" transform="translate(5,5)">'
+        '<foreignObject width="20" height="10"></foreignObject>'
+        "</g></g></svg>"
+    )
+    diagram = cg.parse_svg(svg)
+    assert len(diagram.regions) == 1
+    assert diagram.regions[0].owner_id == ""
