@@ -12,6 +12,8 @@ Classify a local source with `inspected: true` as `eligible` for final citation.
 
 Do not use a search-result snippet as evidence. Do not represent a secondary description as a primary finding. If a source is unavailable, paywalled, undated, or unverifiable, flag that condition and its `lead` status in the source inventory.
 
+`tools/source_quality.py` (`evaluate_source_quality`) checks authority, relevance, currency, primary/secondary status, peer review, and accessibility, and rejects a fabricated, unverifiable, irrelevant, superseded, or unsuitable source with a named reason; a qualified source's judgment and rationale are retained.
+
 ## 3. Capture claim-level evidence
 
 Create one evidence-matrix row per claim. Give it a stable claim ID and record the exact claim, source locator, verbatim evidence, and the linked source's eligibility/status. If exact wording cannot be captured, label the entry `Paraphrase — verify against source`; never present it as a quotation. Record how the evidence supports, qualifies, or fails to support the claim, plus confidence and limitations.
@@ -23,3 +25,9 @@ Compare sources addressing the same claim. Preserve contradiction rather than se
 ## 5. Package the handoff
 
 Write the completed matrix to `$REPORT_CONTENT_ROOT/reports/<work-folder>/research/evidence-matrix.md`. It carries the research question, scope, inclusion/exclusion criteria, source inventory with eligibility/status, source access notes, conflicts, limitations, and unresolved questions. Put only `eligible` bibliography-ready entries in the bibliography handoff; keep `lead` entries separately visible for follow-up, never in that handoff. Include citation keys only as traceability aids; `academic-report-builder` chooses the confirmed citation style and creates the document. The package is pre-document evidence, never confirmed intake, and never final report prose.
+
+## 6. Structured evidence package (#11)
+
+Alongside the prose matrix, write `research/evidence.yml`: one `claims:` entry per material claim, each carrying `claim_id`, `section`, `source_id`, `source_class`, `evidence`, `locator`, `identifier` (DOI, ISBN, or stable URL), `access_date` (required when `identifier` is a URL), `citation_key`, `use_type` (`quotation`, `paraphrase`, `synthesis`, or `common_knowledge`), `confidence`, and, when they apply, `conflicts`/`conflict_resolution`. A `common_knowledge` claim may omit source, locator, and identifier only with an explicit `justification`.
+
+Once `research/evidence.yml` exists, `academic-report-builder`'s research phase gate (`tools/doc_status.py`, `tools/evidence_contract.py`) validates it structurally: an unsupported claim (no `evidence`), an unresolved conflict, or insufficient confidence blocks drafting until it is fixed. A report that never writes `evidence.yml` keeps the pre-existing, matrix.md-only handoff.

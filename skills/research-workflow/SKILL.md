@@ -39,7 +39,7 @@ Use for source research, literature review, evidence gathering, or validating cl
 
 ## Output Contract
 
-Return an evidence package containing: research question and scope; method and source-selection criteria; source inventory with eligibility/status; completed evidence matrix; claim-to-source traceability; eligible bibliography-ready entries; separately visible leads for follow-up; conflicts, limitations, and unresolved questions; and a handoff note. State that document creation remains with `academic-report-builder`.
+Return an evidence package containing: research question and scope; method and source-selection criteria; source inventory with eligibility/status; completed evidence matrix (`research/evidence-matrix.md` plus the structured `research/evidence.yml`, #11); claim-to-source traceability; eligible bibliography-ready entries; separately visible leads for follow-up; conflicts, limitations, and unresolved questions; and a handoff note. State that document creation remains with `academic-report-builder`.
 
 ## References
 
