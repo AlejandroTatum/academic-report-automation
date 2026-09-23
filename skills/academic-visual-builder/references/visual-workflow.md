@@ -89,6 +89,13 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   the strict pre-#43 rule and reports that it did (an informational finding
   naming the figure, never silently different behavior) — keep the source
   next to its rendered SVG so undirected links validate correctly.
+- Necessary-crossing exemption (#43, conservative): a crossing between two
+  connectors is exempt only when an obstacle-aware visibility check, within
+  the diagram's own viewBox, proves every route for one of the two
+  connectors must cross the other (no way around the diagram's nodes and
+  protected regions). When that proof is inconclusive — a route around does
+  exist, or the obstacle count exceeds the bounded state budget — the
+  crossing keeps failing, exactly as before #43.
 
 ## Subject presets
 

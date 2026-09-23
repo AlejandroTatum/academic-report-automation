@@ -407,3 +407,53 @@ def test_run_geometry_audit_passes_through_a_clean_result() -> None:
     passes through unchanged."""
     svg = FIXTURES / "mmdc-clean.svg"
     assert cg.run_geometry_audit(svg.name, lambda: cg.audit_connector_geometry(svg)) == cg.audit_connector_geometry(svg)
+
+
+# --- T3 (#43): necessary-crossing exemption, conservative ---------------------
+
+
+def test_k3_3_style_forced_crossing_is_exempt() -> None:
+    """Two diagonal connectors between four corner nodes sealed to the
+    diagram's own viewBox: N1/N4's corner regions have no way to reach each
+    other other than through the diagonal L_N2_N3 occupies, corner to
+    corner -- an obstacle-aware visibility check proves it, so the crossing
+    is exempt (#43 T3), unlike every other crossing in this suite."""
+    issues = cg.audit_connector_geometry(FIXTURES / "mmdc-crossing-necessary.svg")
+    assert cg.CONNECTOR_CROSSING not in failure_tags(issues)
+
+
+def test_avoidable_crossing_still_fails_despite_open_space() -> None:
+    """The same diagonal-crossing shape, given generous open margin around
+    it, has an obvious way around -- the gate must find it and keep failing
+    the crossing, not just exempt every diagonal pair on sight."""
+    issues = cg.audit_connector_geometry(FIXTURES / "mmdc-crossing-avoidable.svg")
+    assert cg.CONNECTOR_CROSSING in failure_tags(issues)
+
+
+def test_existing_crossing_fixtures_stay_unexempt() -> None:
+    """The pre-#43 always-fail fixtures must not become collateral
+    exemptions: an open, unsealed crossing (a real route around exists, or
+    the proof is otherwise inconclusive) still fails, exactly as before."""
+    assert cg.CONNECTOR_CROSSING in failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-crossing-bad.svg"))
+
+
+def test_inconclusive_proof_keeps_failing_past_the_vertex_budget() -> None:
+    """When the obstacle count would blow up the visibility-graph state
+    past MAX_VISIBILITY_VERTICES, the proof is inconclusive -- and an
+    inconclusive proof must never grant the exemption, the same safe
+    default as finding an actual route."""
+    edge = cg.Edge("L_A_B_0", "A", "B", [(0.0, 0.0), (100.0, 100.0)], "pointEnd")
+    other = cg.Edge("L_C_D_0", "C", "D", [(0.0, 100.0), (100.0, 0.0)], "pointEnd")
+    # 20 obstacle nodes (80 corners) plus the two endpoints comfortably
+    # exceeds MAX_VISIBILITY_VERTICES.
+    obstacles = [cg.Node(f"N{i}", float(i), float(i), float(i) + 1, float(i) + 1) for i in range(20)]
+    diagram = cg.Diagram(
+        nodes=[cg.Node("A", -1, -1, 0, 0), cg.Node("B", 100, 100, 101, 101), *obstacles],
+        edges=[edge, other],
+        markers={"pointEnd": "auto"},
+        regions=[],
+        parse_issues=[],
+        bounds=(-10.0, -10.0, 110.0, 110.0),
+    )
+    assert cg._has_alternative_route(edge.points[0], edge.points[-1], [(n.x0, n.y0, n.x1, n.y1) for n in obstacles], other, diagram.bounds) is None
+    assert cg._crossing_is_provably_necessary(diagram, edge, other) is False

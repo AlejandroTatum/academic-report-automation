@@ -72,6 +72,7 @@ _TRANSLATE_RE = re.compile(r"translate\(\s*([-+.\d eE]+)[ ,]+([-+.\d eE]+)\s*\)"
 # not here.
 _EDGE_ID_RE = re.compile(r"^L_(.+)_(\d+)$")
 _NODE_ID_RE = re.compile(r"^.*-flowchart-(.+?)-\d+$")
+_VIEWBOX_RE = re.compile(rf"^({_POINT})\s+({_POINT})\s+({_POINT})\s+({_POINT})$")
 
 
 # --- Model ---
@@ -129,6 +130,12 @@ class Diagram:
     markers: dict[str, str]  # marker id -> orient value
     regions: list[ProtectedRegion]
     parse_issues: list[PageIssue]
+    # The SVG's own viewBox, (x0, y0, x1, y1) -- the outer limit an
+    # alternative route may occupy when proving a crossing necessary (#43
+    # T3). ``None`` when the SVG carries no viewBox (route search then stays
+    # unbounded: more room to find a route, never less -- the safe
+    # direction, see _has_alternative_route()).
+    bounds: tuple[float, float, float, float] | None = None
 
 
 # --- SVG parsing into the model ---
@@ -461,7 +468,12 @@ def parse_svg(text: str) -> Diagram:
             token = getattr(edge, attr)
             if token and len(label_index.get(token, [])) != 1:
                 issues.append(PageIssue(FAILURE, CONNECTOR_PARSE, f"edge '{edge.id}' {attr} '{token}' is ambiguous or unresolved"))
-    return Diagram(nodes=nodes, edges=edges, markers=markers, regions=regions, parse_issues=issues)
+    bounds = None
+    view_box = _VIEWBOX_RE.match(root.attrib.get("viewBox", "").strip())
+    if view_box:
+        x0, y0, w, h = (float(v) for v in view_box.groups())
+        bounds = (x0, y0, x0 + w, y0 + h)
+    return Diagram(nodes=nodes, edges=edges, markers=markers, regions=regions, parse_issues=issues, bounds=bounds)
 
 
 # --- Geometry primitives and checks (each a FAILURE, classified here) ---
@@ -687,25 +699,148 @@ def _edges_cross(e1: Edge, e2: Edge) -> bool:
     )
 
 
-def crossing_issues(diagram: Diagram) -> list[PageIssue]:
-    """Every genuine crossing between unrelated connectors fails.
+# --- Necessary-crossing exemption (#43 T3) -------------------------------------
+#
+# 2026-09-23 decision: conservative. A crossing is exempt ONLY when the gate
+# PROVES no alternative route exists for one of the two edges -- an
+# obstacle-aware visibility check, within the diagram's own bounds, showing
+# every possible route from that edge's own source to its own target must
+# cross the other edge as currently drawn. When the proof is inconclusive
+# (state budget exceeded, no bounds to reason within) or a route IS found,
+# the crossing still fails -- the pre-#43 always-fail behaviour, which this
+# only narrows, never widens past what is actually proven.
 
-    Known scope gap (native review, issue #10 T5): the spec's full rule is
-    narrower -- reject a crossing only "when a non-crossing route exists or
-    the crossing makes direction ambiguous" (design: an obstacle-expanded
-    orthogonal visibility graph). This always fails instead, a conservative
-    superset that still catches every unnecessary crossing the 15 named spec
-    scenarios test, but would also flag a genuinely unavoidable one. No
-    diagram in this project's real corpus currently exercises that case;
-    implementing route-avoidance detection is a dedicated follow-up, not a
-    hardening fix -- an incorrect route-finding heuristic risks the opposite
-    failure mode (a real defect silently exempted as "necessary").
+# Hard cap on visibility-graph vertices (2 endpoints + 4 per obstacle): keeps
+# the O(V^2) all-pairs visibility check bounded on real diagrams carrying
+# many nodes/regions. Past this, the proof is inconclusive by construction --
+# the crossing keeps failing, the same safe default as having no proof at all.
+MAX_VISIBILITY_VERTICES = 60
+
+
+def _obstacles_for_edge(diagram: Diagram, edge: Edge) -> list[tuple[float, float, float, float]]:
+    """Bounding boxes an alternative route for *edge* must not cross: every
+    node it does not itself terminate at, and every protected region it does
+    not own -- the same adjacency rule obstruction_issues() already applies."""
+    boxes = [(n.x0, n.y0, n.x1, n.y1) for n in diagram.nodes if n.id != edge.source and n.id != edge.target]
+    boxes.extend(
+        (r.x0, r.y0, r.x1, r.y1)
+        for r in diagram.regions
+        if r.owner_id != edge.id and not _is_own_edge_label(r, edge)
+    )
+    return boxes
+
+
+def _segment_crosses_bbox_interior(a, b, bbox) -> bool:
+    """True only when segment a-b passes through *bbox*'s OPEN interior --
+    merely touching its boundary or a corner is a legitimate way to route
+    around it, not a block."""
+    x0, y0, x1, y1 = bbox
+    inset = 1e-6
+    ix0, iy0, ix1, iy1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
+    if ix1 <= ix0 or iy1 <= iy0:
+        return False
+    return _clip_interval(a, b, (ix0, iy0, ix1, iy1)) is not None
+
+
+def _point_within_bounds(p, bounds) -> bool:
+    x0, y0, x1, y1 = bounds
+    eps = 1e-6
+    return x0 - eps <= p[0] <= x1 + eps and y0 - eps <= p[1] <= y1 + eps
+
+
+def _has_alternative_route(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    obstacles: list[tuple[float, float, float, float]],
+    blocker: Edge,
+    bounds: tuple[float, float, float, float] | None,
+) -> bool | None:
+    """Whether *start* can reach *end* by a route of straight segments that
+    stays within *bounds*, never crosses an obstacle's interior, and never
+    crosses *blocker*'s own polyline -- a standard corner visibility graph
+    over ``{start, end} + every obstacle corner``: the shortest route around
+    axis-aligned rectangles always bends only at their corners, so this
+    construction is exact, not a heuristic.
+
+    Returns ``None`` (inconclusive) once the vertex budget is exceeded; the
+    caller must then treat the crossing as NOT proven necessary, never as
+    proven exempt.
     """
+    if bounds is not None:
+        # *start*/*end* are the edge's own required endpoints, not part of
+        # the alternative route being searched for -- a declared viewBox
+        # that happens not to enclose one of them (a stray node placed
+        # outside it) must never trap the search into a false "no route
+        # exists" just because the endpoint itself sits outside bounds.
+        x0, y0, x1, y1 = bounds
+        xs, ys = (start[0], end[0]), (start[1], end[1])
+        bounds = (min(x0, *xs), min(y0, *ys), max(x1, *xs), max(y1, *ys))
+    corners = [
+        (x, y)
+        for x0, y0, x1, y1 in obstacles
+        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+        if bounds is None or _point_within_bounds((x, y), bounds)
+    ]
+    vertices = [start, end, *corners]
+    if len(vertices) > MAX_VISIBILITY_VERTICES:
+        return None
+
+    def blocked(a, b) -> bool:
+        if bounds is not None and not (_point_within_bounds(a, bounds) and _point_within_bounds(b, bounds)):
+            return True
+        if any(_segment_crosses_bbox_interior(a, b, box) for box in obstacles):
+            return True
+        # Unlike an obstacle box (which has an interior/exterior, so merely
+        # touching its boundary while staying outside is a legitimate way to
+        # route around it), *blocker* is a zero-width curve: any shared
+        # point at all -- including a single tangent touch -- is contact a
+        # route claiming to "avoid" it cannot have. Strict-crossing-only
+        # here would let a route flip sides by grazing exactly one point of
+        # *blocker*, which is not a real alternative route.
+        return any(_segments_intersect(a, b, p1, p2) for p1, p2 in zip(blocker.points, blocker.points[1:]))
+
+    adjacency: list[list[int]] = [[] for _ in vertices]
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            if not blocked(vertices[i], vertices[j]):
+                adjacency[i].append(j)
+                adjacency[j].append(i)
+
+    seen, frontier = {0}, [0]
+    while frontier:
+        current = frontier.pop()
+        if current == 1:
+            return True
+        for neighbour in adjacency[current]:
+            if neighbour not in seen:
+                seen.add(neighbour)
+                frontier.append(neighbour)
+    return False
+
+
+def _crossing_is_provably_necessary(diagram: Diagram, e1: Edge, e2: Edge) -> bool:
+    """True only when the gate can PROVE neither edge has an alternative
+    route around the other. Checking just one edge's total routing freedom
+    against the other's fixed, as-rendered path is sufficient proof per the
+    accepted decision ("every route for one of the edges must cross the
+    other"); an inconclusive check never grants the exemption."""
+    for edge, blocker in ((e1, e2), (e2, e1)):
+        obstacles = _obstacles_for_edge(diagram, edge)
+        if _has_alternative_route(edge.points[0], edge.points[-1], obstacles, blocker, diagram.bounds) is False:
+            return True
+    return False
+
+
+def crossing_issues(diagram: Diagram) -> list[PageIssue]:
+    """Every genuine crossing between unrelated connectors fails, except one
+    the gate can prove is unavoidable (see the module note above and
+    ``_crossing_is_provably_necessary`` -- #43 T3, conservative: an
+    inconclusive proof still fails, exactly like the pre-#43 rule)."""
     issues: list[PageIssue] = []
     edges = diagram.edges
     for i, e1 in enumerate(edges):
         for e2 in edges[i + 1:]:
-            if _edges_cross(e1, e2):
+            if _edges_cross(e1, e2) and not _crossing_is_provably_necessary(diagram, e1, e2):
                 issues.append(PageIssue(FAILURE, CONNECTOR_CROSSING, f"edge '{e1.id}' crosses edge '{e2.id}'"))
     return issues
 
