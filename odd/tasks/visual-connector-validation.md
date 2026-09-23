@@ -23,6 +23,7 @@ ODD delegated direct (user decision 2026-09-22: "flujo directo aplica odd"). The
 - [x] T2 (SDD phase 2, PR2) `feat(visual): protect connector routes`: R2-R6 in `tools/test_connector_geometry.py` (protected regions, crossing vs touching, 0.80 clearance, source/target/direction, actionable evidence, chart silence) with the named fixtures. Route: delegated writer.
 - [x] T3 (SDD phase 3, PR3) `feat(visual): enforce final-size connector gate`: R7 in `tools/test_connector_pdf_stage.py`, contract REDs in `tests/skills/test_visual_builder_contract.py`, `tools/connector_pdf_stage.py`, `tools/validate_report.py`, SKILL.md and `visual-workflow.md` rules. Route: delegated writer.
 - [x] T4 (post-T1 native review, non-blocking findings) `fix(visual): harden connector parsing`: RED tests first for — edge/node id parsing breaking on underscores (`connector_geometry.py:43`), SVG path sampling ignoring relative commands/other unhandled commands (`:89-114`), circle nodes not resolved as node regions (`:130-152`), the "fix" boundary-grazing-only detection (`:281-286`), unguarded connector audit letting parse exceptions escape `visual_builder.py` instead of becoming a reported finding (`:387-392`), missing integration/edge-case coverage (`test_connector_geometry.py:72-84`), plus the minor misplaced constant comment and node-id-holding-the-label naming. Route: delegated writer.
+- [x] T5 (post-T2/T3 native review, non-blocking findings) `fix(visual): close connector gate gaps from review`: RED tests first for — transversal crossings landing exactly on a polyline vertex and genuine collinear segment overlap escaping detection entirely (`connector_geometry.py` crossing check, ~490-604), the `mmdc-touching-clean.svg` fixture hiding exactly that crossing behind a "touching" label, duplicated protected-region ownership rules between obstruction and clearance plus a cluster-label docstring/owner_id mismatch (~288, ~554-560), the final-size figure audit silently skipping an unresolved figure reference or a figure with no matching SVG (`validate_report.py:675-683`), its exception guard being too narrow to catch a malformed-SVG parse error (~693-697), and the wiring having no integration test at any commit. Two findings verified NOT to be defects and left unchanged (documented in code instead): undirected Mermaid links failing direction-marker validation matches the accepted spec text and the existing named RED fixture; unconditional crossing failure is a real spec gap but the "necessary crossing" exemption needs a dedicated obstacle-avoidance route-finding algorithm, deferred as a follow-up rather than folded into this hardening pass. Route: delegated writer.
 
 ## Acceptance
 - SDD spec requirements hold with named tests observed RED then GREEN; full suite green; open connector failure denies `VISUAL_PASS`.
@@ -96,7 +97,58 @@ ODD delegated direct (user decision 2026-09-22: "flujo directo aplica odd"). The
   `ProtectedRegion.owner_id`, and the whole T2/T3 test suite); addressed with a clarifying docstring
   instead, noted honestly as a scope choice rather than the full rename.
 
+- T5: `37d0560` `fix(visual): close connector gate gaps from review`. RED (all new/changed tests,
+  observed failing before their fix): `test_transversal_crossing_through_a_shared_vertex_is_detected`
+  and `test_collinear_overlapping_segments_are_detected_as_crossing` (no `CONNECTOR_CROSSING` reported —
+  both escaped detection entirely, confirmed against the pre-fix `crossing_issues`); the existing
+  `test_shared_endpoint_and_touching_are_not_crossings` against the ORIGINAL `mmdc-touching-clean.svg`
+  content (its second edge pair crossed transversally at a shared vertex and was silently passing,
+  confirming R2-touching-fixture-hides-crossing before the fixture was rebuilt as a genuine tangential
+  touch); `test_cluster_label_region_has_no_owner_id` (`owner_id == 'my-svg-cluster-A'` instead of `''`);
+  and, in the new `tools/test_validate_report_connector_wiring.py` (verified RED by temporarily
+  restoring the parent's `tools/validate_report.py` via `git checkout`):
+  `test_unresolved_figure_reference_is_reported_not_silently_skipped`,
+  `test_figure_without_matching_svg_is_reported_not_silently_skipped` (both silent, no warning) and
+  `test_malformed_svg_becomes_a_reported_error_not_a_crash` (uncaught `xml.etree.ElementTree.ParseError`
+  propagating out of `connector_final_size_validation`). GREEN:
+  `.venv/bin/python -m pytest tools/test_connector_geometry.py tools/test_connector_pdf_stage.py tools/test_visual_builder_validate.py tools/test_validate_report_connector_wiring.py tests/skills/test_visual_builder_contract.py -q`
+  -> 43 passed. Full suite: `.venv/bin/python -m pytest tools/ tests/ -q` -> 1008 passed. Shortstat:
+  `6 files changed, 290 insertions(+), 21 deletions(-)`.
+  Findings addressed: R3-transversal-vertex-and-overlap-escape (new `_polyline_passes_through_vertex`/
+  `_collinear_overlap_length` checks feeding `_edges_cross`, reused by `crossing_issues` and therefore
+  by `connector_pdf_stage.py`'s final-size stage too); R2-touching-fixture-hides-crossing (fixture
+  rebuilt with the touching edge's tip landing tangentially on the other edge, both neighbour points on
+  the same side); R2-duplicated-region-ownership-rules (`_node_text_endpoint_exemption`/
+  `_is_own_edge_label` now the single source both `obstruction_issues` and `pairwise_clearances` read,
+  no behavior change, protected by the full existing T2 suite staying green); R2-cluster-owner-docstring-
+  mismatch (`_cluster_label_regions` now sets `owner_id=""` matching `ProtectedRegion`'s own documented
+  contract; dead data before the fix, since no exemption check ever read cluster `owner_id`);
+  R4-fail-open-unresolved-figures/R3-silent-figure-skip (`connector_final_size_validation` now appends
+  a warning naming the figure for an unresolved reference or a missing SVG sibling, instead of a bare
+  `continue`); R3-narrow-audit-exception/R4-narrow-exception-guard (except clause widened to
+  `(OSError, ValueError, ET.ParseError)`); R2-docstring-contradicts-silent-skip (resolved by the same
+  fix — the function's own docstring already promised "never silently skipped"); R2-final-rule-
+  misdescribed-in-workflow (`visual-workflow.md` now states the warn-not-skip behavior explicitly);
+  R3-untested-wiring (new `tools/test_validate_report_connector_wiring.py`: clean, final-size-defect,
+  unresolved-reference, missing-sibling and malformed-SVG cases against `connector_final_size_validation`
+  itself, not just `connector_pdf_stage` directly).
+  Two findings verified NOT real defects (or real but out of proportionate hardening scope) and left
+  unchanged, with the reasoning recorded as a docstring at the point of decision so it survives independent
+  of this task file: R3-undirected-links-fail — the spec's "Endpoints and direction" requirement is
+  unconditional ("every connector MUST ... use a defined end marker"), the checked-in
+  `mmdc-direction-bad.svg` RED fixture already encodes "no end marker" as a failure by accepted design,
+  and there is no SVG-only signal to distinguish a legitimately undirected `---` link from a broken
+  marker; supporting it would need a new spec scenario, not a hardening fix. R3-all-crossings-fail — real
+  against the spec's literal text (crossing should only fail "when a non-crossing route exists or the
+  crossing makes direction ambiguous"), but the design's own prescribed fix is a full obstacle-expanded
+  orthogonal visibility graph; no diagram in the real corpus currently exercises an unavoidable crossing,
+  and an incorrect from-scratch route-finding heuristic risks the opposite, worse failure mode (a real
+  defect silently exempted as "necessary"). Deferred as a dedicated follow-up ODD task, not folded into
+  this response.
+
 ## Next step
-Issue #10's four planned slices (T1-T4) are complete on this branch. Delivery (PR review/merge per the
-stacked-to-main strategy) is the user's decision under ordinary repository policy; no further ODD task
-is queued unless new findings arrive.
+Issue #10's four planned slices (T1-T4) plus the T5 post-review hardening pass are complete on this
+branch. One real, disclosed gap remains open for a future task: the spec's "necessary crossing" exemption
+(obstacle-avoidance route-finding) is not implemented; `crossing_issues` conservatively fails every
+crossing instead. Delivery (PR review/merge per the stacked-to-main strategy) is the user's decision
+under ordinary repository policy; no further ODD task is queued unless new findings arrive.
