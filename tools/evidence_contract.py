@@ -16,6 +16,7 @@ behaviour (the markdown-only, non-empty check ``doc_status`` already runs).
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +156,20 @@ def validate_evidence_package(raw: dict[str, Any]) -> ValidationResult:
             result.errors.append(block_reason)
 
     return result
+
+
+def evidence_package_sha256(folder: Path) -> str | None:
+    """The evidence package's identity: SHA-256 over ``evidence.yml``'s raw
+    bytes, or ``None`` when the report never wrote one.
+
+    A visual request/result that records this value can prove, later, that
+    the package it traced its claims to is exactly the one still on disk
+    (#11 R17) -- any edit to ``evidence.yml`` changes this hash.
+    """
+    path = evidence_path(folder)
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_evidence_package(folder: Path) -> dict[str, Any] | None:

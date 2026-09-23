@@ -64,17 +64,93 @@ def _manifest_figures(data: Any) -> list[Any] | None:
     return None
 
 
+def _claim_ids(package: Any) -> set[str]:
+    claims = package.get("claims") if isinstance(package, dict) else None
+    if not isinstance(claims, list):
+        return set()
+    return {str(claim.get("claim_id")) for claim in claims if isinstance(claim, dict) and claim.get("claim_id")}
+
+
+def validate_visual_evidence_provenance(
+    folder: Path, figures: list[Any]
+) -> "VisualMetadataValidation":
+    """#11 R17: a figure that traces to research evidence keeps provenance.
+
+    Presence-gated on the figure, not on the report: only a figure that
+    declares ``evidence_package_sha256`` and/or ``claim_ids`` is checked. A
+    figure with no such declaration never engaged the research handoff and
+    is untouched (same pattern as ``structure_contract``/``evidence_contract``).
+
+    Rejects: no ``research/evidence.yml`` at all despite the figure
+    declaring provenance; a ``claim_ids`` entry the current package never
+    declares; and a mutated package -- the figure's recorded
+    ``evidence_package_sha256`` no longer matches ``evidence.yml``'s current
+    bytes. Visual tooling never repairs or approves past this: every finding
+    here is an error, never a warning, so report readiness is not granted.
+    """
+    from evidence_contract import evidence_gate_engaged, evidence_package_sha256, load_evidence_package
+
+    outcome = VisualMetadataValidation()
+    engaged = [
+        figure
+        for figure in figures
+        if isinstance(figure, dict) and (figure.get("evidence_package_sha256") or figure.get("claim_ids"))
+    ]
+    if not engaged:
+        return outcome
+
+    if not evidence_gate_engaged(folder):
+        outcome.errors.append(
+            "Figura declara evidence_package_sha256/claim_ids pero no existe research/evidence.yml"
+        )
+        return outcome
+
+    current_hash = evidence_package_sha256(folder)
+    package = load_evidence_package(folder) or {}
+    known_claim_ids = _claim_ids(package)
+
+    for figure in engaged:
+        declared_hash = _text(figure.get("evidence_package_sha256"))
+        if declared_hash and declared_hash != current_hash:
+            outcome.errors.append(
+                "Figura con evidence_package_sha256 desactualizado: research/evidence.yml "
+                "mutó desde que se generó la solicitud (paquete de evidencia inválido)"
+            )
+        claim_ids = figure.get("claim_ids")
+        if not isinstance(claim_ids, list) or not claim_ids:
+            outcome.errors.append(
+                "Figura con evidence_package_sha256 debe declarar al menos un claim_id"
+            )
+            continue
+        unknown = [str(cid) for cid in claim_ids if str(cid) not in known_claim_ids]
+        if unknown:
+            outcome.errors.append(
+                "Figura referencia claim_ids desconocidos en evidence.yml: " + ", ".join(unknown)
+            )
+
+    return outcome
+
+
 def validate_visual_manifest(
     folder: Path,
     manifest_path: Path | None = None,
+    report_folder: Path | None = None,
 ) -> VisualMetadataValidation:
     """Validate one ``figures.yml`` and the assets it addresses.
 
     ``content_sha256`` is always interpreted as SHA-256 over the asset's raw
     bytes. If the declared path exists, a mismatch is an error; it is never
     downgraded to a warning or silently repaired.
+
+    ``report_folder`` is where ``research/evidence.yml`` lives (#11 R17);
+    it defaults to ``folder`` because most callers pass the report root
+    itself, but a report whose figures live in a ``figures/`` subfolder
+    (``validate_report.py``'s ``visual_validation``) must pass the report
+    root explicitly -- provenance is a report-level identity, not a
+    figures-folder one.
     """
     folder = Path(folder)
+    report_folder = Path(report_folder) if report_folder is not None else folder
     manifest = manifest_path or folder / "figures.yml"
     outcome = VisualMetadataValidation()
     if not manifest.exists():
@@ -167,5 +243,9 @@ def validate_visual_manifest(
         if asset.is_file() and asset.suffix.lower() in ASSET_SUFFIXES:
             if asset.resolve() not in listed_assets:
                 outcome.errors.append(f"Asset no listado en figures.yml: {asset}")
+
+    provenance = validate_visual_evidence_provenance(report_folder, figures)
+    outcome.errors.extend(provenance.errors)
+    outcome.warnings.extend(provenance.warnings)
 
     return outcome
