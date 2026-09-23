@@ -115,3 +115,13 @@ validators:
     enabled_default: false      # [GUIDANCE] Opt-in manual
     activation: "\"validators: {visual_pdf: true}\" en report.yml"
     note: "Activates automatic visual PDF audit inside validate_report.py. Without this config, run visual_pdf_auditor.py manually after validation."
+
+# =============================================================================
+# CONTEXTUAL TABLE STYLES (issue #13)
+# Institution-wide default among the seven approved templates/table_styles.yml
+# IDs. A report's own `table_styles: {overrides: {<table_key>: <ID>}}` (per
+# table, in report.yml) beats this institution default, which in turn beats
+# automatic contextual selection (tools/table_model.py resolve_table_style).
+# =============================================================================
+tables:
+  institution_override: null   # [ENFORCED] tools/table_model.py — null means "no institutional default"

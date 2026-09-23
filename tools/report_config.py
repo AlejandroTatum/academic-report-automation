@@ -439,6 +439,32 @@ class ReportConfig:
             validators[name] = enabled
         return validators
 
+    @property
+    def table_style_overrides(self) -> dict[str, str]:
+        """Teacher per-table style overrides: ``table_key -> approved style ID``.
+
+        Declared as ``table_styles: {overrides: {<table_key>: <ID>}}`` in
+        report.yml (issue #13). A teacher override always wins over the
+        institutional default (``institution_table_style``) and over
+        automatic contextual selection — see
+        ``tools/table_model.py::resolve_table_style``.
+        """
+        overrides = dig(self.raw, ("table_styles", "overrides"))
+        return dict(overrides) if isinstance(overrides, dict) else {}
+
+    @property
+    def institution_table_style(self) -> str | None:
+        """Institution-wide default table style ID, or ``None`` when unset.
+
+        Read only from ``tables.institution_override`` in
+        academic_format.yml — deliberately not in ``OVERRIDABLE_SECTIONS``,
+        since a per-report override of the institutional default belongs
+        under ``table_style_overrides`` (explicit per table key), not a
+        blanket ``report.yml`` relaxation.
+        """
+        value = self.academic_value("tables", "institution_override")
+        return str(value) if value else None
+
     def academic_value(self, *keys: str, default: Any = None) -> Any:
         """Resolve a format value: report.yml -> academic_format.yml -> default.
 
