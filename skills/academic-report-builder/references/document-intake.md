@@ -71,6 +71,31 @@ missing members. The skill never prompts the user to choose a Paralelo: the
 academic route renders A by default, and only an explicit assignment value
 overrides it.
 
+## Structure confirmation (#12)
+
+Ask whether the teacher (or client/company) supplied a mandatory structure —
+a rubric, an assignment brief, a template, or a transcribed section list.
+Combine requirements from every supplied source; a contradiction between
+sources (a section required by one and forbidden or reordered by another)
+blocks confirmation until the user resolves it.
+
+For each required section, record its exact title, its order, and at least
+one mandatory content/rubric criterion. Quantitative limits (words, pages,
+tables, figures, references) stay entirely optional per section: a limit is
+recorded only when a source actually supplies it, and no limit is ever
+inferred for a section that never declared one.
+
+When no teacher structure exists, propose one structure appropriate to the
+confirmed document type, audience, and purpose, then require explicit
+confirmation before it is written to `report.yml`. The run never proceeds
+with a provisional structure.
+
+The confirmed structure is written to `report.yml` as `structure:` (see
+`tools/structure_contract.py`). Downstream phases — research, drafting,
+visual planning, generation — stay blocked while `structure:` is present but
+not confirmed. A structure changed after confirmation (its recorded source
+no longer matches) requires reconfirmation before generation resumes.
+
 ## Confirmation 4 — Delivery format
 
 Ask for PDF, DOCX, or both. Always confirmed, never inferred.

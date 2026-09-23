@@ -30,6 +30,7 @@ from pathlib import Path
 
 from approval_marker import approval_state, bound_file_names, sha256_file
 from report_config import ROOT, ReportConfig, read_yaml
+from structure_contract import structure_confirmation_state, structure_gate_engaged
 
 PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
 DONE, CURRENT, PENDING, BLOCKED = "done", "current", "pending", "blocked"
@@ -95,6 +96,14 @@ def _phase_intake(folder: Path, config: ReportConfig, _documents_root: Path | No
     missing = [key for key in config.required_metadata if not config.metadata.get(key)]
     if missing:
         return PhaseState("intake", PENDING, f"missing metadata: {', '.join(missing)}")
+    # #12: once a report engages the structure flow (declares `structure:`
+    # at all), intake stays incomplete until that contract reports
+    # confirmed. A report that never engaged the flow is untouched -- the
+    # existing behaviour every report before this feature relied on.
+    if structure_gate_engaged(config.raw):
+        state, detail = structure_confirmation_state(config)
+        if state != "confirmed":
+            return PhaseState("intake", PENDING, f"structure {state}: {detail}")
     return PhaseState("intake", DONE, f"route={config.route}, metadata complete")
 
 

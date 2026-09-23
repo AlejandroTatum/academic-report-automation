@@ -22,6 +22,7 @@ from report_config import (
     unknown_route_message,
 )
 from output_router import FINAL_EXTENSIONS, GLOBAL_OUTPUTS, infer_subject_for_path
+from structure_contract import parse_structure, validate_structure_schema
 from validate_ieee_refs import ValidationResult, validate_ieee
 from visual_metadata import validate_visual_manifest
 
@@ -89,6 +90,10 @@ PAGE_SHIPOUT_RE = re.compile(r"(?:^|[\s)])\[(\d+)(?=[\]\s<{]|$)")
 # bracketed can never be a real name/title/date, so it fails identity
 # validation wherever route metadata requires a concrete value.
 PLACEHOLDER_RE = re.compile(r"^\[.*\]$")
+
+# Teacher-required structure (#12): body headings are the source proof that
+# the rendered document carries every section the confirmed contract froze.
+BODY_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
 @dataclass(frozen=True)
@@ -260,6 +265,121 @@ def pdfinfo(pdf: Path) -> dict[str, str]:
     return data
 
 
+def _split_body_by_heading(body: str) -> dict[str, str]:
+    """Map each folded heading title to the text between it and the next heading."""
+    from build_latex_report import fold_heading
+
+    sections: dict[str, str] = {}
+    current: str | None = None
+    buffer: list[str] = []
+    for line in body.splitlines():
+        match = BODY_HEADING_RE.match(line)
+        if match:
+            if current is not None:
+                sections[current] = "\n".join(buffer)
+            current = fold_heading(match.group(2))
+            buffer = []
+        elif current is not None:
+            buffer.append(line)
+    if current is not None:
+        sections[current] = "\n".join(buffer)
+    return sections
+
+
+def structure_validation(config: ReportConfig) -> ValidationResult:
+    """Enforce a confirmed ``structure:`` contract against the rendered body.
+
+    Absent ``structure:`` means no enforcement here — the intake gate
+    (``doc_status``/``structure_contract.structure_confirmation_state``) owns
+    confirmation; this check owns the final-source proof once a contract is
+    confirmed. A malformed/unconfirmed draft (e.g. the ``"proposed"`` marker)
+    is reported as a schema error rather than silently skipped, so a report
+    can never reach final validation with an unconfirmed contract in force.
+
+    Checks, in order: schema, section presence under the exact declared
+    name, declared order, each criterion's optional ``content_anchor``
+    (declared but missing content), and each declared quantitative limit
+    (currently ``words``; unsupplied limits are never enforced, #6408/R3).
+    """
+    result = ValidationResult()
+    structure = parse_structure(config.raw)
+    if structure is None:
+        return result
+
+    schema_result = validate_structure_schema(structure)
+    if schema_result.errors:
+        result.errors.extend(schema_result.errors)
+        return result
+
+    from build_latex_report import fold_heading
+
+    body = (
+        config.body_path.read_text(encoding="utf-8", errors="ignore")
+        if config.body_path.exists()
+        else ""
+    )
+    body_heads = [
+        fold_heading(match.group(2))
+        for match in (BODY_HEADING_RE.match(line) for line in body.splitlines())
+        if match
+    ]
+    sections_text = _split_body_by_heading(body)
+
+    required = structure["sections"]
+    required_norm = [fold_heading(section["title"]) for section in required]
+
+    missing = [
+        section["title"]
+        for section, norm in zip(required, required_norm)
+        if norm not in body_heads
+    ]
+    if missing:
+        result.errors.append("Faltan secciones requeridas en body.md: " + ", ".join(missing))
+
+    positions = {norm: index for index, norm in enumerate(body_heads)}
+    last_seen = -1
+    for section, norm in zip(required, required_norm):
+        if norm not in positions:
+            continue
+        if positions[norm] < last_seen:
+            result.errors.append(
+                f"La sección '{section['title']}' está fuera del orden requerido en body.md"
+            )
+            break
+        last_seen = positions[norm]
+
+    for section, norm in zip(required, required_norm):
+        text = sections_text.get(norm)
+        if text is None:
+            continue  # already reported as missing
+        folded_text = fold_heading(text)
+        for criterion in section.get("criteria", []):
+            anchor = criterion.get("content_anchor") if isinstance(criterion, dict) else None
+            if anchor and fold_heading(anchor) not in folded_text:
+                result.errors.append(
+                    f"La sección '{section['title']}' no cumple el criterio requerido "
+                    f"en structure: {criterion.get('text')}"
+                )
+
+        limits = section.get("limits") or {}
+        words = limits.get("words")
+        if words is not None and text is not None:
+            count = len(text.split())
+            max_words = words.get("max") if isinstance(words, dict) else words
+            min_words = words.get("min") if isinstance(words, dict) else None
+            if max_words is not None and count > max_words:
+                result.errors.append(
+                    f"La sección '{section['title']}' excede el límite de palabras "
+                    f"({count} > {max_words})"
+                )
+            if min_words is not None and count < min_words:
+                result.errors.append(
+                    f"La sección '{section['title']}' no alcanza el mínimo de palabras "
+                    f"({count} < {min_words})"
+                )
+    return result
+
+
 def metadata_validation(config: ReportConfig) -> ValidationResult:
     """Check report.yml metadata against the report's document route.
 
@@ -323,6 +443,8 @@ def metadata_validation(config: ReportConfig) -> ValidationResult:
                 f"La ruta '{config.route}' no es académica pero report.yml declara "
                 "metadata académica: " + ", ".join(declared)
             )
+
+    result.errors.extend(structure_validation(config).errors)
     return result
 
 
