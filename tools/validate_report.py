@@ -757,7 +757,9 @@ def visual_validation(config: ReportConfig) -> ValidationResult:
     if not figures_yml.exists():
         result.warnings.append("Trabajo visual sin figures.yml; no se pudo validar captions/fuentes de figuras")
         return result
-    metadata_result = validate_visual_manifest(figures_yml.parent, figures_yml)
+    metadata_result = validate_visual_manifest(
+        figures_yml.parent, figures_yml, report_folder=config.folder
+    )
     result.errors.extend(metadata_result.errors)
     result.warnings.extend(metadata_result.warnings)
     for figure_path in figures_yml.parent.rglob("*"):

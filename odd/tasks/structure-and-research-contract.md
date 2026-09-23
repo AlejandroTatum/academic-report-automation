@@ -41,13 +41,22 @@ The design predates the document-workflow phases (`tools/doc_status.py` intake �
   - Full suite: `1030 passed` (`.venv/bin/python -m pytest tools/ tests/ -q`).
   - `git show 8933088 --stat --shortstat`: 5 files changed, 361 insertions(+).
   - Did not touch `tools/source_library.py`'s manifest v2 fields (design's suggested file) — no existing test covers it, and the R13/R14 scenarios are fully satisfiable as a standalone quality-judgment function without migrating the manifest schema. Documented as a bounded scope choice, not a product-decision gap: manifest v2 migration remains open follow-up work if the team wants CLI-level source quality entry.
-- [ ] T4 (PR4, #11) visual provenance through the final gate: R17. Route: delegated writer.
+- [x] T4 (PR4, #11) visual provenance through the final gate: R17. Route: delegated writer.
+  - Commit `04e267b` `feat(visual): preserve provenance through final gate`.
+  - New `evidence_package_sha256` in `tools/evidence_contract.py`; new `validate_visual_evidence_provenance` in `tools/visual_metadata.py` (opt-in per figure via `evidence_package_sha256`/`claim_ids`); `validate_visual_manifest` gained a `report_folder` parameter (figures.yml's folder can differ from the report root) and now composes provenance errors; `validate_report.py`'s `visual_validation` passes `report_folder=config.folder`.
+  - RED: `ImportError`/missing symbol on both new functions with the test file present before implementation; implemented, then GREEN: `3 passed` (the R17 paired case plus one composed-gate integration test).
+  - Full suite: `1033 passed` (`.venv/bin/python -m pytest tools/ tests/ -q`).
+  - `git show 04e267b --stat --shortstat`: 5 files changed, 250 insertions(+), 1 deletion(-).
+  - Docs: `skills/academic-visual-builder/references/figures-yml-schema.md` documents the optional provenance fields.
 
 ## Acceptance
-- #12 closes with R1-R8; #11 closes with R9-R17; tests observed RED then GREEN; full suite green.
+- #12 closes with R1-R8; #11 closes with R9-R17; tests observed RED then GREEN; full suite green. All 17 scenarios named and passing; full suite 1008 -> 1033 passed across the four slices with zero regressions.
 
 ## Progress / evidence
 - Branch `feat/structure-and-research-contract` from `main` 71d95cd.
+- T1 `32dca9d`+`2b967e4`, T2 `fcffedb`+`f1d794c`, T3 `8933088`+`3bffed3`, T4 `04e267b` (docs commit pending).
+- Deviations from the SDD design, honestly noted: (1) gates are presence-based (`structure:`, `research/evidence.yml`) rather than unconditional on every report, to avoid retrofitting ~85 unrelated pre-existing `doc_status` fixtures; the design's own migration note supports this ("new gates activate only when the new structure/evidence contract is present"). (2) `tools/source_library.py`'s manifest v2 migration (suggested in the design's File Changes table) was not touched — R13/R14 are fully satisfiable as a standalone `source_quality.py` judgment function; manifest-level CLI integration remains open follow-up work. (3) Final structure content checks use an optional `content_anchor` per criterion rather than open-ended semantic judgment of rubric satisfaction (a deterministic, testable approximation of "required content").
+- Two commits in T1 and T2 slipped strict RED-first discipline for supplementary integration/doc-consistency tests (not the named R-scenarios) written concurrently with their wiring rather than before it; every named R1-R17 test was properly RED-then-GREEN.
 
 ## Next step
-Delegate T1-T4.
+Feature complete: #12 and #11 both closable on this branch. Push and open PRs are the user's decision (stacked-to-main per the delivery strategy already recorded); not performed by this writer.

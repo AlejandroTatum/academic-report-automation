@@ -27,6 +27,26 @@ Unknown or arbitrary statuses fail validation. Asset files with `.svg`, `.png`,
 or `.pdf` extensions in the folder must be listed; unlisted assets fail before
 export.
 
+## Research evidence provenance (#11, optional)
+
+When a figure traces to a claim from the report's research phase, it may
+declare `evidence_package_sha256` (the SHA-256 of `research/evidence.yml`'s
+raw bytes at request time) and `claim_ids` (the claims it draws on). Once a
+figure declares either field, both are required and validated: every
+`claim_id` must exist in the current `research/evidence.yml`, and
+`evidence_package_sha256` must still match that file's current bytes. A
+figure that never declares these fields is unaffected — provenance tracking
+is opt-in per figure, not a new mandatory field.
+
+```yaml
+    evidence_package_sha256: 89b1...  # sha256 of research/evidence.yml
+    claim_ids: [C-014, C-015]
+```
+
+An unresolved claim id, a missing `research/evidence.yml`, or a package that
+mutated since the request was made each fail validation — visual tooling
+never approves report readiness on unvalidated or mutated evidence.
+
 ## Section compatibility
 
 `section` is canonical. `intended_section` remains a legacy alias: an entry may
