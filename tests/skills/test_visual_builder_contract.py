@@ -99,3 +99,25 @@ def test_visual_workflow_keeps_assets_in_repo_work_paths() -> None:
     )
     normalized = re.sub(r"\s+", " ", workflow.lower())
     assert "never copied to the user's documents delivery folder" in normalized
+
+
+def test_visual_skill_documents_automated_connector_gate() -> None:
+    """Issue #10: the connector geometry gate is documented as automated
+    AUDITOR_PRECHECK/blocking evidence, never as the VISUAL_PASS grant itself."""
+    text = VISUAL_SKILL.read_text(encoding="utf-8")
+    assert "connector" in text.lower()
+    assert "0.80" in text
+    assert re.search(r"auditor.*does not grant.*VISUAL_PASS", text, re.IGNORECASE | re.DOTALL)
+
+
+def test_visual_workflow_replaces_eyeball_instruction_with_automated_gate() -> None:
+    """The old manual-eyeball-only readability paragraph is replaced by the
+    automated connector_geometry/connector_pdf_stage gate: isolated precheck
+    vs mandatory final-size blocking, with the 0.80 SVG-unit clearance rule
+    and its final-print-scale equivalent both documented."""
+    workflow = (VISUAL_ROOT / "references" / "visual-workflow.md").read_text(encoding="utf-8")
+    normalized = re.sub(r"\s+", " ", workflow.lower())
+    assert "connector_geometry" in normalized
+    assert "connector_pdf_stage" in normalized
+    assert "0.80" in workflow
+    assert "precheck" in normalized and "final" in normalized and "block" in normalized

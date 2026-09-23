@@ -532,11 +532,13 @@ def _segment_bbox_dist(a, b, bbox) -> float:
     return min(_segment_dist(a, b, c1, c2) for c1, c2 in edges)
 
 
-def clearance_issues(diagram: Diagram, obstructed_pairs: set[tuple[str, str]]) -> list[PageIssue]:
-    """Minimum-separation failures, skipping any pair obstruction/crossing
-    already flagged or that is a legitimate adjacency (spec: crossing or
-    obstruction takes precedence over clearance)."""
-    issues: list[PageIssue] = []
+def pairwise_clearances(diagram: Diagram, obstructed_pairs: set[tuple[str, str]]):
+    """Yield ``(edge_id, counterpart_kind, counterpart_id, distance_svg)`` for
+    every unrelated edge/edge, edge/region and edge/node pair, skipping any
+    pair obstruction/crossing already flagged or that is a legitimate
+    adjacency. Shared by the isolated (``clearance_issues``) and final-print
+    (``connector_pdf_stage.py``) stages so the pair selection can never drift
+    between them — only the threshold each applies differs."""
     edges = diagram.edges
     for i, e1 in enumerate(edges):
         for e2 in edges[i + 1:]:
@@ -547,10 +549,7 @@ def clearance_issues(diagram: Diagram, obstructed_pairs: set[tuple[str, str]]) -
                 for a1, b1 in zip(e1.points, e1.points[1:])
                 for a2, b2 in zip(e2.points, e2.points[1:])
             )
-            if dist < MIN_CLEARANCE - CLEARANCE_TOLERANCE:
-                issues.append(
-                    PageIssue(FAILURE, CONNECTOR_CLEARANCE, f"edge '{e1.id}' is {dist:.3f} SVG units from edge '{e2.id}' (minimum {MIN_CLEARANCE})")
-                )
+            yield e1.id, "edge", e2.id, dist
         for region in diagram.regions:
             if (e1.id, region.id) in obstructed_pairs:
                 continue
@@ -560,23 +559,24 @@ def clearance_issues(diagram: Diagram, obstructed_pairs: set[tuple[str, str]]) -
                 continue
             bbox = (region.x0, region.y0, region.x1, region.y1)
             dist = min(_segment_bbox_dist(a, b, bbox) for a, b in zip(e1.points, e1.points[1:]))
-            if dist < MIN_CLEARANCE - CLEARANCE_TOLERANCE:
-                issues.append(
-                    PageIssue(
-                        FAILURE, CONNECTOR_CLEARANCE,
-                        f"edge '{e1.id}' is {dist:.3f} SVG units from {region.kind} '{region.id}' (minimum {MIN_CLEARANCE})",
-                    )
-                )
+            yield e1.id, region.kind, region.id, dist
     for node in diagram.nodes:
         bbox = (node.x0, node.y0, node.x1, node.y1)
         for edge in edges:
             if node.id in (edge.source, edge.target) or (edge.id, node.id) in obstructed_pairs:
                 continue
             dist = min(_segment_bbox_dist(a, b, bbox) for a, b in zip(edge.points, edge.points[1:]))
-            if dist < MIN_CLEARANCE - CLEARANCE_TOLERANCE:
-                issues.append(
-                    PageIssue(FAILURE, CONNECTOR_CLEARANCE, f"edge '{edge.id}' is {dist:.3f} SVG units from node '{node.id}' (minimum {MIN_CLEARANCE})")
-                )
+            yield edge.id, "node", node.id, dist
+
+
+def clearance_issues(diagram: Diagram, obstructed_pairs: set[tuple[str, str]]) -> list[PageIssue]:
+    """Minimum-separation failures against the isolated 0.80 SVG-unit rule."""
+    issues: list[PageIssue] = []
+    for edge_id, kind, other_id, dist in pairwise_clearances(diagram, obstructed_pairs):
+        if dist < MIN_CLEARANCE - CLEARANCE_TOLERANCE:
+            issues.append(
+                PageIssue(FAILURE, CONNECTOR_CLEARANCE, f"edge '{edge_id}' is {dist:.3f} SVG units from {kind} '{other_id}' (minimum {MIN_CLEARANCE})")
+            )
     return issues
 
 

@@ -21,7 +21,8 @@ ODD delegated direct (user decision 2026-09-22: "flujo directo aplica odd"). The
 ## Tasks
 - [x] T1 (SDD phase 1, PR1) recover parser/corpus `7f321f6` as `bba66ec` `feat(visual): parse renderer-real connectors`. Route: delegated writer (cherry-pick, clean auto-merge in `tools/visual_builder.py`).
 - [x] T2 (SDD phase 2, PR2) `feat(visual): protect connector routes`: R2-R6 in `tools/test_connector_geometry.py` (protected regions, crossing vs touching, 0.80 clearance, source/target/direction, actionable evidence, chart silence) with the named fixtures. Route: delegated writer.
-- [ ] T3 (SDD phase 3, PR3) `feat(visual): enforce final-size connector gate`: R7 in `tools/test_connector_pdf_stage.py`, contract REDs in `tests/skills/test_visual_builder_contract.py`, `tools/connector_pdf_stage.py`, `tools/validate_report.py`, SKILL.md and `visual-workflow.md` rules. Route: delegated writer.
+- [x] T3 (SDD phase 3, PR3) `feat(visual): enforce final-size connector gate`: R7 in `tools/test_connector_pdf_stage.py`, contract REDs in `tests/skills/test_visual_builder_contract.py`, `tools/connector_pdf_stage.py`, `tools/validate_report.py`, SKILL.md and `visual-workflow.md` rules. Route: delegated writer.
+- [ ] T4 (post-T1 native review, non-blocking findings) `fix(visual): harden connector parsing`: RED tests first for — edge/node id parsing breaking on underscores (`connector_geometry.py:43`), SVG path sampling ignoring relative commands/other unhandled commands (`:89-114`), circle nodes not resolved as node regions (`:130-152`), the "fix" boundary-grazing-only detection (`:281-286`), unguarded connector audit letting parse exceptions escape `visual_builder.py` instead of becoming a reported finding (`:387-392`), missing integration/edge-case coverage (`test_connector_geometry.py:72-84`), plus the minor misplaced constant comment and node-id-holding-the-label naming. Route: delegated writer.
 
 ## Acceptance
 - SDD spec requirements hold with named tests observed RED then GREEN; full suite green; open connector failure denies `VISUAL_PASS`.
@@ -44,12 +45,39 @@ ODD delegated direct (user decision 2026-09-22: "flujo directo aplica odd"). The
   its own layout never produces these specific geometric defects deterministically); each fixture was
   iteratively verified against the implementation before being checked in.
 
+- T3: `07bc644` `feat(visual): enforce final-size connector gate`. RED (module `connector_pdf_stage`
+  did not exist; confirmed by temporarily removing the file after writing it):
+  `ModuleNotFoundError` collecting `tools/test_connector_pdf_stage.py`. GREEN: all 3 R7 tests pass
+  (`.venv/bin/python -m pytest tools/test_connector_pdf_stage.py -q` -> 3 passed). Contract REDs in
+  `tests/skills/test_visual_builder_contract.py` (`test_visual_skill_documents_automated_connector_gate`,
+  `test_visual_workflow_replaces_eyeball_instruction_with_automated_gate`) observed failing before the
+  SKILL.md/visual-workflow.md edits, green after
+  (`.venv/bin/python -m pytest tests/skills/test_visual_builder_contract.py -q` -> 11 passed). Full
+  suite: `.venv/bin/python -m pytest tools/ tests/ -q` -> 994 passed. Shortstat:
+  `9 files changed, 359 insertions(+), 24 deletions(-)`. End-to-end sanity check (outside the repo, in
+  scratch): a minimal `backend: latex` report embedding the known-defect `github-workflow-page4.svg`
+  produces `connector_final_size_validation` errors for `CONNECTOR_THROUGH_NODE` (FIX/RS, scale-invariant,
+  matches the isolated stage) AND a `CONNECTOR_CLEARANCE` pair the isolated stage alone did not catch —
+  confirming the final-print-scale stage is independent enforcement, not a restated precheck. This wires
+  into `validate()` unconditionally for `backend == "latex"` (mirroring `pdf_layout`'s own unconditional
+  gating), so an open failure blocks `VALIDATION_PASS`/`BUILD_PASS` before `VISUAL_PASS` is ever
+  reachable; `validate_report.py` never claims to grant `VISUAL_PASS` itself (existing, tested contract
+  preserved verbatim in `test_report_skill_keeps_visual_pass_owned_by_direct_semantic_inspection`).
+  **Scope delivered vs. design**: derives the final print SCALE deterministically (closed-form, replaying
+  `build_latex_report.py`'s own `FIGURE_WIDTH_FRACTION`/`FIGURE_MAX_HEIGHT_FRACTION` formula against each
+  template's parsed `\usepackage[...]{geometry}` margins) and re-audits connector geometry at that scale,
+  with clearance measured against a fixed physical minimum in PDF points
+  (`MIN_CLEARANCE_PRINT_PT = 2.0`, documented in `connector_pdf_stage.py`). Page number and exact
+  top-left position (the full placement-receipt/PDF-hash binding the original design specified) remain
+  OUT of scope: investigated and confirmed genuinely unavailable — LaTeX float placement decides those at
+  compile time and there is no cheap, stdlib-only way to recover them after the fact (`pdfimages -list`
+  reports per-image dimensions/DPI, never a bounding box). Diagram-to-SVG resolution assumes a same-stem
+  `.svg` sibling next to the `\includegraphics`-referenced PNG/PDF asset; this convention is not yet
+  verified against a real generated report (no PDF exists in this checkout — content lives in the
+  separate `CONTENT_ROOT`), only against a hand-built scratch report.
+
 ## Next step
-Delegate T3 (final-size PDF gate). Open question already investigated: the pipeline records no
-per-figure PDF placement receipt (page, box, hash) anywhere — `\includegraphics` sizing is a
-closed-form formula (`FIGURE_WIDTH_FRACTION`/`FIGURE_MAX_HEIGHT_FRACTION` in `build_latex_report.py`)
-applied against each template's `\usepackage[...]{geometry}` margins, but WHICH page a figure lands on
-and its exact top-left position are LaTeX float placement decisions with no cheap, stdlib-only way to
-recover post-compile. T3 will derive the final print SCALE deterministically (closed-form, same
-formula the pipeline already uses) and gate on that; page/position-level placement-receipt binding is
-out of scope unless this gap is revisited.
+Start T4 (native-review hardening of the T1 parser). Reconciliation against T2/T3: neither task touched
+`_EDGE_ID_RE`/`_NODE_ID_RE` (underscore-splitting), `sample_path`'s command handling, `_shape_bbox`'s
+shape-kind branches (rect/polygon/path only, no circle/ellipse), or `visual_builder.py`'s
+`command_validate` exception handling — all six findings are still open and unaddressed by T2/T3.
