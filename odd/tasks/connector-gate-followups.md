@@ -19,7 +19,7 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
 - RDD: on; one review per slice.
 
 ## Tasks
-- [ ] T1 undirected links: read the declared link type from the `.mmd` source (same stem as the SVG); skip direction/marker checks for undirected links; missing source falls back to the current strict rule and reports that it did. Route: delegated writer.
+- [x] T1 undirected links: read the declared link type from the `.mmd` source (same stem as the SVG); skip direction/marker checks for undirected links; missing source falls back to the current strict rule and reports that it did. Route: delegated writer.
 - [ ] T2 one shared guard helper for both audit entry points that turns any geometry exception (including `IndexError`) into a finding. Route: delegated writer.
 - [ ] T3 necessary-crossing exemption: exempt a crossing only when no alternative route around protected regions exists; otherwise fail. Route: delegated writer.
 
@@ -28,6 +28,25 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
 
 ## Progress / evidence
 - Branch `fix/connector-gate-followups` from `main` 19648cb.
+- T1 done, commit `ee8ef33` (9 files changed, 276 insertions(+), 22 deletions(-)).
+  - RED: `test_parse_link_directions_classifies_declared_link_types`,
+    `test_undirected_link_declared_in_source_skips_direction_check`,
+    `test_undirected_link_without_source_falls_back_to_strict`,
+    `test_no_sibling_source_reports_strict_mode_informational_finding`,
+    `test_multiple_links_between_same_pair_match_by_ordinal` (tools/test_connector_geometry.py)
+    plus `test_undirected_link_declared_in_source_skips_direction_check_at_final_size`,
+    `test_no_sibling_source_reports_strict_mode_informational_finding_at_final_size`
+    (tools/test_connector_pdf_stage.py) — all observed failing before the implementation.
+  - GREEN: same tests pass after `connector_geometry.py`
+    (`parse_link_directions`, `load_link_directions`, `direction_issues`,
+    `audit_diagram`, `audit_connector_geometry`) and `connector_pdf_stage.py`
+    (`audit_final_size`, `audit_svg_at_final_size`) changes.
+  - Fixtures: real `mmdc` captures (`mmdc-undirected-clean.svg/.mmd`,
+    `mmdc-undirected-multi.svg/.mmd`), rendered via
+    `tools/visual_builder.py mermaid` with the installed `mmdc`; reused
+    existing sourceless fixtures (`mmdc-direction-clean.svg`) for the
+    no-source fallback case.
+  - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1187 passed.
 
 ## Next step
-Delegate T1-T3.
+Delegate T2.
