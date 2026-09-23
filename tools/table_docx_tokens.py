@@ -53,12 +53,27 @@ _HEADER_FILL = HEADER_FILL_HEX
 _TBL_PR_SUCCESSORS = (
     "w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCaption", "w:tblDescription", "w:tblPrChange",
 )
-_TC_PR_TCBORDERS_SUCCESSORS = (
-    "w:shd", "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText",
+
+# CT_TcPr child order (ECMA-376), from `w:tcBorders` onward -- the single
+# source of truth every "successors of <tag>" tuple below derives from, so a
+# reader never has to count elements in a positional slice to know what it
+# means (T4+T5 review R2-docx-successor-slices: `_TC_PR_SHD_SUCCESSORS`/
+# `_TC_PR_TCMAR_SUCCESSORS` used to be unexplained `[1:]`/`[3:]` slices of
+# `_TC_PR_TCBORDERS_SUCCESSORS`).
+_TC_PR_SCHEMA_TAIL = (
+    "w:tcBorders", "w:shd", "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText",
     "w:vAlign", "w:hideMark", "w:headers", "w:cellIns", "w:cellDel", "w:cellMerge", "w:tcPrChange",
 )
-_TC_PR_SHD_SUCCESSORS = _TC_PR_TCBORDERS_SUCCESSORS[1:]
-_TC_PR_TCMAR_SUCCESSORS = _TC_PR_TCBORDERS_SUCCESSORS[3:]
+
+
+def _successors_of(tag: str) -> tuple[str, ...]:
+    """Every ``_TC_PR_SCHEMA_TAIL`` tag that must come after ``tag`` in a CT_TcPr."""
+    return _TC_PR_SCHEMA_TAIL[_TC_PR_SCHEMA_TAIL.index(tag) + 1:]
+
+
+_TC_PR_TCBORDERS_SUCCESSORS = _successors_of("w:tcBorders")
+_TC_PR_SHD_SUCCESSORS = _successors_of("w:shd")
+_TC_PR_TCMAR_SUCCESSORS = _successors_of("w:tcMar")
 
 
 def _shade_cell(cell, fill_hex: str) -> None:

@@ -27,6 +27,7 @@ external tools (e.g. the LaTeX backend's own Docker fallback check).
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -86,10 +87,15 @@ def test_issue_13_rendered_context_corpus(tmp_path: Path) -> None:
     pages = _page_count(pdf_path)
     assert pages >= 3  # short+long+comparison / status+dense+multipage-start / continuation ...
 
-    # Proves SELECTION, not merely that some rendering happened: each named
-    # context class must have actually resolved to its expected approved ID
-    # (same mapping as test_issue_13_context_matrix_is_deterministic), not
-    # just any style (T3+T4+T5 review R3-corpus-test-doesnt-prove-selection).
+    # Proves SELECTION *per context*, not merely that every expected ID
+    # appears somewhere in the document: a membership-only check (`in html`)
+    # cannot catch two contexts swapping selections (e.g. "short" rendering
+    # what "comparison" should have) -- the set of distinct IDs present in
+    # the whole document stays the same either way. `data-table-style`
+    # attributes appear in document order, which matches this fixture's
+    # section order one-to-one, so comparing the two sequences positionally
+    # ties each ID to its actual context (T4+T5 review
+    # R3-corpus-selection-assertion-not-per-context).
     expected_ids = {
         "short": "TAB-CL-01",
         "long": "TAB-ZB-04",
@@ -98,8 +104,11 @@ def test_issue_13_rendered_context_corpus(tmp_path: Path) -> None:
         "dense": "TAB-CC-07",
         "multipage": "TAB-ZB-04",
     }
-    for name, style_id in expected_ids.items():
-        assert f'data-table-style="{style_id}"' in html, f"{name}: expected {style_id} in rendered HTML"
+    rendered_ids = re.findall(r'data-table-style="([^"]+)"', html)
+    assert rendered_ids == list(expected_ids.values()), (
+        f"rendered style IDs {rendered_ids} do not match the expected "
+        f"per-context selection {list(expected_ids.values())}"
+    )
 
     full_text = "\n".join(_page_text(pdf_path, page) for page in range(1, pages + 1))
     # Every context section heading survived rendering, legible and present.
