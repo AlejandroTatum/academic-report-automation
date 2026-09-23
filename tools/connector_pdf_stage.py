@@ -36,14 +36,16 @@ from pathlib import Path
 from build_latex_report import FIGURE_MAX_HEIGHT_FRACTION, FIGURE_WIDTH_FRACTION
 from connector_geometry import (
     CONNECTOR_CLEARANCE,
+    CONNECTOR_DIRECTION_NO_SOURCE,
     Diagram,
     crossing_issues,
     direction_issues,
+    load_link_directions,
     obstruction_issues,
     pairwise_clearances,
     parse_svg,
 )
-from visual_pdf_auditor import FAILURE, PageIssue
+from visual_pdf_auditor import FAILURE, INFO, PageIssue
 
 # PDF points per unit, PostScript-point convention (72pt/inch) — the same one
 # validate_report.py's A4_WIDTH/A4_HEIGHT already assume, matching what
@@ -144,15 +146,23 @@ def _final_clearance_issues(diagram: Diagram, obstructed_pairs: set[tuple[str, s
     return issues
 
 
-def audit_final_size(diagram: Diagram, scale: float) -> list[PageIssue]:
-    """Re-run the connector audit at final print scale."""
+def audit_final_size(
+    diagram: Diagram, scale: float, link_directions: dict[tuple[str, str], list[bool]] | None = None
+) -> list[PageIssue]:
+    """Re-run the connector audit at final print scale.
+
+    *link_directions* carries the same #43 T1 declared-direction map
+    ``audit_connector_geometry`` derives from the diagram's ``.mmd``
+    source; ``None`` keeps the pre-#43 strict direction/marker rule, exactly
+    as the isolated stage does when no source is found.
+    """
     obstruction, obstructed_pairs = obstruction_issues(diagram)
     return (
         list(diagram.parse_issues)
         + obstruction
         + crossing_issues(diagram)
         + _final_clearance_issues(diagram, obstructed_pairs, scale)
-        + direction_issues(diagram)
+        + direction_issues(diagram, link_directions)
     )
 
 
@@ -171,4 +181,13 @@ def audit_svg_at_final_size(svg_path: Path, tex_source: str) -> list[PageIssue]:
     width, height = _viewbox_size(text)
     geometry = parse_template_geometry(tex_source)
     scale = final_print_scale(width, height, geometry)
-    return audit_final_size(diagram, scale)
+    link_directions = load_link_directions(svg_path)
+    issues = audit_final_size(diagram, scale, link_directions)
+    if link_directions is None:
+        issues.append(
+            PageIssue(
+                INFO, CONNECTOR_DIRECTION_NO_SOURCE,
+                f"'{svg_path.name}': no '.mmd' source next to the SVG; direction/marker check ran in strict mode",
+            )
+        )
+    return issues

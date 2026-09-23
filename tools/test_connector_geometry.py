@@ -27,7 +27,7 @@ TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 
 import connector_geometry as cg  # noqa: E402
-from visual_pdf_auditor import FAILURE  # noqa: E402
+from visual_pdf_auditor import FAILURE, INFO  # noqa: E402
 
 FIXTURES = TOOLS / "fixtures" / "connector_geometry"
 
@@ -304,3 +304,75 @@ def test_cluster_label_region_has_no_owner_id() -> None:
     diagram = cg.parse_svg(svg)
     assert len(diagram.regions) == 1
     assert diagram.regions[0].owner_id == ""
+
+
+# --- T1 (#43): undirected links declared in the .mmd source -------------------
+
+
+def test_parse_link_directions_classifies_declared_link_types() -> None:
+    """Only a bare open/dotted/thick link -- with or without a label -- is
+    undirected; anything carrying an arrowhead (>, <, o, x) stays directed,
+    regardless of an inline label or free-text segment."""
+    text = (
+        "flowchart LR\n"
+        "  A[A] --- B[B]\n"
+        "  A -.- C[C]\n"
+        "  A === D[D]\n"
+        "  A --> E[E]\n"
+        "  A -->|label| F[F]\n"
+        "  A -- text --- G[G]\n"
+        "  A -. text .-> H[H]\n"
+    )
+    directions = cg.parse_link_directions(text)
+    assert directions[("A", "B")] == [False]
+    assert directions[("A", "C")] == [False]
+    assert directions[("A", "D")] == [False]
+    assert directions[("A", "E")] == [True]
+    assert directions[("A", "F")] == [True]
+    assert directions[("A", "G")] == [False]
+    assert directions[("A", "H")] == [True]
+
+
+def test_undirected_link_declared_in_source_skips_direction_check() -> None:
+    """A real mmdc capture of ``A --- B`` (no end marker at all) must not
+    fail direction when its ``.mmd`` sibling declares it undirected; the
+    ``A --> C`` arrow in the same diagram keeps the full check."""
+    svg = FIXTURES / "mmdc-undirected-clean.svg"
+    issues = cg.audit_connector_geometry(svg)
+    assert cg.CONNECTOR_DIRECTION not in failure_tags(issues)
+
+
+def test_undirected_link_without_source_falls_back_to_strict() -> None:
+    """The same ``A --- B`` shape, audited without its ``.mmd`` sibling
+    present, still fails under the pre-#43 strict rule -- and the fallback
+    itself is reported as an informational finding naming the figure."""
+    svg = FIXTURES / "mmdc-undirected-clean.svg"
+    text = svg.read_text(encoding="utf-8")
+    diagram = cg.parse_svg(text)
+    issues = cg.audit_diagram(diagram, link_directions=None)
+    assert cg.CONNECTOR_DIRECTION in failure_tags(issues)
+
+
+def test_no_sibling_source_reports_strict_mode_informational_finding() -> None:
+    """A figure with no ``.mmd`` next to it keeps the strict direction rule
+    and says so, instead of silently behaving differently from a sourced
+    figure with no way to tell the two apart."""
+    issues = cg.audit_connector_geometry(FIXTURES / "mmdc-direction-clean.svg")
+    info = [i for i in issues if i.tag == cg.CONNECTOR_DIRECTION_NO_SOURCE]
+    assert len(info) == 1
+    assert info[0].level == INFO
+    assert "mmdc-direction-clean.svg" in info[0].detail
+
+
+def test_multiple_links_between_same_pair_match_by_ordinal() -> None:
+    """Two links between the same nodes -- one arrowed, one open -- must map
+    onto the right SVG edge each, not both-or-neither: mmdc assigns the
+    second link's ordinal out of declaration order (``_0`` then ``_2``, not
+    ``_1``), so matching has to go by each pair's own relative position, not
+    the raw ordinal value."""
+    svg = FIXTURES / "mmdc-undirected-multi.svg"
+    issues = cg.audit_connector_geometry(svg)
+    direction_issues = [i for i in issues if i.tag == cg.CONNECTOR_DIRECTION]
+    # L_A_F_0 (the declared arrow) must still be checked and pass; L_A_F_2
+    # (the declared open link) must be exempt from the missing-marker rule.
+    assert not any("L_A_F_2" in i.detail for i in direction_issues)

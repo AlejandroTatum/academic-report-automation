@@ -63,3 +63,23 @@ def test_clean_isolated_and_final_pdf_can_pass_connector_gate() -> None:
     svg = FIXTURES / "mmdc-final-clearance-clean.svg"
     assert failure_tags(cg.audit_connector_geometry(svg)) == set()
     assert failure_tags(cps.audit_svg_at_final_size(svg, TEMPLATE)) == set()
+
+
+# --- T1 (#43): undirected links stay exempt at final print size too -----------
+
+
+def test_undirected_link_declared_in_source_skips_direction_check_at_final_size() -> None:
+    """The same ``.mmd``-declared undirected link stays exempt when the
+    diagram is re-audited at final print scale, not just in isolation."""
+    svg = FIXTURES / "mmdc-undirected-clean.svg"
+    issues = cps.audit_svg_at_final_size(svg, TEMPLATE)
+    assert cg.CONNECTOR_DIRECTION not in failure_tags(issues)
+
+
+def test_no_sibling_source_reports_strict_mode_informational_finding_at_final_size() -> None:
+    """A figure with no ``.mmd`` next to it keeps reporting the strict-mode
+    fallback at final print size too, not just in the isolated precheck."""
+    issues = cps.audit_svg_at_final_size(FIXTURES / "mmdc-direction-clean.svg", TEMPLATE)
+    info = [i for i in issues if i.tag == cg.CONNECTOR_DIRECTION_NO_SOURCE]
+    assert len(info) == 1
+    assert "mmdc-direction-clean.svg" in info[0].detail

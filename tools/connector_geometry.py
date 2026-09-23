@@ -27,7 +27,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from visual_pdf_auditor import FAILURE, PageIssue
+from visual_pdf_auditor import FAILURE, INFO, PageIssue
 
 # Failure tags, decided in exactly one place (auditor pattern).
 CONNECTOR_THROUGH_NODE = "CONNECTOR_THROUGH_NODE"
@@ -36,6 +36,10 @@ CONNECTOR_CROSSING = "CONNECTOR_CROSSING"
 CONNECTOR_CLEARANCE = "CONNECTOR_CLEARANCE"
 CONNECTOR_DIRECTION = "CONNECTOR_DIRECTION"
 CONNECTOR_PARSE = "CONNECTOR_PARSE"
+# INFO-level, never a FAILURE: the direction/marker check ran against the
+# pre-#43 strict rule because no ``.mmd`` source was found next to the SVG to
+# say which links are intentionally undirected (see direction_issues()).
+CONNECTOR_DIRECTION_NO_SOURCE = "CONNECTOR_DIRECTION_NO_SOURCE"
 # Cubic-bezier flattening resolution for sample_path()'s fallback d-attribute
 # sampling (node/region shapes given as a path, not a rect/polygon/circle).
 BEZIER_SAMPLES = 16
@@ -785,24 +789,134 @@ def _point_near_bbox(p, bbox, eps=ENDPOINT_EPS) -> bool:
     return x0 - eps <= x <= x1 + eps and y0 - eps <= y <= y1 + eps
 
 
-def direction_issues(diagram: Diagram) -> list[PageIssue]:
+# --- Declared link direction, from the .mmd source (#43 T1) -------------------
+#
+# 2026-09-23 decision (supersedes the August "every connector MUST use a
+# defined end marker" rule): an undirected Mermaid link (open ---, dotted
+# -.-, thick ===, with or without a |label| or inline ' text ' segment) is
+# valid and skips direction/marker checks. A link carrying any arrowhead
+# (-->, -.->,  ==>, <-->, --o, --x, ...) is unchanged -- still checked in
+# full. The source is the sole authority on intent; there is no SVG-only
+# signal to tell "renderer correctly omitted the marker" from "marker
+# generation broke", so a missing source keeps the old strict rule and says
+# so (CONNECTOR_DIRECTION_NO_SOURCE, informational).
+_LINK_ID = r"[A-Za-z0-9_][\w-]*"
+# A node's shape delimiter on either side of a link (e.g. "A[Label]",
+# "B((Label))"); only skipped past, never parsed for its own content.
+_LINK_SHAPE = (
+    r"(?:@\{[^}]*\}|\[\[[^\]]*\]\]|\(\([^)]*\)\)|\{\{[^}]*\}\}|\[\([^)]*\)\]"
+    r"|>[^\]]*\]|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})?"
+)
+# The connector itself: an optional leading '<' (bidirectional/reversed
+# arrowhead), a run of >=2 line characters (-/./=), an optional inline label
+# (|...| or free text before the closing run), the closing run, an optional
+# trailing arrowhead ('>' or a circle/cross terminator 'o'/'x'), and an
+# optional |label| placed AFTER the arrow (Mermaid's "-->|label|" form).
+_LINK_ARROW = (
+    r"(?P<lhead><)?(?P<lpunct>[-=.]{2,})"
+    r"(?:\s*\|[^|]*\||\s+[^-=.\n]+?(?=\s*[-=.]{2,}))?"
+    r"\s*(?P<rpunct>[-=.]{0,})(?P<rhead>[>ox])?"
+    r"(?:\s*\|[^|]*\|)?"
+)
+_LINK_RE = re.compile(rf"(?P<src>{_LINK_ID}){_LINK_SHAPE}\s*{_LINK_ARROW}\s*(?P<tgt>{_LINK_ID})")
+# Lines that never carry a link, skipped so their punctuation cannot be
+# mistaken for one (subgraph/style/class declarations use similar symbols).
+_LINK_SKIP_LINE_RE = re.compile(
+    r"^\s*(subgraph\b|end\b|classDef\b|class\b|style\b|click\b|linkStyle\b|direction\b|flowchart\b|graph\b|%%)",
+    re.IGNORECASE,
+)
+_LINK_COMMENT_RE = re.compile(r"%%.*$")
+
+
+def parse_link_directions(text: str) -> dict[tuple[str, str], list[bool]]:
+    """Declared link directedness per ``(source, target)`` pair, in
+    declaration order, from Mermaid flowchart/graph source text.
+
+    ``True`` means the link carries an arrowhead (checked in full); ``False``
+    means a bare open/dotted/thick link (direction/marker checks skipped).
+    Known gap: chained (``A --> B --> C``) and fan-out (``A --> B & C``)
+    links only resolve their first hop -- the rest are simply absent from
+    the returned map, and ``direction_issues()`` already treats an edge with
+    no matching entry as directed, the same safe default a missing source
+    file gets.
+    """
+    directions: dict[tuple[str, str], list[bool]] = {}
+    for raw_line in text.splitlines():
+        line = _LINK_COMMENT_RE.sub("", raw_line)
+        if _LINK_SKIP_LINE_RE.match(line):
+            continue
+        for match in _LINK_RE.finditer(line):
+            key = (match.group("src"), match.group("tgt"))
+            directed = bool(match.group("lhead") or match.group("rhead"))
+            directions.setdefault(key, []).append(directed)
+    return directions
+
+
+def _edge_ordinal(edge_id: str) -> int:
+    match = _EDGE_ID_RE.match(edge_id)
+    return int(match.group(2)) if match else 0
+
+
+def _match_declared_directions(
+    edges: list[Edge], link_directions: dict[tuple[str, str], list[bool]]
+) -> dict[str, bool]:
+    """Map each edge id to whether the source declared it directed.
+
+    mmdc does not number repeated links between the same pair sequentially
+    from the SVG's ``_<ordinal>`` suffix alone (a second ``A--F`` link is
+    ``L_A_F_2``, not ``L_A_F_1``) -- but it always keeps them in ascending,
+    declaration-preserving order. Matching therefore goes by each edge's
+    position within its own (source, target) group, not by the raw ordinal
+    value: sort the group by ordinal, zip it against the source's
+    declaration-ordered list for that same pair. An edge past the end of its
+    pair's declared list (parse gap, e.g. a chained link) defaults to
+    directed -- the safe, stricter choice.
+    """
+    groups: dict[tuple[str, str], list[Edge]] = {}
+    for edge in edges:
+        groups.setdefault((edge.source, edge.target), []).append(edge)
+    result: dict[str, bool] = {}
+    for key, group in groups.items():
+        declared = link_directions.get(key, [])
+        for position, edge in enumerate(sorted(group, key=lambda e: _edge_ordinal(e.id))):
+            result[edge.id] = declared[position] if position < len(declared) else True
+    return result
+
+
+def _source_path_for(svg_path: Path) -> Path:
+    """The ``.mmd`` source authoritative for *svg_path*'s connector intent:
+    same directory, same stem."""
+    return svg_path.with_suffix(".mmd")
+
+
+def load_link_directions(svg_path: Path) -> dict[tuple[str, str], list[bool]] | None:
+    """Declared link directions from the ``.mmd`` sitting next to
+    *svg_path*, or ``None`` when no such source exists."""
+    source = _source_path_for(svg_path)
+    if not source.exists():
+        return None
+    return parse_link_directions(source.read_text(encoding="utf-8"))
+
+
+def direction_issues(
+    diagram: Diagram, link_directions: dict[tuple[str, str], list[bool]] | None = None
+) -> list[PageIssue]:
     """Source/target endpoint containment and end-marker validity.
 
-    Reviewed (native review, issue #10 T5) as a possible false-positive for
-    Mermaid's undirected ``---`` links, which mmdc renders with no end
-    marker at all. Not a defect against this project's accepted contract:
-    the spec's "Endpoints and direction" requirement is unconditional --
-    "every connector MUST ... use a defined end marker whose orientation
-    follows the path" -- and the checked-in named RED fixture
-    (``mmdc-direction-bad.svg``) already encodes "no end marker" as a
-    failure by design. Supporting a legitimately undirected connector would
-    need a new spec scenario (there is no SVG-only signal to tell "renderer
-    correctly omitted the marker" from "marker generation broke"), not a
-    hardening fix to this check.
+    *link_directions* (see ``parse_link_directions``) is ``None`` when no
+    ``.mmd`` source was found: every edge is checked in full, the pre-#43
+    strict rule. When it is provided, an edge the source declared undirected
+    skips the endpoint-containment and end-marker checks entirely -- a
+    legitimately undirected connector renders with no end marker at all, and
+    the source is the only authority that can tell that apart from a broken
+    one (see the module-level note above ``_LINK_RE``).
     """
     issues: list[PageIssue] = []
     by_id = {node.id: node for node in diagram.nodes}
+    directed_by_edge = _match_declared_directions(diagram.edges, link_directions) if link_directions is not None else {}
     for edge in diagram.edges:
+        if link_directions is not None and not directed_by_edge.get(edge.id, True):
+            continue
         src, tgt = by_id.get(edge.source), by_id.get(edge.target)
         if src is not None and not _point_near_bbox(edge.points[0], (src.x0, src.y0, src.x1, src.y1)):
             issues.append(PageIssue(FAILURE, CONNECTOR_DIRECTION, f"edge '{edge.id}' starts off its declared source '{edge.source}'"))
@@ -817,17 +931,28 @@ def direction_issues(diagram: Diagram) -> list[PageIssue]:
     return issues
 
 
-def audit_diagram(diagram: Diagram) -> list[PageIssue]:
+def audit_diagram(
+    diagram: Diagram, link_directions: dict[tuple[str, str], list[bool]] | None = None
+) -> list[PageIssue]:
     obstruction, obstructed_pairs = obstruction_issues(diagram)
     return (
         list(diagram.parse_issues)
         + obstruction
         + crossing_issues(diagram)
         + clearance_issues(diagram, obstructed_pairs)
-        + direction_issues(diagram)
+        + direction_issues(diagram, link_directions)
     )
 
 
 def audit_connector_geometry(svg: Path) -> list[PageIssue]:
     """Audit a rendered Mermaid SVG file for connector defects."""
-    return audit_diagram(parse_svg(svg.read_text(encoding="utf-8")))
+    link_directions = load_link_directions(svg)
+    issues = audit_diagram(parse_svg(svg.read_text(encoding="utf-8")), link_directions)
+    if link_directions is None:
+        issues.append(
+            PageIssue(
+                INFO, CONNECTOR_DIRECTION_NO_SOURCE,
+                f"'{svg.name}': no '.mmd' source next to the SVG; direction/marker check ran in strict mode",
+            )
+        )
+    return issues

@@ -79,6 +79,16 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   wrapping, page geometry, overall composition) still needs inspection in the
   assembled PDF at normal zoom before insertion, per the photo/evidence rule
   above.
+- Direction and end-marker checks (#43, 2026-09-23 decision, supersedes the
+  earlier "every connector MUST use a defined end marker" rule): the `.mmd`
+  source sitting next to the SVG (same stem) is the sole authority on
+  connector intent. An undirected link (`---`, `-.-`, `===`, with or without
+  a label) declared there skips direction/marker checks; a link declared
+  with an arrowhead (`-->`, `-.->`, `==>`, `<-->`, `--o`, `--x`, ...) keeps
+  the full check. When no matching `.mmd` is found, the check falls back to
+  the strict pre-#43 rule and reports that it did (an informational finding
+  naming the figure, never silently different behavior) — keep the source
+  next to its rendered SVG so undirected links validate correctly.
 
 ## Subject presets
 
