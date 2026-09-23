@@ -19,7 +19,7 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
 
 ## Tasks
 - [x] T1 catalog + selector (R1-R4). Route: delegated writer.
-- [ ] T2 context model, override precedence, receipts (R5-R8). Route: delegated writer.
+- [x] T2 context model, override precedence, receipts (R5-R8). Route: delegated writer.
 - [ ] T3 LaTeX tokens (R9 latex). Route: delegated writer.
 - [ ] T4 DOCX tokens (R9 docx). Route: delegated writer.
 - [ ] T5 HTML tokens + rendered corpus, multipage, grayscale/accessibility (R9 html, R10-R12). Route: delegated writer.
@@ -57,5 +57,30 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
   asserts no private-path/PDF-parsing dependency survives in the shipped
   loader or YAML.
 
+- T2 done (addbcba `feat(tables): context receipts`). RED confirmed on
+  parent (`ModuleNotFoundError: table_model`) before `tools/table_model.py`
+  existed; GREEN after implementation. `tools/table_model.py` +
+  `tools/test_table_model.py` + `ReportConfig.table_style_overrides` /
+  `.institution_table_style` in `tools/report_config.py` + `tables:`
+  section in `templates/academic_format.yml` (+299 lines: table_model.py
+  129, tests 134, report_config.py +26, academic_format.yml +10). RED/GREEN
+  tests: `test_issue_13_override_precedence`,
+  `test_issue_13_invalid_override_rejection` (3 parametrized cases:
+  unapproved, missing, context-incompatible),
+  `test_issue_13_deprecated_override_rejection`,
+  `test_issue_13_unsupported_context_blocks`,
+  `test_issue_13_selection_evidence_receipt`. Full suite: 1063 passed
+  (1055 + 7 new + 1 from the existing duplicate-top-level-function
+  parametrize picking up `table_model.py`).
+  Deviation from tasks #6424: `tools/check_table_contexts.py` and the
+  markdown table-directive parser it needs (`parse_table_blocks`) were
+  assigned to this slice but are deferred to T3. Nothing in R5-R8
+  exercises them, and the directive syntax is an implementation detail
+  the design doc leaves open ("explicit context directive adjacent to
+  each Markdown table", no concrete grammar) — building it now, before
+  any renderer consumes parsed table blocks, risked guessing an interface
+  T3 would have to reshape. Not a product-decision gap; just resequenced.
+
 ## Next step
-T2 (context model, override precedence, receipts — R5-R8).
+T3 (LaTeX tokens — R9 latex), including the deferred table-directive
+parser and `tools/check_table_contexts.py`.
