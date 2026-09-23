@@ -82,13 +82,13 @@ class TableBlock:
     line: int  # 1-indexed source line of the header row
 
 
-def _split_row(row: str) -> list[str]:
+def split_table_row(row: str) -> list[str]:
     stripped = row.strip().strip("|")
     return [cell.strip() for cell in stripped.split("|")]
 
 
-def _is_separator(row: str) -> bool:
-    cells = _split_row(row)
+def is_table_separator(row: str) -> bool:
+    cells = split_table_row(row)
     return bool(cells) and all(re.match(r"^:?-{3,}:?$", cell) for cell in cells)
 
 
@@ -217,14 +217,14 @@ def parse_table_blocks(markdown: str) -> list[TableBlock]:
             i += 1
             continue
 
-        if "|" in stripped and i + 1 < len(lines) and _is_separator(lines[i + 1]):
+        if "|" in stripped and i + 1 < len(lines) and is_table_separator(lines[i + 1]):
             table_start = i
-            header = _split_row(stripped)
+            header = split_table_row(stripped)
             header_line = i + 1
             i += 2
             rows: list[list[str]] = []
             while i < len(lines) and "|" in lines[i].strip() and lines[i].strip():
-                rows.append(_split_row(lines[i]))
+                rows.append(split_table_row(lines[i]))
                 i += 1
 
             key, context = context_for_table(lines, table_start, header, rows)

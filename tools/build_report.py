@@ -33,6 +33,19 @@ from urllib.parse import quote
 
 import markdown
 
+TOOLS_DIR = str(Path(__file__).resolve().parent)
+if TOOLS_DIR not in sys.path:
+    sys.path.insert(0, TOOLS_DIR)
+
+from table_directives import (  # noqa: E402
+    DIRECTIVE_RE as TABLE_STYLE_DIRECTIVE_RE,
+    context_for_table,
+    is_table_separator,
+    split_table_row,
+)
+from table_html_tokens import render_styled_table_html  # noqa: E402
+from table_styles import load_catalog, select_style  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Institutional identity, rendered in the page header.
@@ -304,6 +317,88 @@ def warnings_html(warnings: list[str]) -> str:
     )
 
 
+def _inline_markdown(text: str) -> str:
+    """Render one cell's Markdown (bold/italic/links/code) without a wrapper.
+
+    ``markdown.markdown`` always wraps its output in a single ``<p>``; a
+    table cell needs the inline HTML alone. Used as the injected
+    ``escape_inline`` for ``render_styled_table_html`` so a directed
+    table's cells keep the same inline-formatting support undirected
+    tables get for free from python-markdown's "tables" extension.
+    """
+    fragment = markdown.markdown(text, extensions=["fenced_code"]).strip()
+    if fragment.startswith("<p>") and fragment.endswith("</p>"):
+        fragment = fragment[len("<p>") : -len("</p>")]
+    return fragment
+
+
+def apply_table_styles(body: str, catalog=None) -> str:
+    """Replace every DIRECTED table with a self-contained styled HTML block.
+
+    Issue #13. There is no ``ReportConfig`` in this preview tool (it takes
+    one bare Markdown file, not a report folder), so there is no per-report
+    opt-in flag and no teacher/institution override -- only automatic
+    contextual selection applies. An UNDIRECTED table (no preceding
+    ``<!-- table-style: ... -->`` comment) is left completely untouched, so
+    it renders exactly as before through python-markdown's "tables"
+    extension: this function never blocks a build.
+    """
+    catalog = catalog or load_catalog()
+    lines = body.splitlines()
+    output: list[str] = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+
+        if not stripped:
+            output.append(lines[i])
+            i += 1
+            continue
+
+        if TABLE_STYLE_DIRECTIVE_RE.match(stripped):
+            # Consumed by context_for_table when its table is found below
+            # (or silently dropped if orphaned -- an inert HTML comment
+            # either way, never visible in the rendered page).
+            i += 1
+            continue
+
+        if "|" in stripped and i + 1 < len(lines) and is_table_separator(lines[i + 1]):
+            table_start = i
+            header = split_table_row(stripped)
+            i += 2
+            rows: list[list[str]] = []
+            while i < len(lines) and lines[i].strip() and "|" in lines[i]:
+                rows.append(split_table_row(lines[i]))
+                i += 1
+
+            table_key, context = context_for_table(lines, table_start, header, rows)
+            if table_key is None:
+                output.append(lines[table_start])
+                output.append(lines[table_start + 1])
+                output.extend(lines[table_start + 2 : i])
+                continue
+
+            result = select_style(context, catalog)
+            style = catalog.styles[result.style_id]
+            html_fragment = render_styled_table_html(
+                header=header,
+                rows=rows,
+                style=style,
+                status_indicators=catalog.status_indicators,
+                escape_inline=_inline_markdown,
+                emphasis_column=context.emphasis_column,
+            )
+            output.append("")
+            output.append(html_fragment)
+            output.append("")
+            continue
+
+        output.append(lines[i])
+        i += 1
+
+    return "\n".join(output)
+
+
 def render(md_path: Path, css_path: Path, out_dir: Path | None = None) -> str:
     """Render ``md_path`` to a standalone HTML document.
 
@@ -318,6 +413,7 @@ def render(md_path: Path, css_path: Path, out_dir: Path | None = None) -> str:
 
     warnings: list[str] = []
     body = normalize_markdown(body, md_path.parent, out_dir, warnings)
+    body = apply_table_styles(body)
     body_html = markdown.markdown(body, extensions=["tables", "fenced_code", "attr_list"])
 
     css = css_path.read_text(encoding="utf-8") if css_path.is_file() else ""

@@ -68,7 +68,11 @@ status_indicators:
     label: "Falla"
   warn:
     symbol: "▲"
-    color: "#F9A825"
+    # #F9A825 (a brighter amber) only reached 1.97:1 against white --
+    # below WCAG 1.4.11's 3:1 minimum for a graphical object. This darker
+    # amber reaches 4.24:1 against white / 3.79:1 against the alternating-
+    # row tint (see tools/test_table_accessibility.py).
+    color: "#B26A00"
     label: "Alerta"
   up:
     symbol: "↑"
@@ -76,7 +80,11 @@ status_indicators:
     label: "Sube"
   down:
     symbol: "↓"
-    color: "#EF6C00"
+    # #EF6C00 reached only 2.75:1 against the alternating-row tint --
+    # below WCAG 1.4.11's 3:1 minimum. This darker rust-orange reaches
+    # 6.17:1 against white / 5.51:1 against the tint, and stays luminance-
+    # distinct from `ok`'s green (see tools/test_table_accessibility.py).
+    color: "#A6420A"
     label: "Baja"
 
 styles:

@@ -22,6 +22,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH  # noqa: E402
 from docx.oxml.ns import qn  # noqa: E402
 
 from table_docx_tokens import render_styled_table_docx  # noqa: E402
+from table_html_tokens import render_styled_table_html  # noqa: E402
 from table_latex_tokens import render_styled_table_latex  # noqa: E402
 from table_styles import APPROVED_STYLE_IDS, load_catalog  # noqa: E402
 
@@ -273,6 +274,77 @@ def test_issue_13_backend_style_coherence_docx_unknown_status_marker_blocks() ->
         render_styled_table_docx(
             document=document, header=HEADER, rows=[["Widget A", "[[status:mystery]]"]],
             style=style, status_indicators=CATALOG.status_indicators, fill_cell=_plain_fill_cell,
+        )
+
+
+# ---------------------------------------------------------------------------
+# HTML (T5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("style_id", sorted(APPROVED_STYLE_IDS))
+def test_issue_13_backend_style_coherence_html(style_id: str) -> None:
+    style = CATALOG.styles[style_id]
+    html = render_styled_table_html(
+        header=HEADER, rows=ROWS, style=style,
+        status_indicators=CATALOG.status_indicators,
+        escape_inline=_identity_convert_inline,
+        emphasis_column=1 if style.tokens["row_rhythm"] == "column_emphasis" else None,
+    )
+    tokens = style.tokens
+
+    assert f'data-table-style="{style_id}"' in html
+
+    if tokens["header"] == "gray_shaded":
+        assert "#ededed" in html
+    elif tokens["header"] == "dark_shaded":
+        assert "#404040" in html
+        assert "#ffffff" in html
+
+    align_css = {"centered": "center", "left": "left", "numeric_right": "right"}[tokens["alignment"]]
+    assert f"text-align:{align_css}" in html
+
+    if tokens["row_rhythm"] == "alternating":
+        assert "#f2f2f2" in html
+    if tokens["row_rhythm"] == "column_emphasis":
+        assert "#d9d9d9" in html
+
+    assert "[[status:" not in html
+    if tokens["indicators"] == "symbol_color":
+        for value in ("ok", "fail"):
+            indicator = CATALOG.status_indicators[value]
+            assert indicator.symbol in html
+            assert indicator.label in html
+            assert indicator.color.lower() in html.lower()
+
+
+def test_issue_13_backend_style_coherence_html_caption_and_notes() -> None:
+    style = CATALOG.styles["TAB-CL-01"]
+    html = render_styled_table_html(
+        header=HEADER, rows=[["Widget A", "n/d"]], style=style,
+        status_indicators=CATALOG.status_indicators, escape_inline=_identity_convert_inline,
+        caption="Resultados", notes="Fuente: elaboración propia.",
+    )
+    assert "<caption" in html and "Resultados" in html
+    assert "Fuente: elaboración propia." in html
+
+
+def test_issue_13_backend_style_coherence_html_unknown_status_marker_blocks() -> None:
+    style = CATALOG.styles["TAB-TC-02"]
+    with pytest.raises(ValueError, match="status"):
+        render_styled_table_html(
+            header=HEADER, rows=[["Widget A", "[[status:mystery]]"]], style=style,
+            status_indicators=CATALOG.status_indicators, escape_inline=_identity_convert_inline,
+        )
+
+
+def test_issue_13_backend_style_coherence_html_column_emphasis_needs_index() -> None:
+    style = CATALOG.styles["TAB-CE-05"]
+    with pytest.raises(ValueError, match="emphasis_column"):
+        render_styled_table_html(
+            header=HEADER, rows=ROWS, style=style,
+            status_indicators=CATALOG.status_indicators, escape_inline=_identity_convert_inline,
+            emphasis_column=None,
         )
 
 
