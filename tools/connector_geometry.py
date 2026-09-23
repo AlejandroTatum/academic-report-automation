@@ -24,6 +24,7 @@ import json
 import math
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,10 @@ CONNECTOR_PARSE = "CONNECTOR_PARSE"
 # pre-#43 strict rule because no ``.mmd`` source was found next to the SVG to
 # say which links are intentionally undirected (see direction_issues()).
 CONNECTOR_DIRECTION_NO_SOURCE = "CONNECTOR_DIRECTION_NO_SOURCE"
+# A geometry exception (malformed XML, corrupted path/point data, or any
+# other defect the parser cannot recover from) turned into a finding instead
+# of an uncaught crash. See run_geometry_audit() (#43 T2).
+CONNECTOR_AUDIT_ERROR = "CONNECTOR_AUDIT_ERROR"
 # Cubic-bezier flattening resolution for sample_path()'s fallback d-attribute
 # sampling (node/region shapes given as a path, not a rect/polygon/circle).
 BEZIER_SAMPLES = 16
@@ -956,3 +961,24 @@ def audit_connector_geometry(svg: Path) -> list[PageIssue]:
             )
         )
     return issues
+
+
+def run_geometry_audit(figure_name: str, audit: Callable[[], list[PageIssue]]) -> list[PageIssue]:
+    """Run *audit* (a zero-argument connector-geometry audit call) and turn
+    ANY exception it raises into one ``CONNECTOR_AUDIT_ERROR`` finding naming
+    *figure_name*, instead of letting it escape uncaught (#43 T2).
+
+    Both audit entry points -- ``visual_builder.py``'s isolated ``validate``
+    command and ``validate_report.py``'s final-size stage -- call this same
+    helper, so they can no longer diverge on which exceptions are "safe" to
+    catch. Deliberately broad (``except Exception``, not a narrow tuple): a
+    malformed-geometry crash is exactly what this guard exists to convert
+    into a reported finding, whatever shape it takes -- an XML parse error,
+    a decoding failure, or an arithmetic ``IndexError``/``ValueError`` deep
+    in path-sampling on corrupted point data, none of which are ever a
+    reason to abort an entire validation run over one bad file.
+    """
+    try:
+        return audit()
+    except Exception as exc:  # noqa: BLE001 - see docstring: deliberately broad
+        return [PageIssue(FAILURE, CONNECTOR_AUDIT_ERROR, f"'{figure_name}': {type(exc).__name__}: {exc}")]

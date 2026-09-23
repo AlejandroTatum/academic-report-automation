@@ -96,3 +96,18 @@ def test_malformed_svg_becomes_a_reported_error_not_a_crash(tmp_path: Path) -> N
 
     result = validate_report.connector_final_size_validation(config)
     assert any("diagram.svg" in error for error in result.errors)
+
+
+def test_indexerror_becomes_a_reported_error_not_a_crash(tmp_path: Path) -> None:
+    """Same guard, a different exception class (#43 T2): the previous guard
+    caught only (OSError, ValueError, ET.ParseError) and let an IndexError
+    from corrupted path/point data escape uncaught -- and it differed from
+    visual_builder.py's own guard, which caught a different tuple again."""
+    config = make_config(tmp_path, "![Diagrama.](diagram.svg)\n")
+    (config.tex_path.parent / "diagram.svg").write_text(
+        (FIXTURES / "mmdc-malformed-indexerror.svg").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    result = validate_report.connector_final_size_validation(config)
+    assert any("diagram.svg" in error for error in result.errors)

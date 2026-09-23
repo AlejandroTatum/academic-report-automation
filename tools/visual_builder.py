@@ -18,11 +18,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from textwrap import dedent
 
-from connector_geometry import audit_connector_geometry
+from connector_geometry import audit_connector_geometry, run_geometry_audit
 from report_config import CONTENT_ROOT
 from visual_metadata import validate_visual_manifest
 from visual_pdf_auditor import FAILURE
@@ -387,16 +386,16 @@ def command_validate(args: argparse.Namespace) -> int:
         errors.extend(validate_image(file))
         if file.suffix.lower() == ".svg":
             # Connector geometry is a FAILURE-severity gate for diagrams; chart
-            # SVGs simply carry no nodes/edges and stay silent. A parse
-            # exception (malformed XML, corrupted path data) becomes a
-            # reported finding here too — one bad file must not crash an
-            # entire folder validate run with an unguarded traceback.
-            try:
-                errors.extend(
-                    f"{i.tag}: {i.detail}" for i in audit_connector_geometry(file) if i.level == FAILURE
-                )
-            except (ET.ParseError, ValueError, KeyError, TypeError) as exc:
-                errors.append(f"CONNECTOR_AUDIT_ERROR: {file}: {exc}")
+            # SVGs simply carry no nodes/edges and stay silent. ANY geometry
+            # exception (malformed XML, corrupted path/point data) becomes a
+            # reported finding here too, through the same guard
+            # validate_report.py's final-size stage uses (#43 T2) — one bad
+            # file must not crash an entire folder validate run.
+            errors.extend(
+                f"{i.tag}: {i.detail}"
+                for i in run_geometry_audit(file.name, lambda file=file: audit_connector_geometry(file))
+                if i.level == FAILURE
+            )
     if target.is_dir() and not args.no_metadata:
         errors.extend(metadata_errors(target))
     if errors:

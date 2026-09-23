@@ -23,6 +23,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 
@@ -376,3 +378,32 @@ def test_multiple_links_between_same_pair_match_by_ordinal() -> None:
     # L_A_F_0 (the declared arrow) must still be checked and pass; L_A_F_2
     # (the declared open link) must be exempt from the missing-marker rule.
     assert not any("L_A_F_2" in i.detail for i in direction_issues)
+
+
+# --- T2 (#43): one shared guard for any geometry exception ---------------------
+
+
+def test_malformed_path_data_raises_indexerror_uncaught() -> None:
+    """Documents the underlying defect ``run_geometry_audit`` exists to
+    guard against: an odd count of coordinate numbers in a path's ``d``
+    (routine corruption, not a contrived input) crashes the parser itself
+    with an ``IndexError``, not a ``PageIssue``."""
+    with pytest.raises(IndexError):
+        cg.audit_connector_geometry(FIXTURES / "mmdc-malformed-indexerror.svg")
+
+
+def test_run_geometry_audit_converts_indexerror_into_a_finding() -> None:
+    """The shared guard turns that same crash into one reported finding
+    naming the figure, instead of propagating it."""
+    svg = FIXTURES / "mmdc-malformed-indexerror.svg"
+    issues = cg.run_geometry_audit(svg.name, lambda: cg.audit_connector_geometry(svg))
+    assert failure_tags(issues) == {cg.CONNECTOR_AUDIT_ERROR}
+    assert svg.name in issues[0].detail
+    assert "IndexError" in issues[0].detail
+
+
+def test_run_geometry_audit_passes_through_a_clean_result() -> None:
+    """No exception, no guard finding -- the underlying audit's own result
+    passes through unchanged."""
+    svg = FIXTURES / "mmdc-clean.svg"
+    assert cg.run_geometry_audit(svg.name, lambda: cg.audit_connector_geometry(svg)) == cg.audit_connector_geometry(svg)

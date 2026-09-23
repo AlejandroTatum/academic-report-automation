@@ -33,3 +33,25 @@ def test_connector_audit_parse_error_becomes_a_reported_finding(tmp_path) -> Non
     message = str(excinfo.value)
     assert "VALIDATION FAILED" in message
     assert "broken.svg" in message or str(bad_svg) in message
+
+
+def test_connector_audit_indexerror_becomes_a_reported_finding(tmp_path) -> None:
+    """Same guard, a different exception class (#43 T2): the previous guard
+    caught only (ET.ParseError, ValueError, KeyError, TypeError) and let an
+    IndexError from corrupted path/point data escape uncaught."""
+    bad_svg = tmp_path / "corrupted.svg"
+    bad_svg.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="nodes">'
+        '<g class="node" id="my-svg-flowchart-A-0"><rect x="0" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-B-0"><rect x="50" y="0" width="10" height="10"/></g>'
+        "</g>"
+        '<g class="edgePaths"><path data-id="L_A_B_0" d="M 5 5 L 10"/></g></svg>',
+        encoding="utf-8",
+    )
+    args = vb.build_parser().parse_args(["validate", str(bad_svg), "--no-metadata"])
+    with pytest.raises(SystemExit) as excinfo:
+        vb.command_validate(args)
+    message = str(excinfo.value)
+    assert "VALIDATION FAILED" in message
+    assert "corrupted.svg" in message or str(bad_svg) in message
