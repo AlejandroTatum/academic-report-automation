@@ -364,8 +364,10 @@ def _cluster_label_regions(el: ET.Element) -> list[ProtectedRegion]:
         if local(child.tag) == "g" and "cluster-label" in child.attrib.get("class", "").split():
             bbox = _accumulate_bbox(child)
             if bbox is not None:
+                # owner_id "" per ProtectedRegion's own contract: no connector
+                # owns a cluster label, so it claims no endpoint adjacency.
                 regions.append(
-                    ProtectedRegion(cluster_id, "cluster_label", bbox[0] + cdx, bbox[1] + cdy, bbox[2] + cdx, bbox[3] + cdy, cluster_id)
+                    ProtectedRegion(cluster_id, "cluster_label", bbox[0] + cdx, bbox[1] + cdy, bbox[2] + cdx, bbox[3] + cdy, "")
                 )
     return regions
 
@@ -530,6 +532,20 @@ def _edge_traverses_bbox(points, bbox, start_exempt: bool, end_exempt: bool) -> 
     return False
 
 
+def _node_text_endpoint_exemption(region: ProtectedRegion, edge: Edge) -> tuple[bool, bool]:
+    """(start_exempt, end_exempt): whether a ``node_text`` region is owned by
+    *edge*'s source and/or target, and therefore a legitimate adjacency only
+    at that endpoint's graze."""
+    return region.owner_id == edge.source, region.owner_id == edge.target
+
+
+def _is_own_edge_label(region: ProtectedRegion, edge: Edge) -> bool:
+    """The single place ownership of an ``edge_text`` label is decided: a
+    connector is never "through" or too close to its own label. Used by both
+    obstruction and clearance so the rule cannot drift between the two."""
+    return region.kind == "edge_text" and region.owner_id == edge.id
+
+
 def obstruction_issues(diagram: Diagram) -> tuple[list[PageIssue], set[tuple[str, str]]]:
     """Connector-through-node and connector-through-region failures.
 
@@ -546,12 +562,10 @@ def obstruction_issues(diagram: Diagram) -> tuple[list[PageIssue], set[tuple[str
                 issues.append(PageIssue(FAILURE, CONNECTOR_THROUGH_NODE, f"edge '{edge.id}' passes through node '{node.id}'"))
                 pairs.add((edge.id, node.id))
         for region in diagram.regions:
+            if _is_own_edge_label(region, edge):
+                continue  # a connector is not "through" its own label
             if region.kind == "node_text":
-                start_exempt, end_exempt = region.owner_id == edge.source, region.owner_id == edge.target
-            elif region.kind == "edge_text":
-                if region.owner_id == edge.id:
-                    continue  # a connector is not "through" its own label
-                start_exempt = end_exempt = False
+                start_exempt, end_exempt = _node_text_endpoint_exemption(region, edge)
             else:
                 start_exempt = end_exempt = False
             bbox = (region.x0, region.y0, region.x1, region.y1)
@@ -605,17 +619,84 @@ def _edges_touch_or_cross(e1: Edge, e2: Edge) -> bool:
     )
 
 
+def _collinear_overlap_length(a1, b1, a2, b2) -> float:
+    """Length of the collinear overlap between two segments, 0 when they are
+    not collinear or only touch at a single point (a shared endpoint or a
+    T-touch is zero-length and stays exempt; a genuine overlapping run is
+    not — two connectors routed on top of each other for a stretch are as
+    much a routing defect as a strict crossing)."""
+    if _orient(a1, b1, a2) != 0 or _orient(a1, b1, b2) != 0:
+        return 0.0
+    dx, dy = b1[0] - a1[0], b1[1] - a1[1]
+    length = math.hypot(dx, dy)
+    if length == 0:
+        return 0.0
+    ux, uy = dx / length, dy / length
+
+    def proj(p) -> float:
+        return (p[0] - a1[0]) * ux + (p[1] - a1[1]) * uy
+
+    lo2, hi2 = sorted((proj(a2), proj(b2)))
+    return max(0.0, min(length, hi2) - max(0.0, lo2))
+
+
+def _polyline_passes_through_vertex(points, seg_a, seg_b) -> bool:
+    """True when an INTERIOR vertex of *points* (never its true start/end —
+    a legitimate shared-endpoint touch) sits exactly on segment
+    (seg_a, seg_b) with its neighbours on strictly opposite sides.
+
+    Per-segment-pair strict crossing alone cannot see this: the crossing
+    point coincides with a polyline vertex, so each adjacent segment pair on
+    its own only ever reports an endpoint-only touch, never a strict
+    interior crossing — even though the whole polyline demonstrably passes
+    from one side of the other edge to the other, transversally.
+    """
+    for i in range(1, len(points) - 1):
+        v = points[i]
+        if _orient(seg_a, seg_b, v) != 0 or not _on_segment(v, seg_a, seg_b):
+            continue
+        prev_side, next_side = _orient(seg_a, seg_b, points[i - 1]), _orient(seg_a, seg_b, points[i + 1])
+        if prev_side != 0 and next_side != 0 and (prev_side > 0) != (next_side > 0):
+            return True
+    return False
+
+
+def _edges_cross(e1: Edge, e2: Edge) -> bool:
+    """A genuine crossing: a strict interior segment cross, a nonzero-length
+    collinear overlap, or a transversal pass-through landing exactly on the
+    other polyline's vertex (see ``_polyline_passes_through_vertex``)."""
+    for a1, b1 in zip(e1.points, e1.points[1:]):
+        for a2, b2 in zip(e2.points, e2.points[1:]):
+            if _segments_cross_strict(a1, b1, a2, b2):
+                return True
+            if _collinear_overlap_length(a1, b1, a2, b2) > CLEARANCE_TOLERANCE:
+                return True
+    return any(
+        _polyline_passes_through_vertex(e1.points, a2, b2) for a2, b2 in zip(e2.points, e2.points[1:])
+    ) or any(
+        _polyline_passes_through_vertex(e2.points, a1, b1) for a1, b1 in zip(e1.points, e1.points[1:])
+    )
+
+
 def crossing_issues(diagram: Diagram) -> list[PageIssue]:
+    """Every genuine crossing between unrelated connectors fails.
+
+    Known scope gap (native review, issue #10 T5): the spec's full rule is
+    narrower -- reject a crossing only "when a non-crossing route exists or
+    the crossing makes direction ambiguous" (design: an obstacle-expanded
+    orthogonal visibility graph). This always fails instead, a conservative
+    superset that still catches every unnecessary crossing the 15 named spec
+    scenarios test, but would also flag a genuinely unavoidable one. No
+    diagram in this project's real corpus currently exercises that case;
+    implementing route-avoidance detection is a dedicated follow-up, not a
+    hardening fix -- an incorrect route-finding heuristic risks the opposite
+    failure mode (a real defect silently exempted as "necessary").
+    """
     issues: list[PageIssue] = []
     edges = diagram.edges
     for i, e1 in enumerate(edges):
         for e2 in edges[i + 1:]:
-            crossed = any(
-                _segments_cross_strict(a1, b1, a2, b2)
-                for a1, b1 in zip(e1.points, e1.points[1:])
-                for a2, b2 in zip(e2.points, e2.points[1:])
-            )
-            if crossed:
+            if _edges_cross(e1, e2):
                 issues.append(PageIssue(FAILURE, CONNECTOR_CROSSING, f"edge '{e1.id}' crosses edge '{e2.id}'"))
     return issues
 
@@ -671,9 +752,9 @@ def pairwise_clearances(diagram: Diagram, obstructed_pairs: set[tuple[str, str]]
         for region in diagram.regions:
             if (e1.id, region.id) in obstructed_pairs:
                 continue
-            if region.kind == "node_text" and region.owner_id in (e1.source, e1.target):
+            if region.kind == "node_text" and any(_node_text_endpoint_exemption(region, e1)):
                 continue
-            if region.kind == "edge_text" and region.owner_id == e1.id:
+            if _is_own_edge_label(region, e1):
                 continue
             bbox = (region.x0, region.y0, region.x1, region.y1)
             dist = min(_segment_bbox_dist(a, b, bbox) for a, b in zip(e1.points, e1.points[1:]))
@@ -705,7 +786,20 @@ def _point_near_bbox(p, bbox, eps=ENDPOINT_EPS) -> bool:
 
 
 def direction_issues(diagram: Diagram) -> list[PageIssue]:
-    """Source/target endpoint containment and end-marker validity."""
+    """Source/target endpoint containment and end-marker validity.
+
+    Reviewed (native review, issue #10 T5) as a possible false-positive for
+    Mermaid's undirected ``---`` links, which mmdc renders with no end
+    marker at all. Not a defect against this project's accepted contract:
+    the spec's "Endpoints and direction" requirement is unconditional --
+    "every connector MUST ... use a defined end marker whose orientation
+    follows the path" -- and the checked-in named RED fixture
+    (``mmdc-direction-bad.svg``) already encodes "no end marker" as a
+    failure by design. Supporting a legitimately undirected connector would
+    need a new spec scenario (there is no SVG-only signal to tell "renderer
+    correctly omitted the marker" from "marker generation broke"), not a
+    hardening fix to this check.
+    """
     issues: list[PageIssue] = []
     by_id = {node.id: node for node in diagram.nodes}
     for edge in diagram.edges:

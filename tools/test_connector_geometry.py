@@ -239,3 +239,68 @@ def test_multi_segment_graze_beyond_epsilon_still_fails() -> None:
     """The same contiguous-run rule must not become a loophole: a multi-segment
     graze that totals beyond CONTACT_EPS is still a traversal."""
     assert cg.CONNECTOR_THROUGH_NODE in failure_tags(cg.audit_connector_geometry(FIXTURES / "mmdc-graze-bad.svg"))
+
+
+# --- T5: native-review hardening findings on phases 2-3 ------------------------
+
+
+def test_transversal_crossing_through_a_shared_vertex_is_detected() -> None:
+    """A polyline whose crossing point coincides exactly with the OTHER
+    edge's vertex must not escape detection: per-segment-pair strict
+    crossing alone only ever sees two endpoint-only touches there, one per
+    side of the vertex, and neither alone qualifies as a strict crossing."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="100" viewBox="0 0 260 100">'
+        '<defs><marker id="pointEnd" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>'
+        '<g class="node" id="my-svg-flowchart-N1-0"><rect x="150" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-N2-0"><rect x="220" y="0" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-N3-0"><rect x="190" y="-40" width="10" height="10"/></g>'
+        '<g class="node" id="my-svg-flowchart-N4-0"><rect x="190" y="40" width="10" height="10"/></g>'
+        '<g class="edgePaths"><path data-id="L_N1_N2_0" d="M 160 5 L 220 5" marker-end="url(#pointEnd)"/></g>'
+        '<g class="edgePaths"><path data-id="L_N3_N4_0" d="M 195 -30 L 195 5 L 195 40" marker-end="url(#pointEnd)"/></g>'
+        "</svg>"
+    )
+    issues = cg.audit_diagram(cg.parse_svg(svg))
+    tags = failure_tags(issues)
+    assert cg.CONNECTOR_CROSSING in tags
+    details = " | ".join(i.detail for i in issues if i.tag == cg.CONNECTOR_CROSSING)
+    assert "L_N1_N2_0" in details and "L_N3_N4_0" in details
+
+
+def test_collinear_overlapping_segments_are_detected_as_crossing() -> None:
+    """Two unrelated connectors routed along the same line for an
+    overlapping stretch are a routing defect (indistinguishable overlapping
+    lines), not a silent touch -- strict crossing alone excludes every
+    collinear case, including a genuine nonzero-length overlap."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="150" height="60" viewBox="0 0 150 60">'
+        '<defs><marker id="pointEnd" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>'
+        '<g class="node" id="my-svg-flowchart-N1-0"><rect x="0" y="4" width="10" height="1"/></g>'
+        '<g class="node" id="my-svg-flowchart-N2-0"><rect x="140" y="5" width="10" height="1"/></g>'
+        '<g class="node" id="my-svg-flowchart-N3-0"><rect x="40" y="54" width="10" height="1"/></g>'
+        '<g class="node" id="my-svg-flowchart-N4-0"><rect x="100" y="54" width="10" height="1"/></g>'
+        '<g class="edgePaths"><path data-id="L_N1_N2_0" d="M 5 5 L 5 30 L 145 30 L 145 5" marker-end="url(#pointEnd)"/></g>'
+        '<g class="edgePaths"><path data-id="L_N3_N4_0" d="M 45 55 L 45 30 L 105 30 L 105 55" marker-end="url(#pointEnd)"/></g>'
+        "</svg>"
+    )
+    issues = cg.audit_diagram(cg.parse_svg(svg))
+    tags = failure_tags(issues)
+    assert cg.CONNECTOR_CROSSING in tags
+    details = " | ".join(i.detail for i in issues if i.tag == cg.CONNECTOR_CROSSING)
+    assert "L_N1_N2_0" in details and "L_N3_N4_0" in details
+
+
+def test_cluster_label_region_has_no_owner_id() -> None:
+    """``ProtectedRegion``'s own documented contract: ``owner_id`` is empty
+    for cluster/legend/annotation regions, which no connector owns. A
+    cluster's own id is bookkeeping only, never a legitimate adjacency."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+        '<g class="cluster" id="my-svg-cluster-A">'
+        '<g class="cluster-label" transform="translate(5,5)">'
+        '<foreignObject width="20" height="10"></foreignObject>'
+        "</g></g></svg>"
+    )
+    diagram = cg.parse_svg(svg)
+    assert len(diagram.regions) == 1
+    assert diagram.regions[0].owner_id == ""
