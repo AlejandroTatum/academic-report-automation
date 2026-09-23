@@ -33,7 +33,14 @@ The design predates the document-workflow phases (`tools/doc_status.py` intake â
   - Full suite: `1024 passed` (`.venv/bin/python -m pytest tools/ tests/ -q`).
   - `git show fcffedb --stat --shortstat`: 5 files changed, 368 insertions(+), 1 deletion(-).
   - Docs: `skills/research-workflow/references/research-protocol.md` and `SKILL.md` updated to describe producing `evidence.yml` alongside the existing prose matrix.
-- [ ] T3 (PR3, #11) source quality and citation reciprocity: R13-R16. Route: delegated writer.
+- [x] T3 (PR3, #11) source quality and citation reciprocity: R13-R16. Route: delegated writer.
+  - Commit `8933088` `feat(citations): validate sources and reciprocity`.
+  - New `tools/source_quality.py` (`evaluate_source_quality`: authority/relevance/currency/primary-secondary/peer-review/accessibility, named rejection reasons `fabricated|unverifiable|irrelevant|superseded|unsuitable`). New `claim_support_and_reciprocity` in `tools/validate_ieee_refs.py` (unsupported claim, unresolved citation, uncited-unjustified bib entry, duplicate `citation_key`, malformed BibTeX entry); wired into `validate_ieee()` presence-gated on `research/evidence.yml`.
+  - Avoided a module cycle: `evidence_contract` imports `ValidationResult` from `validate_ieee_refs` at module scope, so the new evidence.yml read inside `validate_ieee()` is a lazy import (documented in-file).
+  - RED: stashed `tools/validate_ieee_refs.py`'s new functions + the new `tools/source_quality.py` via `git stash -u`; `ModuleNotFoundError`/`ImportError` on both new test files; popped, then GREEN: `5 passed` (R13-R16 plus one `validate_ieee` integration test).
+  - Full suite: `1030 passed` (`.venv/bin/python -m pytest tools/ tests/ -q`).
+  - `git show 8933088 --stat --shortstat`: 5 files changed, 361 insertions(+).
+  - Did not touch `tools/source_library.py`'s manifest v2 fields (design's suggested file) â€” no existing test covers it, and the R13/R14 scenarios are fully satisfiable as a standalone quality-judgment function without migrating the manifest schema. Documented as a bounded scope choice, not a product-decision gap: manifest v2 migration remains open follow-up work if the team wants CLI-level source quality entry.
 - [ ] T4 (PR4, #11) visual provenance through the final gate: R17. Route: delegated writer.
 
 ## Acceptance
