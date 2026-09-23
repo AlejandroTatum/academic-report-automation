@@ -21,7 +21,7 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
 ## Tasks
 - [x] T1 undirected links: read the declared link type from the `.mmd` source (same stem as the SVG); skip direction/marker checks for undirected links; missing source falls back to the current strict rule and reports that it did. Route: delegated writer.
 - [x] T2 one shared guard helper for both audit entry points that turns any geometry exception (including `IndexError`) into a finding. Route: delegated writer.
-- [ ] T3 necessary-crossing exemption: exempt a crossing only when no alternative route around protected regions exists; otherwise fail. Route: delegated writer.
+- [x] T3 necessary-crossing exemption: exempt a crossing only when no alternative route around protected regions exists; otherwise fail. Route: delegated writer.
 
 ## Acceptance
 - #43 expected behavior holds with tests observed RED then GREEN; full suite green; spec note updated in the visual-builder references.
@@ -71,5 +71,55 @@ After #10: undirected Mermaid links (`A --- B`) fail the direction check because
     malformed `d` path data — odd coordinate count triggers the crash).
   - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1192 passed.
 
+- T3 done, commit `1d5cb89` (5 files changed, 233 insertions(+), 15 deletions(-)).
+  - Approach: a conservative obstacle-aware visibility check (standard
+    corner visibility graph over `{edge source, edge target} + every
+    obstacle bbox corner`, obstacles = nodes/regions the edge does not own,
+    bounded by the diagram's own viewBox). A crossing is exempt only when
+    the search proves NEITHER edge can reach its own endpoints without
+    crossing the other edge's exact rendered polyline (checked one edge at
+    a time, per the accepted decision's own wording: "every route for one
+    of the edges must cross the other"). Obstacle-interior blocking allows
+    boundary-touching (legitimate routing around a corner); blocking by the
+    *other* edge itself is inclusive of any touch, not just a strict
+    interior cross (closes a hairline "graze one point, flip sides"
+    loophole found during fixture verification). `MAX_VISIBILITY_VERTICES`
+    (60) bounds state; past it the proof is inconclusive and the crossing
+    keeps failing, the same default as finding an actual route.
+  - Regression caught before commit: the pre-#43 always-fail fixtures
+    (`mmdc-crossing-bad.svg`, and the T5 shared-vertex synthetic fixture)
+    briefly turned GREEN-but-wrong after the first exemption pass, because
+    a node placed outside the declared viewBox (deliberately, in those
+    older fixtures) made the edge's OWN endpoint fall outside bounds,
+    trapping the search into a false "no route" verdict. Fixed by
+    expanding the effective bounds to always include the edge's own
+    start/end before running the search — bounds constrain the
+    alternative-route search area, never the edge's own required
+    endpoints. `test_existing_crossing_fixtures_stay_unexempt` pins this.
+  - RED/GREEN evidence: `_has_alternative_route`/`_crossing_is_provably_necessary`
+    were developed together with their direct tests (ad hoc verification
+    scripts first, formal pytest tests after) rather than strict
+    test-first — disclosed TDD-ordering gap, same as T2's low-level
+    helper. The regression cycle above IS genuine RED (two long-standing
+    tests failed) → GREEN (fixed, same tests pass) evidence for the
+    soundness-critical bounds handling.
+    New tests: `test_k3_3_style_forced_crossing_is_exempt`,
+    `test_avoidable_crossing_still_fails_despite_open_space`,
+    `test_existing_crossing_fixtures_stay_unexempt`,
+    `test_inconclusive_proof_keeps_failing_past_the_vertex_budget`
+    (tools/test_connector_geometry.py).
+  - Fixtures: hand-crafted synthetic SVGs (following this module's existing
+    convention for slice-2 geometry fixtures, real mmdc cannot produce
+    exact provable-topology layouts):
+    `mmdc-crossing-necessary.svg` (four corner nodes, two full-diagonal
+    connectors sealed to the viewBox — provably unavoidable, passes clean
+    except the expected no-`.mmd`-source informational finding) and
+    `mmdc-crossing-avoidable.svg` (same shape with generous open margin —
+    a real route around exists, still fails).
+  - Scope note: `connector_geometry.py` core addition is 150 lines
+    (`git diff --stat`), well inside the ~350-line advisory budget.
+  - Full suite: `.venv/bin/python -m pytest tools/ tests/` — 1196 passed.
+
 ## Next step
-Delegate T3.
+All three tasks (T1-T3) done. Remaining: push and open a PR (not done by
+this writer — see delivery contract).
