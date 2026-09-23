@@ -81,6 +81,48 @@ ODD delegated direct (user decision 2026-09-22). SDD artifacts in Engram are gui
   any renderer consumes parsed table blocks, risked guessing an interface
   T3 would have to reshape. Not a product-decision gap; just resequenced.
 
+## Decision gap found while scoping T3 (LaTeX tokens)
+
+T3 needs a real markdown-table-directive parser plus per-style LaTeX token
+mapping for all ten token dimensions (borders, header, alignment, padding,
+density, row_rhythm, palette, indicators, caption, notes) across all seven
+styles, backed by golden fixtures (`test_table_backend_contracts.py -k
+latex`). Structural tokens (borders/header/alignment/padding/density/
+caption position) map cleanly from the catalog. Two specifically do not,
+and neither #6418 (approved IDs) nor #6421 (spec) nor #6422 (design)
+settles them:
+
+1. `TAB-CE-05` (`row_rhythm: column_emphasis`) needs to know WHICH column
+   is the "protagonist" to shade/bold. Plain Markdown tables carry no
+   per-column semantic markup, and `TableContext` (T1) has no
+   `emphasis_column` field.
+2. `TAB-TC-02` and `TAB-ES-06` (`indicators: symbol_color`) need to know
+   WHICH cells carry a status/comparison meaning, to attach a symbol
+   (✓/✗/▲) plus color. Nothing in the current pipeline marks cells this
+   way.
+
+Options:
+   (a) Add an authoring convention now (e.g. a directive attribute
+       `emphasis_column: <index>`, and a per-cell inline marker like
+       `[[status:ok]]` the parser strips and maps to symbol+color) —
+       changes the Markdown authoring contract every future table with
+       these two styles must follow.
+   (b) Scope T3-T5 to the eight tokens that ARE derivable now, and encode
+       `column_emphasis`/`symbol_color` as a documented backend limitation
+       (structurally coherent header/border/density/etc., but no per-cell
+       semantic decoration) until an authoring convention is chosen.
+   (c) Something else the user prefers.
+
+I did not choose (a) unilaterally because it is an authoring-contract
+change, not an implementation detail, and did not choose (b) either
+because it would silently under-deliver two of the seven approved styles.
+Stopping T3-T5 here rather than guessing.
+
 ## Next step
-T3 (LaTeX tokens — R9 latex), including the deferred table-directive
-parser and `tools/check_table_contexts.py`.
+Ask the user to pick an option above for the two per-cell/per-column
+semantic tokens, then resume T3 (LaTeX tokens — R9 latex) with the
+deferred table-directive parser and `tools/check_table_contexts.py`,
+followed by T4 (DOCX) and T5 (HTML + rendered validation). T1 and T2 are
+merge-ready independently: they add no wiring into `build_latex_report.py`,
+`build_docx_report.py`, or `build_report.py`, so no existing report's
+output changed.
