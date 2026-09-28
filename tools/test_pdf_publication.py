@@ -17,7 +17,7 @@ import types
 from pathlib import Path
 
 import publish_pdf
-from conftest import _approval, _body
+from conftest import _approval, _final_review
 
 import pytest
 
@@ -109,23 +109,34 @@ def test_distinct_destination_still_receives_a_copy(
     assert config.pdf_path.read_bytes() == (build_dir / "main.pdf").read_bytes()
 
 
-def _validated_pdf(tmp_path: Path, content: bytes = b"%PDF-1.7\nvalidated content\n") -> Path:
+DEFAULT_VALIDATED_CONTENT = b"%PDF-1.7\nvalidated content\n"
+
+
+def _validated_pdf(
+    tmp_path: Path, content: bytes = DEFAULT_VALIDATED_CONTENT, *, final_review: bool = True
+) -> Path:
     source = tmp_path / "work" / "validated.pdf"
-    source.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_bytes(content)
+    approved = tmp_path / "approved"
+    if final_review and (approved / "approval.yml").is_file():
+        # The publication gate also requires a final-review marker bound to the
+        # exact bytes being published; every ordinary publication path gets one.
+        _final_review(approved, pdf=source)
     return source
 
 
 @pytest.fixture
 def _approved_work_folder(tmp_path: Path) -> Path:
-    """A work folder whose approval.yml records the current preview.md and body.md hashes.
+    """A work folder whose approval.yml records the current body.md hash.
 
-    Publication is gated on this marker, so every pre-existing publication
-    assertion proves the ordinary, approved path still behaves exactly as it did
-    before the guard existed.
+    Publication is gated on this marker (plus the final-review marker the
+    publishing helpers write for the exact source bytes), so every pre-existing
+    publication assertion proves the ordinary, approved path still behaves
+    exactly as it did before the guards existed.
     """
     folder = tmp_path / "approved"
-    _approval(folder, preview="# Content Preview: Informe\n\nCuerpo.\n")
+    _approval(folder)
     return folder
 
 
@@ -173,6 +184,7 @@ def test_changed_hash_publishes_next_monotonic_version(
         source, "Academicos", "informe", documents, work_folder=_approved_work_folder
     )
     source.write_bytes(b"%PDF-1.7\nsecond\n")
+    _final_review(_approved_work_folder, pdf=source)
 
     published = publish_pdf.publish_validated_pdf(
         source, "Academicos", "informe", documents, work_folder=_approved_work_folder
@@ -254,23 +266,13 @@ def test_publish_refuses_absent_stale_malformed_marker(
         )
     assert not documents.exists()
 
-    # stale — the preview changed after the human approved it
-    (_approved_work_folder / "preview.md").write_text(
-        "# Content Preview: edited after approval\n", encoding="utf-8"
+    # stale — the body changed after the human approved it
+    (_approved_work_folder / "body.md").write_text(
+        "edited after approval\n", encoding="utf-8"
     )
     with pytest.raises(publish_pdf.PublicationError, match="obsoleta"):
         publish_pdf.publish_validated_pdf(
             source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
-        )
-    assert not documents.exists()
-
-    # stale — the body changed after the human approved it
-    stale_body_folder = tmp_path / "stale-body"
-    _approval(stale_body_folder)
-    _body(stale_body_folder, "# Informe\n\nOtro cuerpo.\n")
-    with pytest.raises(publish_pdf.PublicationError, match="obsoleta"):
-        publish_pdf.publish_validated_pdf(
-            source, "Tecnicos", "informe", documents, work_folder=stale_body_folder
         )
     assert not documents.exists()
 
@@ -282,6 +284,43 @@ def test_publish_refuses_absent_stale_malformed_marker(
     with pytest.raises(publish_pdf.PublicationError, match="inválido"):
         publish_pdf.publish_validated_pdf(
             source, "Tecnicos", "informe", documents, work_folder=malformed
+        )
+    assert not documents.exists()
+
+
+def test_publish_refuses_without_current_final_review(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """A current approval is not enough: the PDF needs a current final review too.
+
+    The gate is fail-closed like the approval gate: the refusal runs before any
+    hash, directory or temporary file, so a refused publication creates nothing.
+    """
+    documents = tmp_path / "Documents"
+
+    # absent — the human never reviewed the final PDF
+    absent_source = _validated_pdf(tmp_path, final_review=False)
+    with pytest.raises(publish_pdf.PublicationError, match="Falta la revisión humana final"):
+        publish_pdf.publish_validated_pdf(
+            absent_source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+    assert not documents.exists()
+
+    # stale — the PDF was rebuilt after the human reviewed it
+    stale_source = _validated_pdf(tmp_path)
+    stale_source.write_bytes(b"%PDF-1.7\nrebuilt after review\n")
+    with pytest.raises(publish_pdf.PublicationError, match="revisión final está obsoleta"):
+        publish_pdf.publish_validated_pdf(
+            stale_source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+    assert not documents.exists()
+
+    # malformed — the marker cannot be read as a valid final-review record
+    malformed_source = _validated_pdf(tmp_path)
+    (_approved_work_folder / "final-review.yml").write_text("pdf_sha256: [unclosed\n", encoding="utf-8")
+    with pytest.raises(publish_pdf.PublicationError, match="final-review.yml es inválido"):
+        publish_pdf.publish_validated_pdf(
+            malformed_source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
         )
     assert not documents.exists()
 
@@ -310,22 +349,22 @@ def test_refusal_messages_match_design_verbatim(
     absent_message = str(exc.value)
     assert absent_message.startswith(
         "Falta la aprobación humana: no existe approval.yml en "
-        f"{absent}. Ejecutá la fase de aprobación después de revisar preview.md "
-        "y body.md; no se publica nada."
+        f"{absent}. Ejecutá la fase de aprobación después de revisar "
+        "body.md; no se publica nada."
     )
     assert absent_message.endswith(
         "La validación técnica pasó; falta únicamente la aprobación humana."
     )
 
-    (_approved_work_folder / "preview.md").write_text("edited\n", encoding="utf-8")
+    (_approved_work_folder / "body.md").write_text("edited\n", encoding="utf-8")
     with pytest.raises(publish_pdf.PublicationError) as exc:
         publish_pdf.publish_validated_pdf(
             source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
         )
     assert str(exc.value) == (
-        "La aprobación está obsoleta: preview_sha256 y/o body_sha256 de "
-        f"approval.yml no coinciden con preview.md y body.md en {_approved_work_folder}. "
-        "Volvé a aprobar el preview y el cuerpo actuales; no se publica nada."
+        "La aprobación está obsoleta: body_sha256 de "
+        f"approval.yml no coincide con body.md en {_approved_work_folder}. "
+        "Volvé a aprobar el cuerpo actual; no se publica nada."
     )
 
     malformed = tmp_path / "malformed-message"

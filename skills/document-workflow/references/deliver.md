@@ -14,9 +14,11 @@ executor runs the deliver entrypoint, `"$REPORT_AUTOMATION_ROOT/tools/deliver_re
 over `"$REPORT_CONTENT_ROOT/reports/<work-folder>/"`, which is a thin gate-checker
 over the existing publisher:
 it requires a `validation.yml` receipt recording `result: pass` for the exact final
-PDF bytes (`artifact_sha256` match), then calls the publisher, which re-checks the
-approval marker itself and refuses an absent, stale, or malformed `approval.yml`
-before it creates anything. Generation never publishes; this entrypoint is the only
+PDF bytes (`artifact_sha256` match) and a current `final-review.yml` marker whose
+`pdf_sha256` matches those same bytes (the human's final OK on the PDF itself),
+then calls the publisher, which re-checks both human markers and refuses an
+absent, stale, or malformed `approval.yml` or `final-review.yml` before it
+creates anything. Generation never publishes; this entrypoint is the only
 publication route. The
 phase produces exactly one artifact: a versioned
 `<slug>-vNNN.pdf` under `~/Documents/<category>/<slug>/`, where the category comes
@@ -48,6 +50,7 @@ review against immutable hashes.
 
 ## Never
 
-- Do not create, repair, or refresh `approval.yml` to make publication pass.
+- Do not create, repair, or refresh `approval.yml` or `final-review.yml` to make
+  publication pass.
 - Do not write any file other than the versioned PDF into the delivery folder.
 - Do not report a run as `READY_TO_SUBMIT` from publication alone.

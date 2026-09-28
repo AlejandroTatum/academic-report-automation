@@ -48,28 +48,30 @@ def test_approval_current_is_done(tmp_path: Path) -> None:
     assert phase.state == doc_status.DONE
     assert phase.blocked_reason == ""
     assert phase.state != doc_status.BLOCKED
-    # The marker binds both preview.md and body.md (approval_marker.py
-    # REQUIRED_KEYS); the detail must name both, not just the file it used to
-    # bind before body_sha256 was added.
-    assert "preview.md" in phase.detail
+    # The marker binds exactly one artifact, body.md (approval_marker.py
+    # REQUIRED_KEYS); the detail must name it and nothing else.
     assert "body.md" in phase.detail
+    assert "preview.md" not in phase.detail
 
 
-def test_approval_stale_hash_is_blocked_with_stale_reason(tmp_path: Path) -> None:
+def test_approval_body_hash_mismatch_is_pending_for_reapproval(tmp_path: Path) -> None:
+    """A body edited after approval routes back to approval, never blocks the route."""
     folder = tmp_path / "wf"
     _report(folder)
-    _approval(folder, preview_sha256="0" * 64)
+    _approval(folder, body_sha256="0" * 64)
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
-    assert phase.state == doc_status.BLOCKED
-    assert phase.blocked_reason == "approval_marker_stale"
-    assert "approval.yml" in phase.detail
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+    assert "body.md" in phase.detail
+    assert "re-approve" in phase.detail
     assert phase.state != doc_status.DONE
 
 
-def test_approval_preview_edited_after_approval_is_blocked(tmp_path: Path) -> None:
-    """TRIANGULATE: editing the preview after approval invalidates the marker."""
+def test_approval_preview_edited_after_approval_stays_done(tmp_path: Path) -> None:
+    """TRIANGULATE: the marker binds only body.md; editing preview.md is not an
+    approval event, so the phase stays done."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
@@ -77,12 +79,12 @@ def test_approval_preview_edited_after_approval_is_blocked(tmp_path: Path) -> No
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
-    assert phase.state == doc_status.BLOCKED
-    assert phase.blocked_reason == "approval_marker_stale"
+    assert phase.state == doc_status.DONE
+    assert phase.blocked_reason == ""
 
 
-def test_approval_body_edited_after_approval_is_blocked(tmp_path: Path) -> None:
-    """TRIANGULATE: editing body.md after approval invalidates the marker."""
+def test_approval_body_edited_after_approval_is_pending(tmp_path: Path) -> None:
+    """TRIANGULATE: editing body.md after approval sends the route back to approval."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
@@ -90,8 +92,9 @@ def test_approval_body_edited_after_approval_is_blocked(tmp_path: Path) -> None:
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
-    assert phase.state == doc_status.BLOCKED
-    assert phase.blocked_reason == "approval_marker_stale"
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+    assert "re-approve" in phase.detail
 
 
 def test_approval_marker_without_body_hash_is_malformed(tmp_path: Path) -> None:
@@ -147,7 +150,7 @@ def test_approval_derivation_never_repairs_the_marker(tmp_path: Path) -> None:
     """A stale or malformed marker is data the tool reports, never rewrites."""
     folder = tmp_path / "wf"
     _report(folder)
-    marker = _approval(folder, preview_sha256="0" * 64)
+    marker = _approval(folder, body_sha256="0" * 64)
     before = marker.read_bytes()
 
     doc_status._phase_approval(folder, _config(folder), None)

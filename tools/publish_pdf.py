@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from approval_marker import ApprovalState, approval_state, sha256_file
+from final_review_marker import FinalReviewState, final_review_state
 
 
 class PublicationError(RuntimeError):
@@ -32,9 +33,9 @@ def _approval_refusal(state: ApprovalState, work_folder: Path) -> str:
     """Map an approval state onto the user-facing refusal message."""
     if state.state == "stale":
         return (
-            "La aprobación está obsoleta: preview_sha256 y/o body_sha256 de "
-            f"approval.yml no coinciden con preview.md y body.md en {work_folder}. "
-            "Volvé a aprobar el preview y el cuerpo actuales; no se publica nada."
+            "La aprobación está obsoleta: body_sha256 de "
+            f"approval.yml no coincide con body.md en {work_folder}. "
+            "Volvé a aprobar el cuerpo actual; no se publica nada."
         )
     if state.state == "malformed":
         return (
@@ -43,9 +44,29 @@ def _approval_refusal(state: ApprovalState, work_folder: Path) -> str:
         )
     return (
         "Falta la aprobación humana: no existe approval.yml en "
-        f"{work_folder}. Ejecutá la fase de aprobación después de revisar preview.md "
-        "y body.md; no se publica nada. La validación técnica pasó; falta únicamente "
-        "la aprobación humana."
+        f"{work_folder}. Ejecutá la fase de aprobación después de revisar "
+        "body.md; no se publica nada. La validación técnica pasó; falta "
+        "únicamente la aprobación humana."
+    )
+
+
+def _final_review_refusal(state: FinalReviewState, work_folder: Path, source: Path) -> str:
+    """Map a final review state onto the user-facing refusal message."""
+    if state.state == "stale":
+        return (
+            "La revisión final está obsoleta: pdf_sha256 de final-review.yml no "
+            f"coincide con los bytes actuales de {source.name} en {work_folder}. "
+            "Volvé a revisar el PDF actual; no se publica nada."
+        )
+    if state.state == "malformed":
+        return (
+            f"final-review.yml es inválido en {work_folder}: {state.detail}. "
+            "No se publica nada y el marcador nunca se repara automáticamente."
+        )
+    return (
+        "Falta la revisión humana final: no existe final-review.yml en "
+        f"{work_folder}. Ejecutá la fase de revisión final sobre {source.name}; "
+        "no se publica nada."
     )
 
 
@@ -75,12 +96,13 @@ def publish_validated_pdf(
 ) -> Publication:
     """Atomically publish a validated PDF, reusing identical hashes by version.
 
-    Publication requires both configured technical validation AND a current human
-    approval marker: ``work_folder/approval.yml`` must hash the exact bytes of
-    both ``work_folder/preview.md`` and ``work_folder/body.md``. ``work_folder``
-    is required keyword-only, so a caller cannot skip the guard by omission. The
-    check runs before any hash, directory or temporary file, so a refused
-    publication creates nothing.
+    Publication requires the configured technical validation AND two current
+    human markers: ``work_folder/approval.yml`` must hash the exact bytes of
+    ``work_folder/body.md``, and ``work_folder/final-review.yml`` must hash the
+    exact bytes of the PDF being published. ``work_folder`` is required
+    keyword-only, so a caller cannot skip the guards by omission. Both checks
+    run before any hash, directory or temporary file, so a refused publication
+    creates nothing.
 
     It remains a technical-copy operation: it never grants ``VISUAL_PASS``,
     ``HUMAN_REVIEW``, or ``READY_TO_SUBMIT``.
@@ -94,6 +116,10 @@ def publish_validated_pdf(
     state = approval_state(work_folder)
     if state.state != "current":
         raise PublicationError(_approval_refusal(state, work_folder))
+
+    review = final_review_state(work_folder, source)
+    if review.state != "current":
+        raise PublicationError(_final_review_refusal(review, work_folder, source))
 
     root = Path.home() / "Documents" if documents_root is None else Path(documents_root)
     folder = root / category / slug

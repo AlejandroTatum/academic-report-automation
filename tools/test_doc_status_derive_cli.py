@@ -16,7 +16,7 @@ import hashlib
 from pathlib import Path
 
 import doc_status
-from conftest import _approval, _body, _pdf, _preview, _report, _skip_research
+from conftest import _approval, _body, _marker_text, _pdf, _preview, _report, _skip_research
 
 
 def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
@@ -142,23 +142,22 @@ def test_derive_resolves_the_work_folder_so_guidance_is_absolute(
     assert str(folder) in status.gate
 
 
-def test_derive_keeps_focus_on_blocked_phase_and_forces_later_phases_pending(
+def test_derive_keeps_focus_on_stale_approval_and_forces_later_phases_pending(
     tmp_path: Path,
 ) -> None:
-    """A stale approval stops the route even when a newer PDF already exists."""
+    """A stale approval keeps the route waiting at approval, not blocked."""
     folder = _working_folder(tmp_path / "wf")
-    _approval(folder, preview_sha256="0" * 64)
+    _approval(folder, body_sha256="0" * 64)
     _pdf(folder)
 
     status = doc_status.derive(folder)
 
     states = {phase.name: phase.state for phase in status.phases}
-    assert states["approval"] == doc_status.BLOCKED
-    assert "approval_marker_stale" in status.blocked_reasons
+    assert states["approval"] == doc_status.CURRENT
+    assert status.blocked_reasons == ()
     assert status.current == "approval"
     assert status.next_token == "approval"
-    assert status.gate.startswith("approval blocked - ")
-    assert states["generate"] != doc_status.DONE
+    assert status.gate.startswith("approval pending - ")
     assert all(
         states[name] == doc_status.PENDING for name in ("generate", "validate", "deliver")
     )
@@ -288,7 +287,7 @@ def test_main_derivable_folder_exits_zero_and_creates_nothing(tmp_path: Path, ca
 def test_main_blocked_phase_still_exits_zero(tmp_path: Path, capsys) -> None:
     """TRIANGULATE: a blocked phase is data, not a process failure."""
     folder = _working_folder(tmp_path / "wf")
-    _approval(folder, preview_sha256="0" * 64)
+    _marker_text(folder, "body_sha256: [unclosed\n")
 
     rc = doc_status.main([str(folder)])
 

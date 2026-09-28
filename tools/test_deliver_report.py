@@ -20,7 +20,7 @@ TOOLS_DIR = str(Path(__file__).resolve().parent)
 if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
-from conftest import _approval, _pdf, _report, _sha256, _validation  # noqa: E402
+from conftest import _approval, _final_review, _pdf, _report, _sha256, _validation  # noqa: E402
 from deliver_report import main  # noqa: E402
 
 CATEGORY = "Academicos"
@@ -28,12 +28,13 @@ SLUG = "informe-de-laboratorio"
 
 
 def _ready_folder(tmp_path: Path) -> tuple[Path, Path]:
-    """A work folder with report, approved preview, final PDF and a passing receipt."""
+    """A work folder with report, approved body, reviewed PDF and a passing receipt."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
     pdf = _pdf(folder)
     _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
     return folder, pdf
 
 
@@ -174,8 +175,9 @@ def test_delivery_refuses_without_current_approval(tmp_path: Path, capsys) -> No
     """Without a current approval.yml the publisher refuses and nothing appears."""
     folder = tmp_path / "wf"
     _report(folder)
-    _pdf(folder)
+    pdf = _pdf(folder)
     _validation(folder)
+    _final_review(folder, pdf=pdf)
     documents_root = tmp_path / "docs"
 
     assert _run(folder, documents_root) == 1
@@ -186,16 +188,61 @@ def test_delivery_refuses_without_current_approval(tmp_path: Path, capsys) -> No
 
 
 def test_delivery_refuses_stale_approval(tmp_path: Path) -> None:
-    """A stale marker (edited preview) is refused by the publisher."""
+    """A stale marker (edited body) is refused by the publisher."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
-    _pdf(folder)
+    pdf = _pdf(folder)
     _validation(folder)
-    (folder / "preview.md").write_text("edited after approval\n", encoding="utf-8")
+    _final_review(folder, pdf=pdf)
+    (folder / "body.md").write_text("edited after approval\n", encoding="utf-8")
     documents_root = tmp_path / "docs"
 
     assert _run(folder, documents_root) == 1
+    assert not (documents_root / CATEGORY).exists()
+
+
+# -- Final review gate ---------------------------------------------------------
+
+
+def test_delivery_refuses_missing_final_review_marker(tmp_path: Path, capsys) -> None:
+    """The human must review the final PDF before delivery; no marker, no delivery."""
+    folder, _ = _ready_folder(tmp_path)
+    (folder / "final-review.yml").unlink()
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+
+    captured = capsys.readouterr()
+    assert "final-review.yml" in captured.err
+    assert "revisión humana final" in captured.err
+    assert not (documents_root / CATEGORY).exists()
+
+
+def test_delivery_refuses_stale_final_review_marker(tmp_path: Path, capsys) -> None:
+    """A marker whose pdf_sha256 no longer matches the PDF bytes refuses delivery."""
+    folder, pdf = _ready_folder(tmp_path)
+    _final_review(folder, pdf=pdf, pdf_sha256="0" * 64)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+
+    captured = capsys.readouterr()
+    assert "final-review.yml" in captured.err
+    assert pdf.name in captured.err
+    assert not (documents_root / CATEGORY).exists()
+
+
+def test_delivery_refuses_malformed_final_review_marker(tmp_path: Path, capsys) -> None:
+    """An unparsable final-review.yml refuses delivery; the marker is never repaired."""
+    folder, _ = _ready_folder(tmp_path)
+    (folder / "final-review.yml").write_text("pdf_sha256: [unclosed\n", encoding="utf-8")
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+
+    captured = capsys.readouterr()
+    assert "final-review.yml es inválido" in captured.err
     assert not (documents_root / CATEGORY).exists()
 
 

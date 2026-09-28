@@ -4,11 +4,13 @@
 The deliver-phase entrypoint (#22): generation (``build_report_auto.py``) no
 longer publishes, so delivery is explicit. This module is a thin gate-checker on
 top of the existing guarded publisher (``publish_validated_pdf``), not a second
-publication system. It adds exactly one check the publisher does not own -- the
+publication system. It adds exactly two checks the publisher does not own -- the
 validation receipt ``validation.yml`` (schema ``academic.doc-validation/v1``)
-must record ``result: pass`` for the exact bytes of the final PDF -- and then
-delegates to the publisher, which enforces the current human approval marker and
-performs the atomic, versioned, hash-verified copy.
+must record ``result: pass`` for the exact bytes of the final PDF, and the final
+human review marker ``final-review.yml`` (schema
+``academic.doc-final-review/v1``) must be current for those same bytes -- and
+then delegates to the publisher, which re-checks the human markers and performs
+the atomic, versioned, hash-verified copy.
 
 No new states, gates or approvals are introduced: a refusal is a non-zero exit
 with the named missing evidence, and a rerun after fixing it is the only exit.
@@ -20,10 +22,12 @@ import sys
 from pathlib import Path
 
 from approval_marker import sha256_file
+from final_review_marker import final_review_state
 from publish_pdf import PublicationError, publish_validated_pdf
 from report_config import load_report_config, read_yaml
 
 VALIDATION_RECEIPT = "validation.yml"
+FINAL_REVIEW_MARKER = "final-review.yml"
 
 # The full gate vocabulary the validate phase can grant, in the order
 # ``skills/document-workflow/references/validate.md`` names them. The
@@ -89,6 +93,24 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
         return _refuse(
             f"{VALIDATION_RECEIPT} artifact_sha256 no coincide con los bytes actuales de "
             f"{pdf.name}; la evidencia está obsoleta. Volvé a validar."
+        )
+
+    review = final_review_state(folder, pdf)
+    if review.state == "absent":
+        return _refuse(
+            f"falta {FINAL_REVIEW_MARKER} en {folder}: falta la revisión humana final "
+            f"de {pdf.name}. Ejecutá primero la fase review; no se publica nada."
+        )
+    if review.state == "stale":
+        return _refuse(
+            f"{FINAL_REVIEW_MARKER} no corresponde a los bytes actuales de {pdf.name} "
+            f"({review.detail}); el PDF cambió después de la revisión final. "
+            "Volvé a revisar."
+        )
+    if review.state == "malformed":
+        return _refuse(
+            f"{FINAL_REVIEW_MARKER} es inválido en {folder}: {review.detail}. "
+            "No se publica nada y el marcador nunca se repara automáticamente."
         )
 
     try:

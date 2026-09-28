@@ -24,6 +24,9 @@ from pathlib import Path
 import doc_status
 from conftest import (
     _approval,
+    _body,
+    _final_review,
+    _marker_text,
     _mtime,
     _pdf,
     _preview,
@@ -62,6 +65,7 @@ def _deliver_pending(tmp_path: Path, *, name: str = "wf") -> Path:
     _mtime(marker, 1_000_000)
     _mtime(pdf, 2_000_000)
     _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
     return folder
 
 
@@ -218,7 +222,7 @@ def test_human_and_json_gate_agree_across_the_state_matrix(tmp_path: Path) -> No
     """The gate text is derived once: human block and JSON payload never disagree."""
     waiting_approval = _golden_folder(tmp_path / "waiting")
     stale_approval = _golden_folder(tmp_path / "stale")
-    _approval(stale_approval, preview_sha256="0" * 64)
+    _approval(stale_approval, body_sha256="0" * 64)
     mismatched = tmp_path / "mismatched"
     _report(mismatched)
     _skip_research(mismatched)
@@ -244,7 +248,7 @@ def test_human_and_json_gate_agree_across_the_state_matrix(tmp_path: Path) -> No
         _assert_human_contract(human)
 
     assert _human_gate(doc_status.render_human(doc_status.derive(stale_approval))).startswith(
-        "approval blocked - "
+        "approval pending - "
     )
     assert _human_gate(doc_status.render_human(doc_status.derive(mismatched))).startswith(
         "validate pending - "
@@ -281,16 +285,16 @@ def test_render_human_gate_falls_to_focus_after_approval(tmp_path: Path) -> None
     _assert_human_contract(doc_status.render_human(status))
 
 
-def test_render_human_gate_reports_blocked_approval(tmp_path: Path) -> None:
-    """TRIANGULATE: a stale marker keeps the front-loaded gate on approval."""
+def test_render_human_gate_reports_waiting_stale_approval(tmp_path: Path) -> None:
+    """TRIANGULATE: a stale marker keeps the focus on approval, waiting not blocked."""
     folder = _golden_folder(tmp_path / "wf")
-    _approval(folder, preview_sha256="0" * 64)
+    _approval(folder, body_sha256="0" * 64)
 
     status = doc_status.derive(folder)
     text = doc_status.render_human(status)
 
     assert status.current == "approval"
-    assert "**Gate**: approval blocked - " in text
+    assert "**Gate**: approval pending - " in text
     _assert_human_contract(text)
 
 
@@ -326,7 +330,7 @@ def test_gate_and_guidance_helpers_are_ascii_and_folder_bound(tmp_path: Path) ->
         f"draft {work}/body.md, then re-run doc_status"
     )
     assert doc_status._guidance("approval", work) == (
-        f"generation runs only after you approve {work}/preview.md and {work}/body.md"
+        f"generation runs only after you approve {work}/body.md"
     )
     assert all(ord(char) < 128 for char in gate + doc_status._guidance("intake", work))
 
@@ -358,12 +362,14 @@ def test_render_machine_schema_and_payload(tmp_path: Path) -> None:
 def test_render_machine_lists_blocked_reasons(tmp_path: Path) -> None:
     """TRIANGULATE: a blocked route surfaces its bounded reason token."""
     folder = _golden_folder(tmp_path / "wf")
-    _approval(folder, preview_sha256="0" * 64)
+    _preview(folder)
+    _body(folder)
+    _marker_text(folder, "body_sha256: [unclosed\n")
 
     text = doc_status.render_machine(doc_status.derive(folder))
 
-    assert "approval_marker_stale" in text
-    assert _payload_block(text)["blockedReasons"] == ["approval_marker_stale"]
+    assert "approval_marker_malformed" in text
+    assert _payload_block(text)["blockedReasons"] == ["approval_marker_malformed"]
 
 
 def test_main_json_routes_machine_to_stdout_and_human_to_stderr(tmp_path: Path, capsys) -> None:

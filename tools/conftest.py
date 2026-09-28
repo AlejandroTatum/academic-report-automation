@@ -24,6 +24,7 @@ DEFAULT_PREVIEW = "# Content Preview: Informe\n\nCuerpo.\n"
 DEFAULT_BODY = "# Informe\n\nCuerpo del documento.\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
+FINAL_REVIEW_SCHEMA = "academic.doc-final-review/v1"
 VALIDATION_SCHEMA = "academic.doc-validation/v1"
 
 # Route-mandatory metadata for the default (academic) route the builders use.
@@ -126,30 +127,28 @@ def _yaml(body: dict[str, object]) -> str:
 def _approval(
     folder: Path,
     *,
-    preview: str | None = None,
-    preview_sha256: str | None = None,
     body: str | None = None,
     body_sha256: str | None = None,
     drop: tuple[str, ...] = (),
     **fields: object,
 ) -> Path:
-    """Write ``preview.md`` and ``body.md`` plus an ``approval.yml`` bound to both.
+    """Write ``preview.md``, ``body.md`` and an ``approval.yml`` bound to body.md.
 
-    Defaults produce a current marker. ``preview``/``body`` rewrite those files
-    before hashing (the normal shape), ``preview_sha256``/``body_sha256`` override
-    the recorded hash (a stale marker), and ``drop`` removes required keys (a
-    malformed marker).
+    Defaults produce a current marker. ``body`` rewrites that file before hashing
+    (the normal shape), ``body_sha256`` overrides the recorded hash (a stale
+    marker), and ``drop`` removes required keys (a malformed marker). The marker
+    itself binds only body.md; ``preview.md`` is still written because the
+    preview phase reads it, but no marker key points at it.
     """
     folder.mkdir(parents=True, exist_ok=True)
     preview_path = folder / "preview.md"
-    if preview is not None or not preview_path.is_file():
-        preview_path.write_text(preview if preview is not None else DEFAULT_PREVIEW, encoding="utf-8")
+    if not preview_path.is_file():
+        preview_path.write_text(DEFAULT_PREVIEW, encoding="utf-8")
     body_path = folder / "body.md"
     if body is not None or not body_path.is_file():
         body_path.write_text(body if body is not None else DEFAULT_BODY, encoding="utf-8")
     marker_body: dict[str, object] = {
         "schema": APPROVAL_SCHEMA,
-        "preview_sha256": preview_sha256 or _sha256(preview_path),
         "body_sha256": body_sha256 or _sha256(body_path),
         "approved_at": "2026-09-10T14:03:11Z",
         "approved_by": "Alejandro",
@@ -159,6 +158,38 @@ def _approval(
         marker_body.pop(key, None)
     marker = folder / "approval.yml"
     marker.write_text(_yaml(marker_body), encoding="utf-8")
+    return marker
+
+
+def _final_review(
+    folder: Path,
+    *,
+    pdf: Path | None = None,
+    pdf_sha256: str | None = None,
+    drop: tuple[str, ...] = (),
+    **fields: object,
+) -> Path:
+    """Write ``final-review.yml`` bound to the final PDF bytes and return its path.
+
+    Defaults produce a marker current for the folder's configured final PDF:
+    ``pdf_sha256`` is recomputed from that PDF unless a test overrides it (the
+    mismatched-hash shape) or drops the key. The PDF itself is never written
+    here; a test that wants a missing-PDF stale shape passes an explicit
+    ``pdf_sha256`` and removes the file itself.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    target = pdf if pdf is not None else folder / "final" / "report.pdf"
+    body: dict[str, object] = {
+        "schema": FINAL_REVIEW_SCHEMA,
+        "pdf_sha256": pdf_sha256 or _sha256(target),
+        "reviewed_at": "2026-09-10T16:30:00Z",
+        "reviewed_by": "Alejandro",
+    }
+    body.update(fields)
+    for key in drop:
+        body.pop(key, None)
+    marker = folder / "final-review.yml"
+    marker.write_text(_yaml(body), encoding="utf-8")
     return marker
 
 

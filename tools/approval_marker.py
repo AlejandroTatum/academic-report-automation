@@ -2,13 +2,15 @@
 """The shared approval-marker contract.
 
 An approval is a file on disk, not a session variable: ``approval.yml`` binds a
-human decision to the exact bytes of both ``preview.md`` and ``body.md``,
-through ``preview_sha256`` and ``body_sha256``. Two consumers share this
-predicate with different presentation: ``doc_status`` maps the state onto a
-phase state and a blocked-reason token, and ``publish_validated_pdf`` maps it
-onto a user-facing abort message. Keeping the predicate here -- and the
-presentation at each boundary -- is what stops the routing layer and the
-irreversible publisher from disagreeing about approval.
+human decision to the exact bytes of ``body.md`` through ``body_sha256``. Two
+consumers share this predicate with different presentation: ``doc_status`` maps
+the state onto a phase state and a blocked-reason token, and
+``publish_validated_pdf`` maps it onto a user-facing abort message. Keeping the
+predicate here -- and the presentation at each boundary -- is what stops the
+routing layer and the irreversible publisher from disagreeing about approval.
+
+A marker that still carries a legacy ``preview_sha256`` key stays valid: keys
+outside ``REQUIRED_KEYS`` are ignored data, and only ``body_sha256`` is checked.
 
 The module is pure and read-only. ``approval_state`` never writes, never creates
 a directory, and never raises for a bad marker: an unreadable or invalid marker
@@ -23,17 +25,16 @@ from pathlib import Path
 
 from report_config import read_yaml
 
-PREVIEW_NAME = "preview.md"
 BODY_NAME = "body.md"
 MARKER_NAME = "approval.yml"
 MARKER_SCHEMA = "academic.doc-approval/v1"
-REQUIRED_KEYS = ("preview_sha256", "body_sha256", "approved_at", "approved_by")
+REQUIRED_KEYS = ("body_sha256", "approved_at", "approved_by")
 
 # The subset of REQUIRED_KEYS that binds a marker to a file's exact bytes,
 # mapped to that file's name -- the single place a caller derives "which
 # files does this marker bind" from, so a new bound file only has to be
 # added here instead of re-listed at each call site.
-BOUND_FILES = {"preview_sha256": PREVIEW_NAME, "body_sha256": BODY_NAME}
+BOUND_FILES = {"body_sha256": BODY_NAME}
 
 
 def bound_file_names() -> tuple[str, ...]:
@@ -82,7 +83,6 @@ def approval_state(work_folder: Path) -> ApprovalState:
     """Derive the approval state of a work folder without touching disk."""
     folder = Path(work_folder)
     marker_path = folder / MARKER_NAME
-    preview_path = folder / PREVIEW_NAME
 
     if not marker_path.is_file():
         return ApprovalState(
@@ -99,21 +99,6 @@ def approval_state(work_folder: Path) -> ApprovalState:
     for key in REQUIRED_KEYS:
         if _is_missing_or_blank(data.get(key)):
             return _malformed(f"{MARKER_NAME} missing or blank {key}")
-
-    if not preview_path.is_file():
-        return _malformed(f"{PREVIEW_NAME} missing")
-
-    try:
-        preview_hash = sha256_file(preview_path)
-    except OSError:
-        return _malformed(f"{PREVIEW_NAME} unreadable")
-
-    if str(data["preview_sha256"]).strip().lower() != preview_hash:
-        return ApprovalState(
-            state="stale",
-            reason="approval_marker_stale",
-            detail=f"{MARKER_NAME} preview_sha256 does not match {PREVIEW_NAME}",
-        )
 
     body_path = folder / BODY_NAME
     if not body_path.is_file():

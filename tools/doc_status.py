@@ -53,7 +53,7 @@ _GUIDANCE = {
     ),
     "preview": "draft {preview}, then re-run doc_status",
     "draft": "draft {body}, then re-run doc_status",
-    "approval": "generation runs only after you approve {preview} and {body}",
+    "approval": "generation runs only after you approve {body}",
     "generate": "build with {build_command}, then re-run doc_status",
     "validate": "record {validation} for the final PDF, then re-run doc_status",
     "deliver": "publish with {deliver_command}, then re-run doc_status",
@@ -160,7 +160,9 @@ def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path |
     """Map the shared approval predicate onto one phase state.
 
     Only ``current`` is ``done``: an absent marker stays ``pending`` so the route
-    waits at approval, and a stale or malformed marker is ``blocked`` with the
+    waits at approval, and a stale marker -- the body changed since approval --
+    also returns to ``pending``, because editing after approval is the normal
+    review loop, not a deadlock. Only a malformed marker is ``blocked``, with the
     predicate's own bounded reason. The marker is never written here.
     """
     state = approval_state(folder)
@@ -169,6 +171,12 @@ def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path |
         return PhaseState("approval", DONE, f"approval.yml matches {bound}")
     if state.state == "absent":
         return PhaseState("approval", PENDING, state.detail)
+    if state.state == "stale":
+        return PhaseState(
+            "approval",
+            PENDING,
+            f"{state.detail}; the body changed since approval, re-approve",
+        )
     return PhaseState("approval", BLOCKED, state.detail, state.reason)
 
 

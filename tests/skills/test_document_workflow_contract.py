@@ -187,12 +187,15 @@ def test_approval_reference_contract() -> None:
     path = SKILL_ROOT / "references" / "approval.md"
     assert path.is_file(), f"missing required contract file: {path}"
     text = read(path)
-    for key in ("preview_sha256", "body_sha256", "approved_at", "approved_by"):
+    for key in ("body_sha256", "approved_at", "approved_by"):
         assert key in text, f"approval.md must name the marker key {key}"
+    assert "preview_sha256" not in text, (
+        "approval.md must not bind preview.md any more: the marker binds body.md only"
+    )
     assert "approval.yml" in text, "approval.md must name the marker file"
     flat = re.sub(r"\s+", " ", text).lower()
-    assert re.search(r"binds?[^.]*preview\.md[^.]*body\.md", flat), (
-        "approval.md must state that the marker binds both preview.md and body.md"
+    assert re.search(r"binds?[^.]*body\.md", flat), (
+        "approval.md must state that the marker binds body.md"
     )
     for phrase in ("silence", "inferred yes", "agent decision"):
         assert phrase in flat, f"approval.md must name `{phrase}` as a non-consent signal"
