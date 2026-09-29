@@ -192,6 +192,17 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   block inserted mid-function, tolerance prose duplicates check semantics and
   can drift from rubric_checks, body.md read twice (brief can race an edit).
 
+- T10 E2E (2026-09-29): with the new brief both judges returned `cumple` on all 7
+  criteria, citing the passing checks and judging only what they do not cover; no
+  capital-letter false positive. Content check pass (13/13), verify done. Validate:
+  cross-repo RDD `review-83eb9311a0c1c081` (user-authorized, 10 text files,
+  medium, reliability lens) approved/burned + `validate_report.py` pass (one
+  unrelated outputs/ clutter warning); validation.yml for PDF sha `b8d92a43...`.
+  Now at review (human PDF review). RDD advisories to triage: content-check.yml
+  lacks a guide hash binding, rubric checks not tied to criterion semantics,
+  judge B misattributed one quote, factual claims (commit/branch counts) are not
+  verified by any check, sources-verification warning unresolved.
+
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
 - `verify_sources.py`: empty bib must not pass vacuously; malformed registry JSON
