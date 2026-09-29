@@ -514,6 +514,8 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     if phase_name == "verify" and blocked_reason == "content_check_stale":
         template = "re-run the independent judge for {body}, then run {check_command} --judgments <judgments-file>"
+    if phase_name == "verify" and blocked_reason == "content_check_malformed":
+        template = "re-run the independent judge for {body}, then run the content check: {check_command} --judgments <judgments-file>"
     if phase_name == "verify" and blocked_reason == "content_check_failed":
         template = ("fix findings in {body} through the user's literal edit orders, "
                     "then re-approve the draft and re-run the independent judge")

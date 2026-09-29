@@ -57,8 +57,16 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       Library, mocked in tests); PDF handoff uses the exact file name with fish-safe
       quoting; guide facts report conflicting matches; URLs in headings/captions;
       loose lists; warn on figure-path precedence.
-- [ ] T6 Skill prose, contract tests, runtime sync, and an E2E re-run on the
+- [x] T6 Skill prose, contract tests, runtime sync, and an E2E re-run on the
       APE Semana 1 folder.
+- [ ] T7 E2E bug fixes (content check): legacy marker detected before the
+      mechanical-set rule (stale, not malformed) with correct Gate text; judge
+      brief explains `[@key]` renders as IEEE at build; `verbatim_from_guide`
+      tolerates only a first-letter case difference (user decision 2026-09-29).
+- [ ] T8 Advisory fixes (sources and handoff): empty bib never passes; malformed
+      registry JSON does not abort; DOI given as URL normalized; author compare
+      accent/particle tolerant; one retry on HTTP 429; fish quoting escapes
+      backslashes and quotes the directory.
 
 ## Evidence
 (commit ids recorded per task)
@@ -107,6 +115,27 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   on a runtime incident (0 tool calls); retried after recovery.
   Commit `07f8c21`. RDD lineage `review-966e559bb44a4c17`: approved, acknowledged/
   burned.
+
+- T6 (skill prose): RED verified by the parent (skill prose stashed: 7 new contract
+  tests fail); GREEN `pytest tools/ tests/ -q` 1505 passed. Prose covers verified
+  sources, rubric TDD before drafting, checks before presenting the draft, batched
+  edit orders, independent judge only, exact fish handoff. SKILL.md 118 -> 122 lines.
+
+## E2E re-run findings (APE Semana 1, 2026-09-29)
+- A real pre-T1/T2 content-check marker reads `malformed` (verify BLOCKED), not the
+  `stale` T5a promised: the complete-mechanical-set rule fires before the legacy
+  rule. Legacy detection must run first. The blocked Gate still says "run the
+  check" for the malformed case.
+- Rubric TDD worked: a `verbatim_from_guide` check failed on the objective and the
+  tool flagged "judged cumple despite failing check". Cause: sentence-initial
+  capital ("Preparar" vs guide "preparar"). Decide whether verbatim tolerates a
+  leading-capital difference.
+- Independent judge worked and was stricter than self-grading: it found a real gap
+  (README steps omit LuaLaTeX/Biber listed in Materiales). It also raised a false
+  issue (IEEE not visible in body.md): the judge brief must say `[@key]` renders as
+  IEEE at build time.
+- The blocked-verify Gate now correctly says "fix findings ... through the user's
+  literal edit orders, then re-approve".
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.

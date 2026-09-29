@@ -81,6 +81,20 @@ def test_each_check_pass_and_fail(tmp_path: Path, check: dict, expected: bool) -
     assert result.type == check["type"]
 
 
+@pytest.mark.parametrize("guide,body,expected", [
+    ("preparar el informe exacto", "Preparar el informe exacto", True),
+    ("Preparar el informe exacto", "preparar el informe exacto", True),
+    ("preparar el informe exacto", "Preparar el Informe exacto", False),
+    ("preparar el informe exacto", "Preparar el reporte exacto", False),
+])
+def test_verbatim_allows_only_initial_case_difference(tmp_path: Path, guide: str, body: str, expected: bool) -> None:
+    (tmp_path / "guide.md").write_text(guide)
+    check = {"type": "verbatim_from_guide", "section": "Objetivos", "source": "guide.md",
+             "text": "Preparar el informe exacto"}
+    result, = run_checks(tmp_path, [{"id": "objective", "checks": [check]}], "# Objetivos\n" + body)
+    assert result.ok is expected
+
+
 def test_verbatim_requires_guide_and_section_and_normalizes_whitespace(tmp_path: Path) -> None:
     guide = tmp_path / "guide.md"
     guide.write_text("Exact phrase from guide", encoding="utf-8")

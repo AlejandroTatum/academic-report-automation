@@ -114,6 +114,8 @@ def test_judge_brief_is_bound_and_read_only(tmp_path: Path, capsys: pytest.Captu
     assert _sha(folder / "rubric.yml") in brief
     assert "independent" in brief and "cumple|flojo|falta" in brief
     assert "Do not edit" in brief and "where" in brief
+    assert "[@key]" in brief and "IEEE" in brief and "sources.bib" in brief
+    assert "not a formatting defect" in brief
     assert not (folder / "content-check.yml").exists()
 
 
@@ -497,6 +499,35 @@ def test_no_criteria_cannot_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert content_check.run_check(folder, _judgments(folder)).errors
 
 
+def test_pre_t1_marker_is_stale_before_mechanical_validation(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder)
+    marker = _marker(folder)
+    legacy = {key: marker[key] for key in (
+        "schema", "body_sha256", "checked_at", "criteria", "findings", "mechanical", "result"
+    )}
+    legacy["mechanical"] = [entry for entry in marker["mechanical"] if entry["check"] != "rubric_checks"]
+    import yaml
+    (folder / "content-check.yml").write_text(yaml.safe_dump(legacy))
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_pre_judge_marker_with_current_hashes_is_stale(tmp_path: Path) -> None:
+    # Shape written between the rubric/bib binding and the independent judge: current
+    # rubric and bib hashes, no judge, and no rubric_checks entry (E2E 2026-09-29).
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder)
+    marker = _marker(folder)
+    legacy = {key: marker[key] for key in (
+        "schema", "body_sha256", "rubric_sha256", "bib_sha256", "checked_at",
+        "criteria", "findings", "mechanical", "result",
+    )}
+    legacy["mechanical"] = [entry for entry in marker["mechanical"] if entry["check"] != "rubric_checks"]
+    import yaml
+    (folder / "content-check.yml").write_text(yaml.safe_dump(legacy))
+    assert content_check.content_check_state(folder) == "stale"
+
+
 def test_legacy_marker_is_stale_not_malformed(tmp_path: Path) -> None:
     folder = _verify_folder(tmp_path / "wf")
     _content_check(folder, drop=("judge", "rubric_sha256"))
@@ -682,7 +713,7 @@ def test_content_check_state_dedupes_id_comparison_not_sets(tmp_path: Path) -> N
     "kwargs",
     [
         {"drop": ("body_sha256",)},
-        {"drop": ("rubric_sha256",)},
+        {"judge": {"role": "drafter"}},
         {"drop": ("bib_sha256",)},
         {"drop": ("result",)},
         {"drop": ("criteria",)},

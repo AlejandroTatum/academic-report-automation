@@ -80,8 +80,19 @@ def _evaluate(folder: Path, check: dict, body: str) -> tuple[bool, str]:
         except (OSError, UnicodeError):
             return False, f"guide '{source}' missing or unreadable"
         needle = " ".join(check["text"].split())
-        in_guide = needle in " ".join(guide.split())
-        in_body = needle in " ".join(scope.split())
+        # Only the first character may differ in case; interior spelling and
+        # capitalization remain verbatim after whitespace normalization.
+        def matches_first_letter(text: str) -> bool:
+            normalized = " ".join(text.split())
+            return needle in normalized or (bool(needle) and any(
+                normalized[index + 1:index + len(needle)] == needle[1:]
+                and normalized[index].casefold() == needle[0].casefold()
+                and (index == 0 or not normalized[index - 1].isalnum())
+                for index in range(len(normalized) - len(needle) + 1)
+            ))
+
+        in_guide = matches_first_letter(guide)
+        in_body = matches_first_letter(scope)
         return in_guide and in_body, f"verbatim text in guide={in_guide}, section={in_body}"
     if kind == "ordered_list":
         items = re.findall(r"^\s*\d+[.)]\s+\S", scope, re.MULTILINE)

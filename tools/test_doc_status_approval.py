@@ -13,6 +13,48 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path) -> None:
+    import yaml
+    import doc_status
+    from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
+    _approval(folder)
+    _content_check(folder)
+    marker_path = folder / "content-check.yml"
+    marker = yaml.safe_load(marker_path.read_text())
+    legacy = {key: marker[key] for key in (
+        "schema", "body_sha256", "checked_at", "criteria", "findings", "mechanical", "result"
+    )}
+    legacy["mechanical"] = [entry for entry in marker["mechanical"] if entry["check"] != "rubric_checks"]
+    marker_path.write_text(yaml.safe_dump(legacy))
+    status = doc_status.derive(folder)
+    verify = doc_status._phase_verify(folder, None, None)
+    assert verify.state == doc_status.PENDING
+    assert "re-run the independent judge" in status.gate
+    assert "malformed" not in status.gate
+
+
+def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Path) -> None:
+    import doc_status
+    from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
+    _approval(folder)
+    _content_check(folder, mechanical=[])
+    status = doc_status.derive(folder)
+    assert "re-run the independent judge" in status.gate
+    assert "content_check.py" in status.gate
+
+
 def test_failed_verify_guidance_requires_user_orders_and_reapproval(tmp_path: Path) -> None:
     import doc_status
     from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check

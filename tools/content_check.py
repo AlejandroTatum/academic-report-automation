@@ -136,6 +136,7 @@ def judge_brief(folder: Path) -> str:
     }
     return ("You are an independent read-only judge. Judge only from these inputs; "
             "do not use the drafting conversation or any other files. Do not edit any file.\n"
+            "Citations [@key] in body.md render in IEEE format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
             "Allowed input paths (absolute):\n"
             + "\n".join(str(folder / name) for name in inputs)
             + "\nReturn only judgments YAML using this schema. Judge every rubric criterion; "
@@ -420,7 +421,7 @@ def content_check_state(report_dir: Path) -> str:
         return "malformed"
     if not isinstance(data, dict):
         return "malformed"
-    if data.get("schema") == CONTENT_CHECK_SCHEMA and "judge" not in data and "rubric_sha256" not in data:
+    if data.get("schema") == CONTENT_CHECK_SCHEMA and ("judge" not in data or "rubric_sha256" not in data):
         return "stale"
     for key in REQUIRED_MARKER_KEYS:
         if data.get(key) is None:
