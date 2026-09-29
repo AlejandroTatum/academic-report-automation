@@ -86,7 +86,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       stales the marker); move the T10 tests out of the middle of another test.
 - [x] T12 verify_sources: registry-data errors (bad fields in a 200 response)
       report MISMATCH, not NETWORK_ERROR.
-- [ ] T13 guide_facts conflicts contract documented in its reference; proof test
+- [x] T13 guide_facts conflicts contract documented in its reference; proof test
       that a URL inside a moving argument (heading/caption) builds.
 - [ ] T14 Judge quote check: every single-quoted fragment in a judge `where` must
       appear in body.md (whitespace-normalized); a missing fragment is a warning
@@ -252,12 +252,41 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   R2-repeated-inline-bib-literals, R3-001. No correction was offered.
 - T12 marked done: focused source tests 18 passed and native review
   `review-fb591c3c30c3ce7f` burned; work-unit commit delivered on
-  `feat/report-flow-hardening` (SHA recorded after commit creation).
+  `feat/report-flow-hardening` as `4c82b43bd75846ab2c494198b8a92368e3a5dc0d`.
 - Rollback boundary: reverse only the T12 changes in `tools/verify_sources.py`
   and `tools/test_verify_sources.py`; unrelated T11 remains intact.
-- Commit delivery authorized (2026-09-29) for this T12 unit only on the
-  existing branch; push, PR, and merge remain unauthorized. T13/T14 and the
-  next E2E remain pending.
+- User authorized completing all remaining T tasks and their work-unit commits
+  (2026-09-29); push, PR, and merge remain unauthorized.
+- T13 in progress: document the existing `guide_facts` conflicts contract and
+  prove that heading/caption URLs compile into a real PDF. Route: delegated
+  writer (documentation plus test, multi-file trigger). Allowed surfaces:
+  `skills/document-workflow/references/intake.md`, `tools/test_latex_links.py`.
+  Forecast: about 60-80 authored diff lines. This is characterization of
+  existing rendering, not a behavior fix; no artificial RED is required. Check:
+  real PDF compile with available local engine, focused tests, full suite,
+  structural doc check, then review/commit at this work-unit boundary.
+- T13 initial checks: 12 focused passed / 1 skipped; full 1550 passed / 1
+  skipped. The real-compile test was skipped because its gate checked host
+  engines only. Independent diagnosis verified Docker 29.8.0 and an existing
+  local `texlive/texlive:latest` image (LuaHBTeX 1.24.0 / TeX Live 2026) with
+  `--network none`. No install or download needed. Next: support this existing
+  fallback in the test, run it using the shared Python venv, and require real
+  PDF evidence before T13 closes.
+- T13 final functional checks: 13 focused passed, full 1551 passed, zero skips;
+  `git diff --check` clean. Actual Docker compile generated `main.pdf` (20380
+  bytes, PDF-1.7) via LuaHBTeX 1.24.0. Heading/caption URL included query,
+  underscores and ampersands; annotation URI recovered exactly from PDF bytes.
+  Independent verifier repeated the focused checks: 13 passed, no skips, diff
+  clean. The test enforces `--pull=never --network=none` for Docker, with no
+  production renderer changes. Native assessment high (`process_boundary`).
+  Characterization rationale: the test proves the existing rendering contract
+  (heading/caption URLs compile offline into a real PDF); it is not a behavior
+  fix, so no artificial RED was required. Rollback: reverse only the T13
+  intake-reference and link-test additions. RDD lineage
+  `review-12df821d0eb6e608`: native review approved, acknowledged/burned by the
+  parent; no new native review run. Advisories informational; none blocking.
+  Implementation verified and closed by work-unit commit (SHA recorded below).
+- T14 and the next E2E remain pending.
 
 ## Out of scope (user decision, report data not tooling)
 - Factual claims in body.md (commit/branch counts) are not checkable without

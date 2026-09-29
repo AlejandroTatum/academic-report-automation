@@ -23,6 +23,15 @@ The content-first route asks for the minimum only:
   inputs for the `plan` phase; record the folder-relative `guide:` path in
   `report.yml`, run `tools/guide_facts.py <folder>` and, when it detects a family,
   record `format_hint: ape` or `format_hint: aa` for planning (not `format:`);
+- `guide_facts.py` reports only what the guide states explicitly, and it never
+  guesses. When one fact key carries several distinct explicit values (say, an
+  APE guide that also says "aprendizaje autónomo", or two different "Semana N"
+  numbers), the key moves to a `conflicts:` mapping that lists the conflicting
+  explicit values, and the fact is omitted from the facts themselves: no value
+  is picked, and a conflicted family produces no `format_hint` at all. Any fact
+  the conflicts leave unresolved is asked through the existing structured
+  question policy (`ask_user_choice`); it is never inferred from context. This
+  contract is existing behavior, proven by `tools/test_guide_facts.py`.
 - top-level `route:` (document type), resolved with the user, never inferred;
 - `metadata.date` and the optional record
   keys `metadata.audience`, `metadata.purpose`, `metadata.visual_direction`,
