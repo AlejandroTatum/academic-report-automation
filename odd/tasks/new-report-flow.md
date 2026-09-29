@@ -64,9 +64,10 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
 - [x] T3 Rubric plan + content check: `rubric.yml` schema/validator and
       `content-check.yml` validator (per-criterion cumple/flojo/falta + where,
       mechanical checks: citations resolve, >= 5 eligible sources cited).
-- [ ] T4 Format choice + APE template: `format: ape|aa|libre` in `report.yml`,
+- [x] T4 Format choice + APE template: `format: ape|aa|libre` in `report.yml`,
       per-format required metadata, template mapping, `templates/ape-report.tex`.
-- [ ] T5 `doc_status` new 11-phase route, handlers, guidance, tests.
+- [ ] T5 `doc_status` new 11-phase route, handlers, guidance, tests; content check
+      binds `rubric.yml` + bib hashes.
 - [ ] T6 Rewrite `skills/document-workflow` (SKILL.md + references), contract
       tests, skill sync, flow diagram under `docs/`.
 
@@ -90,6 +91,16 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
 - T3: RED collection errors (`rubric_plan`, `content_check` missing); GREEN
   `pytest tools/ tests/ -q` 1316 passed (+77). `content_check.py` derives pass/fail
   itself (all criteria `cumple` + mechanical checks) and never writes `body.md`.
+  Commit `ee0f6e1`. RDD lineage `review-cad64846ab646d45`: approved, acknowledged/
+  burned. Advisory follow-ups taken into T5: content check must also bind
+  `rubric.yml` and the bib (stale when they change) and not trust a recorded
+  `result` blindly. Others: atomic marker write, body-hash race, id normalization.
+- T4: RED import/collection errors + 6 focused failures; GREEN `pytest tools/ tests/ -q`
+  1377 passed. Real smoke build (Docker texlive, 5 IEEE refs) passed: 2 pages A4,
+  0 overfull, Montserrat embedded, title falls back to TeX Gyre Heros (Play missing).
+  Logo extracted from the teacher DOCX to `assets/ape-faculty-logo.png` (root
+  `assets/` is the existing asset convention). Open check for E2E: large blank
+  space after section 2 on page 1 of the smoke sample.
 
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow

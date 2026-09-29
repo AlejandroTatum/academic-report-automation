@@ -87,6 +87,32 @@ DOCX_TYPES = {"docx", "word", "docx_required", "plantilla_word"}
 # Sentinel telling "key absent" apart from a stored None/False value.
 MISSING = object()
 
+# Intake placeholders: bracket templates such as `[Nombre del estudiante]` are
+# instructions left in a template, not identity. A value that is entirely
+# bracketed can never be a real name/title/date, so it fails identity
+# validation wherever route or format metadata requires a concrete value.
+# Defined here (not in validate_report) so the route checks and the format
+# checks share one definition; validate_report re-exports the name.
+PLACEHOLDER_RE = re.compile(r"^\[.*\]$")
+
+# Word-style fill-in marks: the teacher's templates leave "X", "XXX" or "00X"
+# in fields the student must replace. A value made entirely of X/0 characters
+# is one of those marks, never a real name, number or date.
+EXAMPLE_VALUE_RE = re.compile(r"^[xX0]+$")
+
+
+def is_placeholder_value(value: Any) -> bool:
+    """True for bracket templates ("[Nombre]") and X/0 fill-in marks ("XXX").
+
+    An empty value is NOT a placeholder: emptiness is reported as "missing",
+    placeholders as "example value", and the two messages name different
+    corrections.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return PLACEHOLDER_RE.match(text) is not None or EXAMPLE_VALUE_RE.fullmatch(text) is not None
+
 # academic_format.yml sections a single report.yml may relax for itself.
 # Deliberately narrow: every other section stays globally owned.
 OVERRIDABLE_SECTIONS = frozenset({"cover"})
@@ -181,6 +207,55 @@ def unknown_route_message(route: str) -> str:
         f"Ruta de documento desconocida en report.yml: '{route}'. "
         f"Valores aceptados en 'route': {accepted} "
         "(o las letras a, b, c, d, e). Sin 'route' se asume ruta académica."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Document formats (new-report-flow)
+# ---------------------------------------------------------------------------
+#
+# `format:` in report.yml is the ONE format choice the user makes per document,
+# after content approval. It is a presentation classification, deliberately
+# independent of `route:` (the content classification): every format keeps IEEE
+# citations (biblatex style=ieee) and always builds a PDF through the existing
+# LaTeX pipeline.
+#
+#     format: ape     the teacher's Word replica (templates/ape-report.tex)
+#     format: aa      the current academic look (unl-report.tex), unchanged
+#     format: libre   a user-specified format: `format_spec:` in report.yml is
+#                     mandatory, and the plain template applies by default
+#
+# An absent key means the format has not been chosen yet, which is valid while
+# the flow is still content-first. An unrecognised value is a hard error, like
+# an unrecognised route: nothing may fall back silently to a look the user did
+# not pick.
+FORMAT_KEY = "format"
+
+# Metadata report.yml must carry, per chosen format. `aa` demands exactly what
+# the academic route already demands; `ape` extends it with the identification
+# fields the teacher's table prints; `libre` keeps the universal three plus the
+# `format_spec` description (validated separately, since it lives outside
+# `metadata:`). English canonical keys; the metadata aliases below accept the
+# obvious Spanish spellings.
+FORMAT_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
+    "aa": ("title", "subject", "teacher", "student", "date"),
+    "ape": (
+        "title", "subject", "teacher", "student", "date",
+        "cycle", "unit", "learning_outcome", "practice_number",
+        "practice_type", "schedule", "place", "planned_time",
+    ),
+    "libre": ("title", "student", "date"),
+}
+
+
+def unknown_format_message(format_value: str) -> str:
+    """Spanish guidance for a `format:` value no format table recognises."""
+    accepted = ", ".join(sorted(FORMAT_REQUIRED_METADATA))
+    return (
+        f"Formato de documento desconocido en report.yml: '{format_value}'. "
+        f"Valores aceptados en 'format': {accepted}. "
+        "Sin 'format' el documento aún no tiene formato elegido "
+        "(válido durante las fases de contenido)."
     )
 
 
@@ -281,6 +356,40 @@ class ReportConfig:
         if not self.route_is_known:
             raise ValueError(unknown_route_message(self.route))
         return ROUTE_REQUIRED_METADATA[self.route]
+
+    @property
+    def format(self) -> str | None:
+        """Canonical document format (``ape``, ``aa`` or ``libre``).
+
+        Returns ``None`` when the key is absent: the format has not been
+        chosen yet, which is valid while the flow is still content-first.
+        An unrecognised value is returned verbatim so callers can name it in
+        the error instead of guessing a format on the user's behalf — the
+        same contract as ``route``.
+        """
+        written = str(self.raw.get(FORMAT_KEY) or "").strip().lower()
+        return written or None
+
+    @property
+    def format_is_known(self) -> bool:
+        return self.format in FORMAT_REQUIRED_METADATA
+
+    @property
+    def format_spec(self) -> str:
+        """The user's free-form format description (`format_spec:`), for libre."""
+        return str(self.raw.get("format_spec") or "").strip()
+
+    @property
+    def format_required_metadata(self) -> tuple[str, ...]:
+        """Metadata keys this report's chosen format genuinely needs.
+
+        Raises ValueError for an unrecognised format, exactly like
+        ``required_metadata`` does for an unrecognised route.
+        """
+        chosen = self.format
+        if chosen not in FORMAT_REQUIRED_METADATA:
+            raise ValueError(unknown_format_message(chosen or ""))
+        return FORMAT_REQUIRED_METADATA[chosen]
 
     @property
     def backend(self) -> str:
@@ -407,6 +516,24 @@ class ReportConfig:
             "career": ["career", "carrera"],
             "parallel": ["parallel", "paralelo"],
             "members": ["members", "integrantes", "miembros"],
+            # APE identification-table fields (new-report-flow): canonical
+            # English keys, with the obvious Spanish spellings the report.yml
+            # of a Spanish-language course naturally uses.
+            "cycle": ["cycle", "ciclo"],
+            "unit": ["unit", "unidad"],
+            "learning_outcome": [
+                "learning_outcome", "resultado_aprendizaje", "resultado_de_aprendizaje",
+            ],
+            "practice_number": [
+                "practice_number", "practica_numero", "practica_nro",
+                "numero_de_practica", "numero_practica",
+            ],
+            "practice_type": ["practice_type", "tipo_practica", "practica_tipo", "tipo"],
+            "schedule": ["schedule", "horario"],
+            "place": ["place", "lugar"],
+            "planned_time": [
+                "planned_time", "tiempo_planificado", "tiempo_planificado_en_el_silabo",
+            ],
         }
         for canonical, keys in aliases.items():
             if canonical in meta and meta[canonical]:
@@ -623,6 +750,8 @@ def load_report_config(folder: Path) -> ReportConfig:
 
     if not config.route_is_known:
         raise SystemExit(unknown_route_message(config.route))
+    if FORMAT_KEY in raw and not config.format_is_known:
+        raise SystemExit(unknown_format_message(config.format or ""))
 
     declares_final_pdf = any(key in raw for key in ("pdf", "output_pdf"))
     if declares_final_pdf and targets_local_outputs(config):

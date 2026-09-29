@@ -31,6 +31,7 @@ from table_model import TableStylesContext, resolve_table_style
 
 DEFAULT_TEMPLATE = ROOT / "templates" / "unl-report.tex"
 PLAIN_TEMPLATE = ROOT / "templates" / "plain-report.tex"
+APE_TEMPLATE = ROOT / "templates" / "ape-report.tex"
 TEMPLATE_ALIASES = {
     "default": DEFAULT_TEMPLATE,
     "unl": DEFAULT_TEMPLATE,
@@ -39,6 +40,8 @@ TEMPLATE_ALIASES = {
     "overleaf_chamba": ROOT / "templates" / "chamba-overleaf.tex",
     "plain": PLAIN_TEMPLATE,
     "plain_report": PLAIN_TEMPLATE,
+    "ape": APE_TEMPLATE,
+    "ape_report": APE_TEMPLATE,
 }
 
 
@@ -76,12 +79,30 @@ ROUTE_TEMPLATE_DEFAULTS = {
     "other": "plain",
 }
 
+# Default template per chosen FORMAT (new-report-flow): `ape` renders the
+# teacher's Word replica, `aa` the current academic look and `libre` the plain
+# template. The format is the user's post-approval presentation choice, so it
+# outranks the route default — but never an explicit `template:` key, which
+# still wins in either direction (a libre report may ask for any shell).
+FORMAT_TEMPLATE_DEFAULTS = {
+    "ape": "ape",
+    "aa": "unl",
+    "libre": "plain",
+}
+
 
 def template_key_for(config: ReportConfig) -> str | None:
-    """The template key a report resolves to, honouring explicit choice first."""
+    """The template key a report resolves to, honouring explicit choice first.
+
+    Precedence: an explicit report.yml `template:` key, then the chosen
+    format's default, then the confirmed route's default.
+    """
     explicit = config.raw.get("template") or config.raw.get("latex_template")
     if str(explicit or "").strip():
         return explicit
+    chosen = config.format
+    if chosen in FORMAT_TEMPLATE_DEFAULTS:
+        return FORMAT_TEMPLATE_DEFAULTS[chosen]
     return ROUTE_TEMPLATE_DEFAULTS.get(config.route, "default")
 
 
@@ -154,6 +175,9 @@ def cover_field(value: str | None) -> str:
     return latex_escape(text) if text else r"\strut"
 LOGO_FILENAME = "unl-logo-aa1-transparent.png"
 BACKGROUND_FILENAME = "fondo-overleaf-investigacion.png"
+# Faculty logo extracted from the teacher's APE Word template (the header
+# carries it on every page); referenced by ape-report.tex via {{APE_LOGO_PATH}}.
+APE_LOGO_FILENAME = "ape-faculty-logo.png"
 # Known extra PNGs in assets/ that are NOT referenced by the LaTeX pipeline.
 # These are standalone files (e.g. prompt engineering flow diagrams) used
 # directly from report body.md via Markdown image syntax.
@@ -166,6 +190,7 @@ EXPECTED_ASSETS: list[tuple[str, str]] = [
     (LOGO_FILENAME, "Logo UNL (transparente, usado por {{LOGO_PATH}})"),
     (BACKGROUND_FILENAME, "Fondo portada (usado por {{BACKGROUND_PATH}})"),
     (PLAIN_LOGO_FILENAME, "Logo UNL original (referencia AA1, no usado por pipeline)"),
+    (APE_LOGO_FILENAME, "Logo facultad FEIRNNR (usado por {{APE_LOGO_PATH}} en ape-report.tex)"),
 ]
 
 
@@ -240,6 +265,8 @@ BIBLIOGRAPHY_TITLES = {
     "plain_report": "Referencias",
     "chamba_overleaf": "Referencias bibliográficas",
     "overleaf_chamba": "Referencias bibliográficas",
+    "ape": "Bibliografía / Referencias",
+    "ape_report": "Bibliografía / Referencias",
 }
 
 
@@ -253,6 +280,78 @@ def fold_heading(title: str) -> str:
 def is_bibliography_heading(title: str) -> bool:
     """True for the heading titles ``\\printbibliography`` already prints."""
     return fold_heading(title) in BIBLIOGRAPHY_HEADINGS
+
+
+# The APE identification table (section 1 of the teacher's document):
+# label|value rows generated from metadata, in the teacher's fixed order.
+# The heading itself is rendered by the template; body.md never authors it.
+APE_IDENTIFICATION_ROWS: tuple[tuple[str, str], ...] = (
+    ("Nombre del estudiante(s)", "student"),
+    ("Asignatura", "subject"),
+    ("Ciclo", "cycle"),
+    ("Unidad", "unit"),
+    ("Resultado de aprendizaje de la unidad", "learning_outcome"),
+    ("Práctica Nro.", "practice_number"),
+    ("Tipo", "practice_type"),
+    ("Título de la Práctica", "title"),
+    ("Nombre del Docente", "teacher"),
+    ("Fecha", "date"),
+    ("Horario", "schedule"),
+    ("Lugar", "place"),
+    ("Tiempo planificado en el Sílabo", "planned_time"),
+)
+
+
+def ape_identification_table(meta: dict) -> str:
+    """Render the teacher's 2-column identification table from metadata.
+
+    Every value is LaTeX-escaped, and internal line breaks are flattened: a
+    multi-line YAML value would otherwise break the `tabular` rows.
+    """
+    rows = "\n\\hline\n".join(
+        rf"{label} & {latex_escape(' '.join(str(meta.get(key) or '').split()))} \\"
+        for label, key in APE_IDENTIFICATION_ROWS
+    )
+    return "\n".join([
+        "\\begin{center}",
+        r"\renewcommand{\arraystretch}{1.35}",
+        r"\begin{tabular}{|>{\raggedright\arraybackslash}p{0.42\textwidth}"
+        r"|>{\raggedright\arraybackslash}p{0.50\textwidth}|}",
+        r"\hline",
+        rows,
+        r"\hline",
+        r"\end{tabular}",
+        r"\end{center}",
+    ])
+
+
+def ape_report_title(meta: dict) -> str:
+    """The APE document title: the teacher's fixed wording plus the practice
+    number. Escaped by the caller through the normal replacement table."""
+    practice_number = str(meta.get("practice_number") or "").strip()
+    title = "Reporte Técnico de Actividades Práctico-Experimentales"
+    return f"{title} Nro. {practice_number}" if practice_number else title
+
+
+def split_annexes_markdown(markdown_source: str) -> tuple[str, str | None]:
+    """Split body.md at its first top-level `Anexos` heading.
+
+    The APE template must render the annexes after the IEEE bibliography, so
+    everything from `# Anexos` onward is returned separately for
+    {{AFTER_BIBLIOGRAPHY}}. The heading itself travels WITH the annex chunk so
+    it renders (and keeps its section number) after the bibliography. When the
+    body declares no `# Anexos` heading, nothing splits and the whole body
+    renders as one piece -- the missing heading is the structure validator's
+    finding to report, not the renderer's.
+    """
+    lines = markdown_source.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(r"^(#)\s+(.+?)\s*$", line)
+        if match and fold_heading(match.group(2)) == ANNEXES_HEADING_FOLDED:
+            main = "\n".join(lines[:index]).strip()
+            annex = "\n".join(lines[index:]).strip()
+            return (f"{main}\n" if main else ""), (f"{annex}\n" if annex else None)
+    return markdown_source, None
 
 
 def markdown_to_latex(
@@ -637,6 +736,16 @@ COVER_SENTINELS = ("COVER_ACADEMIC_BOX", "COVER_TEACHER_BLOCK")
 # declared these markers -- render_tex() must never demand them there.
 UNL_TEMPLATE_KEYS = frozenset({"default", "unl", "unl_report"})
 
+# Only these template keys resolve to ape-report.tex, the teacher's Word
+# replica. On this template the fixed `# Anexos` section must render AFTER the
+# IEEE bibliography, so render_tex() splits body.md at that heading (see
+# split_annexes_markdown) and emits it through {{AFTER_BIBLIOGRAPHY}}.
+APE_TEMPLATE_KEYS = frozenset({"ape", "ape_report"})
+
+# The APE annexes heading: the last fixed section of the teacher's document.
+# Folded (accent/case-insensitive) so `# Anexos` and `# ANEXOS` both split.
+ANNEXES_HEADING_FOLDED = "anexos"
+
 # The titlepage environment, used to scope every sentinel match: a lookalike
 # sentinel string sitting in body content (e.g. inside a fenced code block,
 # which renders unescaped) must never be read as a real marker.
@@ -715,11 +824,20 @@ def render_tex(config: ReportConfig) -> str:
     # Opt-in only (issue #13): a report that never declares `table_styles:
     # {enabled: true}` keeps the exact legacy single-style table renderer.
     table_styles = TableStylesContext.from_config(config) if config.table_styles_enabled else None
-    body = markdown_to_latex(markdown_source, build_dir=build_dir, table_styles=table_styles)
+    # APE only (see APE_TEMPLATE_KEYS): the fixed `# Anexos` section renders
+    # after the IEEE bibliography, so it is split off the body before
+    # conversion. Other templates keep body.md whole.
+    main_source, annex_source = markdown_source, None
+    if template_key in APE_TEMPLATE_KEYS:
+        main_source, annex_source = split_annexes_markdown(markdown_source)
+    body = markdown_to_latex(main_source, build_dir=build_dir, table_styles=table_styles)
+    # Emission detection reads the MAIN body: the annex chunk follows the
+    # bibliography by construction, so its citations (if any) cannot decide
+    # whether the bibliography prints before them.
     emit_bibliography = r"\cite{" in body and config.bib_path is not None
     if emit_bibliography:
         body = markdown_to_latex(
-            markdown_source, suppress_bibliography_heading=True, build_dir=build_dir,
+            main_source, suppress_bibliography_heading=True, build_dir=build_dir,
             table_styles=table_styles,
         )
     # Figure detection runs against the Markdown source: once converted, images
@@ -803,6 +921,15 @@ def render_tex(config: ReportConfig) -> str:
             "",
         ])
         ai_signature_latex = signature_latex
+    # APE annexes land after the bibliography, BEFORE any after-bibliography
+    # declaration block: Anexos is the teacher's last fixed section, and the
+    # declaration is automation baggage that always goes last.
+    if annex_source is not None:
+        annex_body = markdown_to_latex(
+            annex_source, suppress_bibliography_heading=emit_bibliography,
+            build_dir=build_dir, table_styles=table_styles,
+        )
+        after_bibliography_latex = f"{annex_body}\n{after_bibliography_latex}".strip() + "\n"
     bib_file = config.bib_path.name if config.bib_path else ""
     replacements = {
         "{{TITLE}}": latex_escape(meta.get("title") or config.raw.get("title") or "Reporte académico"),
@@ -818,6 +945,10 @@ def render_tex(config: ReportConfig) -> str:
         "{{FACULTY}}": latex_escape(meta.get("faculty") or "Facultad de la Energía, las Industrias y los Recursos Naturales no Renovables"),
         "{{LOGO_PATH}}": latex_escape(LOGO_FILENAME),
         "{{BACKGROUND_PATH}}": latex_escape(BACKGROUND_FILENAME),
+        # APE-only machinery; harmless no-ops for every other template.
+        "{{APE_LOGO_PATH}}": latex_escape(APE_LOGO_FILENAME),
+        "{{APE_TITLE}}": latex_escape(ape_report_title(meta)),
+        "{{IDENTIFICATION_TABLE}}": ape_identification_table(meta),
         "{{BIB_FILE}}": latex_escape(bib_file),
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
@@ -1105,6 +1236,9 @@ def compile_latex(config: ReportConfig) -> None:
     background = ASSETS_DIR / BACKGROUND_FILENAME
     if background.exists():
         shutil.copy2(background, build_dir / background.name)
+    ape_logo = ASSETS_DIR / APE_LOGO_FILENAME
+    if ape_logo.exists():
+        shutil.copy2(ape_logo, build_dir / ape_logo.name)
     engine = shutil.which("latexmk")
     latex_engine = shutil.which("lualatex") or shutil.which("xelatex") or shutil.which("pdflatex")
     docker_engine = None if (engine or latex_engine) else shutil.which("docker")
