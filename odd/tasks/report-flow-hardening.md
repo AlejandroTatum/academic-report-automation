@@ -198,7 +198,8 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   cross-repo RDD `review-83eb9311a0c1c081` (user-authorized, 10 text files,
   medium, reliability lens) approved/burned + `validate_report.py` pass (one
   unrelated outputs/ clutter warning); validation.yml for PDF sha `b8d92a43...`.
-  Now at review (human PDF review). RDD advisories to triage: content-check.yml
+  Review: user OK 2026-09-29, final-review.yml bound to the same sha. Deliver:
+  `...-v002.pdf` published and hash-matched; doc_status `next: done`. RDD advisories to triage: content-check.yml
   lacks a guide hash binding, rubric checks not tied to criterion semantics,
   judge B misattributed one quote, factual claims (commit/branch counts) are not
   verified by any check, sources-verification warning unresolved.
