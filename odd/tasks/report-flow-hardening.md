@@ -148,6 +148,16 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   6 items); GREEN 1519 passed. Real-network smoke on the APE bib still 7/7 verified
   (Prana year warning). The worker reported "blocked, no changes" while it had in
   fact written the full change; the parent verified the tree directly.
+  Commit `8a14315`. RDD lineage `review-d1031b274fdc0a67`: approved, acknowledged/
+  burned. Advisory: registry-data errors reported as NETWORK_ERROR (should be
+  MISMATCH), minor readability.
+
+- After T7/T8: content check passes (13/13 rubric checks, the verbatim objective
+  now passes). A second independent-judge run on the SAME inputs marked
+  instrucciones-reproducibles `cumple`, while the first run had found a real gap
+  (LuaLaTeX/Biber missing from install steps). Judge verdicts are not stable.
+  Next cycle: turn that class of gap into a deterministic check, or keep the
+  stricter verdict of two judges per criterion.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
