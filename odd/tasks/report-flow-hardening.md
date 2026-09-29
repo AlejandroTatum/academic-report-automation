@@ -186,7 +186,11 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
 - T10: RED verified by the parent outside the repo (HEAD content_check.py in a
   scratch copy: 4 judge_brief tests fail); GREEN 1529 passed. Real APE brief now
   lists every rubric check as PASS plus the tolerance rules and the
-  no-re-judge instruction.
+  no-re-judge instruction. Commit `5edebcb`. RDD lineage
+  `review-f9f06d79554f3b45`: approved, acknowledged/burned (one resilience
+  capture refused for a wrong subject_hash echo, re-run cleanly). Advisory: test
+  block inserted mid-function, tolerance prose duplicates check semantics and
+  can drift from rubric_checks, body.md read twice (brief can race an edit).
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
