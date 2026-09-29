@@ -117,8 +117,46 @@ def judge_inputs(folder: Path, config: ReportConfig) -> list[str]:
     return inputs
 
 
+def _already_run_checks_section(folder: Path, criteria: list[dict], body_text: str) -> str:
+    """The deterministic rubric checks already run, with their tolerance rules.
+
+    report-flow-hardening T10: a judge once marked a criterion ``flojo`` over a
+    sentence-initial capital that ``verbatim_from_guide`` had already accepted,
+    re-judging a property the deterministic checks own. The brief therefore
+    lists every check's PASS/FAIL outcome over the exact body.md being judged
+    and states the tolerances plainly, so a PASS settles that property and the
+    judges spend their read-only pass on what the checks do not cover.
+    """
+    results = rubric_checks.run_checks(folder, criteria, body_text)
+    lines = ["Deterministic rubric checks already run on this exact body.md (tool-run, read-only):"]
+    if results:
+        lines.extend(
+            f"- {result.criterion_id} check {result.check_index} ({result.type}): "
+            f"{'PASS' if result.ok else 'FAIL'} - {result.detail}"
+            for result in results
+        )
+    else:
+        lines.append("- None: this rubric defines no deterministic checks.")
+    lines.append(
+        "Tolerance rules these checks apply: verbatim_from_guide normalizes whitespace and allows "
+        "only the first letter to differ in case (sentence-initial capitalization is allowed); "
+        "contains is case-insensitive; section headings match case- and accent-insensitively."
+    )
+    lines.append(
+        "Do not mark a criterion flojo or falta for a property a PASSING check above already "
+        "verifies (including differences covered by the tolerance rules); judge only what the "
+        "checks do not cover. A FAILING check may be cited as evidence."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def judge_brief(folder: Path) -> str:
-    """A self-contained, read-only assignment with hashes for the current draft."""
+    """A self-contained, read-only assignment with hashes for the current draft.
+
+    Carries the already-run deterministic rubric checks and their tolerance
+    rules (report-flow-hardening T10), so the judges never re-judge a property
+    a PASSing check has verified.
+    """
     folder = folder.resolve()
     if rubric_plan.rubric_state(folder) != "valid":
         raise ValueError("rubric.yml missing or malformed")
@@ -127,6 +165,8 @@ def judge_brief(folder: Path) -> str:
             raise ValueError(f"{name} missing or unreadable")
     config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     inputs = judge_inputs(folder, config)
+    criteria = rubric_plan.load_rubric(folder)
+    body_text = (folder / BODY_NAME).read_text(encoding="utf-8")
     schema = {
         "judge": {"role": "independent", "inputs": inputs},
         "body_sha256": sha256_file(folder / BODY_NAME),
@@ -139,7 +179,8 @@ def judge_brief(folder: Path) -> str:
             "do not use the drafting conversation or any other files. Do not edit any file.\n"
             "Two judges run independently; do not coordinate with another judge.\n"
             "Citations [@key] in body.md render in IEEE format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
-            "Allowed input paths (absolute):\n"
+            + _already_run_checks_section(folder, criteria, body_text)
+            + "Allowed input paths (absolute):\n"
             + "\n".join(str(folder / name) for name in inputs)
             + "\nReturn only judgments YAML using this schema. Judge every rubric criterion; "
               "allowed statuses: cumple|flojo|falta. Quote where locations.\n"

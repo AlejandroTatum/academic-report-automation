@@ -15,6 +15,7 @@ judge subagents in parallel with the same brief; they must not coordinate. Each 
 and return YAML with `judge`, `body_sha256`, `rubric_sha256`, `criteria` (one
 `id`, `status: cumple|flojo|falta`, `where`, `note` per rubric criterion), and
 optional `findings`. Save each YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; the drafting agent never writes judgments.
+The brief already carries the deterministic rubric checks run over the current `body.md` plus their tolerance rules; judges must not re-judge a property a check PASSes (a FAILing check may be cited as evidence).
 A stale marker means re-run the independent judges on the current inputs, not
 reuse old judgments. Then run:
 

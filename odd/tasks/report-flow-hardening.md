@@ -72,6 +72,12 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       criterion keeping the strictest status (falta > flojo > cumple), records both
       judges and any disagreement; verify.md launches two judges (user decision
       2026-09-29, closes the judge-variance gap).
+- [x] T10 Judge brief scope: `--judge-brief` lists the rubric checks already
+      run on the current body (criterion, type, pass/fail, detail) plus the
+      tolerance rules (verbatim: whitespace-normalized, first letter may differ
+      in case; contains/headings: case- and accent-insensitive) and tells judges
+      not to downgrade a criterion for a property a passing check verifies
+      (fixes the T9 E2E false positive).
 
 ## Evidence
 (commit ids recorded per task)
@@ -169,6 +175,18 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   Commit `4dbf1d3`. RDD lineage `review-b32871479c3c6bac`: approved, acknowledged/
   burned. Advisory: merge runs before full validation of both files, identical-
   bytes heuristic, len() on non-list judges in state, judge errors unattributed.
+
+- T9 E2E (2026-09-29): two judges disagreed on repositorio-organizado (flojo vs
+  cumple); strictest verdict blocked verify as designed. But judge A's reason
+  ("Preparar" capitalized) re-judged something the deterministic
+  `verbatim_from_guide` check already passed under the user's first-letter rule.
+  Fix: the judge brief must list the rubric checks already verified and the
+  tolerance rules, and tell judges not to re-judge them.
+
+- T10: RED verified by the parent outside the repo (HEAD content_check.py in a
+  scratch copy: 4 judge_brief tests fail); GREEN 1529 passed. Real APE brief now
+  lists every rubric check as PASS plus the tolerance rules and the
+  no-re-judge instruction.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.

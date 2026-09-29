@@ -157,6 +157,63 @@ def test_judge_brief_is_bound_and_read_only(tmp_path: Path, capsys: pytest.Captu
     assert "Do not edit" in brief and "where" in brief
     assert "[@key]" in brief and "IEEE" in brief and "sources.bib" in brief
     assert "not a formatting defect" in brief
+
+
+# ---------------------------------------------------------------------------
+# Judge brief: already-run rubric checks, tolerance rules, no-re-judge rule
+# ---------------------------------------------------------------------------
+
+
+def _checked_folder(folder: Path, *, checks: list[dict], body: str, guide: str) -> Path:
+    """A verify folder whose first criterion carries deterministic checks + guide."""
+    _report(folder)
+    _sources_bib(folder)
+    criteria = [dict(DEFAULT_RUBRIC_CRITERIA[0], checks=checks), dict(DEFAULT_RUBRIC_CRITERIA[1])]
+    _rubric(folder, criteria=criteria)
+    _body(folder, body)
+    (folder / "guia.txt").write_text(guide, encoding="utf-8")
+    (folder / "report.yml").write_text((folder / "report.yml").read_text() + "guide: guia.txt\n")
+    return folder
+
+
+def test_judge_brief_lists_passing_rubric_check(tmp_path: Path) -> None:
+    folder = _checked_folder(
+        tmp_path / "wf",
+        checks=[{"type": "verbatim_from_guide", "section": "Objetivos", "source": "guia.txt",
+                 "text": "preparar un informe de laboratorio"}],
+        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n\n## Metodologia\n\nMedimos dos veces.\n",
+        guide="La catedra pide: preparar un informe de laboratorio con formato IEEE.\n",
+    )
+    brief = content_check.judge_brief(folder)
+    assert "- objetivo check 1 (verbatim_from_guide): PASS - verbatim text in guide=True, section=True" in brief
+    assert brief == content_check.judge_brief(folder)  # deterministic for identical inputs
+
+
+def test_judge_brief_lists_failing_rubric_check(tmp_path: Path) -> None:
+    folder = _checked_folder(
+        tmp_path / "wf",
+        checks=[{"type": "contains", "section": "Objetivos", "text": "quantum tunneling result"}],
+        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n",
+        guide="irrelevant",
+    )
+    brief = content_check.judge_brief(folder)
+    assert "- objetivo check 1 (contains): FAIL - text 'quantum tunneling result' missing" in brief
+
+
+def test_judge_brief_states_tolerances_and_no_rejudge_rule(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    brief = content_check.judge_brief(folder)
+    assert "normalizes whitespace" in brief
+    assert "first letter" in brief and "sentence-initial" in brief
+    assert "contains is case-insensitive" in brief
+    assert "accent-insensitively" in brief
+    assert "a PASSING check" in brief and "flojo or falta" in brief
+    assert "judge only what the checks do not cover" in brief
+
+
+def test_judge_brief_states_when_rubric_has_no_checks(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    assert "no deterministic checks" in content_check.judge_brief(folder)
     assert not (folder / "content-check.yml").exists()
 
 
