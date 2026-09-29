@@ -197,9 +197,11 @@ def _phase_plan(folder: Path, _config: ReportConfig, _documents_root: Path | Non
     """
     state = rubric_plan.rubric_state(folder)
     if state == "valid":
-        count = len(rubric_plan.load_rubric(folder))
+        criteria = rubric_plan.load_rubric(folder)
+        count = len(criteria)
         noun = "criterion" if count == 1 else "criteria"
-        return PhaseState("plan", DONE, f"rubric.yml valid ({count} {noun})")
+        checked = rubric_plan.count_checked_criteria(criteria)
+        return PhaseState("plan", DONE, f"rubric.yml valid ({count} {noun}, {checked} with checks)")
     if state == "absent":
         return PhaseState("plan", PENDING, "rubric.yml missing")
     return PhaseState("plan", BLOCKED, "rubric.yml malformed", "rubric_malformed")

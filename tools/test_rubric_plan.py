@@ -135,6 +135,31 @@ def test_validate_rejects_non_positive_or_non_numeric_weight(weight: object) -> 
     assert rubric_plan.validate_rubric(data) != []
 
 
+@pytest.mark.parametrize("check", [
+    {"type": "unknown", "section": "Objetivos"},
+    {"type": "contains", "section": "Objetivos"},
+    {"type": "matches", "pattern": "["},
+    {"type": "ordered_list", "section": "Objetivos", "min_items": 0},
+    {"type": "min_citations", "count": True},
+    {"type": "figure_referenced", "count": -1},
+    {"type": "keywords_from_section", "section": "A", "from_section": "B", "min": 0},
+    {"type": "link_present", "pattern": "["},
+])
+def test_invalid_checks_are_schema_errors(check: dict) -> None:
+    data = {"schema": RUBRIC_SCHEMA, "source": "guide", "criteria": [
+        dict(DEFAULT_RUBRIC_CRITERIA[0], checks=[check])
+    ]}
+    assert rubric_plan.validate_rubric(data)
+
+
+def test_checked_criteria_count_and_semantic_backwards_compatibility() -> None:
+    criteria = [dict(DEFAULT_RUBRIC_CRITERIA[0], checks=[{"type": "heading_present", "section": "Objetivos"}]),
+                dict(DEFAULT_RUBRIC_CRITERIA[1])]
+    data = {"schema": RUBRIC_SCHEMA, "source": "guide", "criteria": criteria}
+    assert rubric_plan.validate_rubric(data) == []
+    assert rubric_plan.count_checked_criteria(criteria) == 1
+
+
 # ---------------------------------------------------------------------------
 # rubric_state and load_rubric: folder-level predicate, never raises
 # ---------------------------------------------------------------------------

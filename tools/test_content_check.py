@@ -105,6 +105,30 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def test_preplanned_checks_start_red_and_turn_green_without_editing_body_by_runner(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    criteria = [dict(DEFAULT_RUBRIC_CRITERIA[0], checks=[
+        {"type": "contains", "section": "Objetivos", "text": "learning outcome"}
+    ]), dict(DEFAULT_RUBRIC_CRITERIA[1])]
+    _rubric(folder, criteria=criteria)
+    assert not (folder / "body.md").exists()
+    _cited_body(folder)
+    before = (folder / "body.md").read_bytes()
+    assert _run(folder) == 1
+    marker = _marker(folder)
+    assert _mechanical(marker, "rubric_checks")["ok"] is False
+    assert "objetivo" in _mechanical(marker, "rubric_checks")["detail"]
+    assert "cumple" in _mechanical(marker, "rubric_checks")["detail"]
+    assert marker["rubric_check_results"][0]["ok"] is False
+    assert (folder / "body.md").read_bytes() == before
+    _body(folder, DEFAULT_CITED_BODY + "\n# Objetivos\n\nLearning outcome.\n")
+    assert _run(folder) == 0
+    assert _mechanical(_marker(folder), "rubric_checks")["ok"] is True
+    assert _marker(folder)["rubric_check_results"][0]["ok"] is True
+
+
 def test_pass_case_binds_the_current_rubric_and_bib(tmp_path: Path) -> None:
     """new-report-flow T5: the marker records rubric_sha256 and bib_sha256."""
     folder = _verify_folder(tmp_path / "wf")

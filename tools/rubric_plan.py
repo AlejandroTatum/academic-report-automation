@@ -34,6 +34,51 @@ def _is_text(value: object) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
+CHECK_PARAMS = {
+    "heading_present": (("section",), ()),
+    "contains": (("text",), ("section",)),
+    "matches": (("pattern",), ("section",)),
+    "verbatim_from_guide": (("section", "source", "text"), ()),
+    "ordered_list": (("section",), ("min_items",)),
+    "min_citations": (("count",), ("section",)),
+    "figure_referenced": ((), ("section", "count")),
+    "link_present": ((), ("section", "pattern")),
+    "keywords_from_section": (("section", "from_section"), ("min",)),
+}
+
+
+def count_checked_criteria(criteria: list[dict]) -> int:
+    """Count criteria that carry at least one deterministic check."""
+    return sum(bool(c.get("checks")) for c in criteria)
+
+
+def _check_errors(check: object, label: str) -> list[str]:
+    if not isinstance(check, dict):
+        return [f"{label} must be a mapping"]
+    kind = check.get("type")
+    if kind not in CHECK_PARAMS:
+        return [f"{label} unknown type '{kind}'"]
+    required, optional = CHECK_PARAMS[kind]
+    errors = []
+    for key in required:
+        if not _is_text(check.get(key)):
+            errors.append(f"{label} {key} must be a non-empty string")
+    for key in ("section", "source", "text", "from_section", "pattern"):
+        if key in check and not _is_text(check[key]):
+            errors.append(f"{label} {key} must be a non-empty string")
+    for key in ("count", "min_items", "min"):
+        if key in check and (type(check[key]) is not int or check[key] <= 0):
+            errors.append(f"{label} {key} must be a positive integer")
+    for key in check.keys() - {"type", *required, *optional}:
+        errors.append(f"{label} unexpected parameter '{key}'")
+    if kind in ("matches", "link_present") and isinstance(check.get("pattern"), str):
+        try:
+            re.compile(check["pattern"])
+        except re.error as exc:
+            errors.append(f"{label} invalid regex: {exc}")
+    return errors
+
+
 def validate_rubric(data: object) -> list[str]:
     """Return the schema errors of a parsed ``rubric.yml`` (empty = valid)."""
     if not isinstance(data, dict):
@@ -72,6 +117,13 @@ def validate_rubric(data: object) -> list[str]:
                 errors.append(f"{RUBRIC_NAME} criterion {index} weight must be a number greater than 0")
             elif weight <= 0:
                 errors.append(f"{RUBRIC_NAME} criterion {index} weight must be greater than 0")
+        if "checks" in criterion:
+            checks = criterion["checks"]
+            if not isinstance(checks, list):
+                errors.append(f"{RUBRIC_NAME} criterion {index} checks must be a list")
+            else:
+                for check_index, check in enumerate(checks, start=1):
+                    errors.extend(_check_errors(check, f"criterion {index} check {check_index}"))
     return errors
 
 

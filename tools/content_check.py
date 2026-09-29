@@ -45,6 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import rubric_plan
+import rubric_checks
 import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
@@ -286,7 +287,17 @@ def run_check(
         # an empty mapping, so the bib default (sources.bib) still applies.
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
 
-    checks = mechanical_checks(body_text, _read_bib(config), rubric_plan.load_rubric(folder), judgments)
+    criteria = rubric_plan.load_rubric(folder)
+    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments)
+    rubric_results = [vars(item) for item in rubric_checks.run_checks(folder, criteria, body_text)]
+    failed = [item for item in rubric_results if not item["ok"]]
+    statuses = {item["id"]: item["status"] for item in judgments}
+    detail = "; ".join(
+        f"{item['criterion_id']} check {item['check_index']} ({item['type']}): {item['detail']}"
+        + (" (judged cumple despite failing check)" if statuses.get(item["criterion_id"]) == "cumple" else "")
+        for item in failed
+    ) or f"all {len(rubric_results)} rubric checks pass"
+    checks.append({"check": "rubric_checks", "ok": not failed, "detail": detail})
     mechanical_ok = all(check["ok"] for check in checks)
     criteria_ok = all(judgment["status"] == "cumple" for judgment in judgments)
     marker = {
@@ -301,6 +312,7 @@ def run_check(
         "findings": list(findings)
         + [f"{check['check']}: {check['detail']}" for check in checks if not check["ok"]],
         "mechanical": checks,
+        "rubric_check_results": rubric_results,
         "result": "pass" if mechanical_ok and criteria_ok else "fail",
     }
     _write_marker_atomically(
@@ -374,6 +386,21 @@ def content_check_state(report_dir: Path) -> str:
     mechanical_ok = all(
         isinstance(entry, dict) and entry.get("ok") is True for entry in data["mechanical"]
     )
+    planned = rubric_plan.load_rubric(folder)
+    if rubric_plan.count_checked_criteria(planned):
+        recorded = data.get("rubric_check_results")
+        expected = [(c["id"], index, check["type"])
+                    for c in planned for index, check in enumerate(c.get("checks", []), start=1)]
+        if not isinstance(recorded, list) or [
+            (item.get("criterion_id"), item.get("check_index"), item.get("type"))
+            for item in recorded if isinstance(item, dict)
+        ] != expected or len(recorded) != len(expected) or any(
+            not isinstance(item, dict) or item.get("ok") is not True for item in recorded
+        ) or not any(
+            isinstance(entry, dict) and entry.get("check") == "rubric_checks" and entry.get("ok") is True
+            for entry in data["mechanical"]
+        ):
+            mechanical_ok = False
     recorded_ids = [str(record.get("id")) for record in criteria if isinstance(record, dict)]
     current_ids = [str(criterion.get("id")) for criterion in rubric_plan.load_rubric(folder)]
     ids_match = len(recorded_ids) == len(current_ids) and set(recorded_ids) == set(current_ids)
