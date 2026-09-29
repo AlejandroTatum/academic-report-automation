@@ -17,6 +17,14 @@ marker is never inferred; a decline writes nothing. A rebuilt PDF stales the mar
 and returns the route to `review` as `pending`: the current build must be reviewed
 again. Delivery runs only after this gate is `done`.
 
+## PDF handoff
+
+Present the current PDF with a short copy-paste fish command, two lines each
+under 90 characters: `set d ~/<folder relative to $HOME>` then
+`brave $d/<slug prefix>*.pdf`. Never send screenshots; the user reviews the
+PDF itself. If the folder path is too long, choose a shorter home-relative
+location rather than wrapping or truncating a command.
+
 ## Steps
 
 1. Point the user to the exact final PDF (`report.yml`'s `pdf:` path) and state that

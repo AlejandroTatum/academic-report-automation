@@ -8,9 +8,11 @@ the phase itself.
 
 ## Contract
 
-Ask the user exactly one question: APE, AA or libre. Record the answer as `format:`
-in `report.yml` together with that format's required metadata. Never invent the
-answer, and never split the one question into several.
+Ask one question for format selection through `ask_user_choice` with APE, AA and libre as
+suggested options, putting `format_hint:` (if present) first. The hint is not a
+choice: wait for the user's answer before recording `format:`. Ask every remaining
+metadata gap through `ask_user_choice` with suggested options, never free text.
+Record confirmed answers in `report.yml`; do not invent missing values.
 
 - `ape` - the practical-experimental technical report, a LaTeX replica of the
   teacher's DOCX. Its sections are fixed: Objetivo(s), Materiales, Procedimiento
@@ -19,6 +21,8 @@ answer, and never split the one question into several.
   the identification fields it prints (cycle, unit, learning outcome, practice
   number, practice type, schedule, place, planned time) from the teacher's guide
   recorded at intake, and ask the user only to confirm them or fill the gaps.
+  Decide group work here: when `practice_type` is Grupal, confirm the members
+  here and record `metadata.members`.
 - `aa` - the UNL academic template (`unl-report.tex`), its current look unchanged.
 - `libre` - the user's own specification: wait for it and record it as
   `format_spec:` in `report.yml`; the plain template applies by default.
@@ -32,7 +36,7 @@ did not pick.
 
 ## Steps
 
-1. Ask the one question: APE, AA or libre.
+1. Ask the format question with `ask_user_choice`: APE, AA or libre (hint first).
 2. For `ape`, extract the identification fields from the teacher's guide and confirm
    or fill the gaps with the user; for `libre`, collect `format_spec:` verbatim.
 3. Write `format:` and the chosen format's required metadata into
@@ -41,6 +45,7 @@ did not pick.
 
 ## Never
 
-- Do not ask a second formatting question: the one question is the whole contract.
+- Do not ask a second format-selection question; metadata gaps are separate
+  `ask_user_choice` prompts with suggested options.
 - Do not fill identification fields on the user's behalf, and do not invent metadata
   the teacher's guide does not supply.

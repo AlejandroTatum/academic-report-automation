@@ -562,7 +562,8 @@ def test_verify_reference_reports_findings_and_never_rewrites() -> None:
 def test_format_reference_is_one_question_with_the_ape_sections() -> None:
     """T6 rule 7: one question, per-format metadata, and the fixed APE sections."""
     flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "format.md")).lower()
-    assert "one question" in flat, "format.md must ask exactly one question"
+    assert "one question for format selection" in flat
+    assert "ask_user_choice" in flat
     for token in ("ape", "aa", "libre", "ieee", "format_spec"):
         assert token in flat, f"format.md must name `{token}`"
     for section in (
@@ -579,6 +580,14 @@ def test_format_reference_is_one_question_with_the_ape_sections() -> None:
     assert "bibliografía" in flat or "referencias" in flat
     assert "identification" in flat, "format.md must name the APE identification fields"
     assert "teacher's guide" in flat, "format.md must extract identification fields from the guide"
+
+
+def test_guide_driven_intake_and_pdf_handoff() -> None:
+    intake = read(SKILL_ROOT / "references" / "intake.md").lower()
+    review = read(SKILL_ROOT / "references" / "review.md").lower()
+    assert "alejandro padilla" in intake and "ask_user_choice" in intake
+    assert "format_hint:" in intake and "guide_facts.py" in intake
+    assert "brave $d/" in review and "never send screenshots" in review
 
 
 def test_review_reference_gates_delivery_on_an_explicit_pdf_ok() -> None:

@@ -46,6 +46,13 @@ the deliver entrypoint (`tools/deliver_report.py`, see `references/deliver.md`) 
 the only publication route, and approval state is derived by
 `tools/doc_status.py` and re-checked by the publisher.
 
+## PDF handoff
+
+When presenting the generated PDF, give the user a short two-line fish command
+(each line under 90 characters), using a home-relative folder and a short slug
+glob: `set d ~/<folder relative to $HOME>` then `brave $d/<slug prefix>*.pdf`.
+Never send screenshots in place of the PDF.
+
 ## Steps
 
 1. Read the routed `doc_status` block and the format recorded in `report.yml` for

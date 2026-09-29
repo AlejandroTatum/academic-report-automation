@@ -35,10 +35,10 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       section, minimum cited sources, figure referenced, link present, keywords
       from the objective in a section); runner; content check fails on any red
       check; `plan` reports how many criteria have checks.
-- [ ] T2 Independent judge: judgments file requires `judge` and `body_sha256`;
+- [x] T2 Independent judge: judgments file requires `judge` and `body_sha256`;
       mismatch or drafter-authored judgments rejected; skill verify.md launches a
       read-only judge with only rubric, body, sources, guide.
-- [ ] T3 Friction (P1): default student Alejandro Padilla; intake detects the
+- [x] T3 Friction (P1): default student Alejandro Padilla; intake detects the
       document family from the guide (APE) and the practice number from "Semana N";
       format question and missing metadata through `ask_user_choice`; group work
       decided at format; documents shared as short `brave` commands, never
@@ -63,3 +63,15 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   `review-585ecb610a36931c`: correction validated, approved, acknowledged/burned.
   Advisory, taken into T5: fragile section parser in `rubric_checks.py`, unknown
   check type not caught at run time, state gate not proved end to end.
+- T2: RED verified by the parent (implementation stashed: 2 new tests fail); GREEN
+  `pytest tools/ tests/ -q` 1446 passed. Judgments need `judge.role: independent`,
+  allowed `inputs`, and `body_sha256`/`rubric_sha256` of the current files;
+  `content_check.py --judge-brief` prints the judge's bounded brief.
+  Commit `fdfadbd`. RDD lineage `review-644eb267eabc3055`: approved, acknowledged/
+  burned. Advisory, taken into T5: guide path not confined to the report folder;
+  judge-input resolution differs between brief and validation; misleading errors
+  after a parse failure; unguarded rubric hash; pre-T2 markers become malformed.
+- T3: RED `guide_facts` missing + handoff quoting failure; GREEN `pytest tools/ tests/ -q`
+  1456 passed. On the real APE guide `guide_facts.py` returns family ape, practice 1,
+  Individual, 3 horas. Optional `format_hint:`; guidance uses ask_user_choice and a
+  two-line `brave` command.

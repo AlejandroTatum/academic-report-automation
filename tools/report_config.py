@@ -230,6 +230,8 @@ def unknown_route_message(route: str) -> str:
 # an unrecognised route: nothing may fall back silently to a look the user did
 # not pick.
 FORMAT_KEY = "format"
+FORMAT_HINT_KEY = "format_hint"
+DEFAULT_STUDENT = "Alejandro Padilla"
 
 # Metadata report.yml must carry, per chosen format. `aa` demands exactly what
 # the academic route already demands; `ape` extends it with the identification
@@ -373,6 +375,15 @@ class ReportConfig:
     @property
     def format_is_known(self) -> bool:
         return self.format in FORMAT_REQUIRED_METADATA
+
+    @property
+    def format_hint(self) -> str | None:
+        written = str(self.raw.get(FORMAT_HINT_KEY) or "").strip().lower()
+        return written or None
+
+    @property
+    def format_hint_is_known(self) -> bool:
+        return self.format_hint in FORMAT_REQUIRED_METADATA
 
     @property
     def format_spec(self) -> str:
@@ -752,6 +763,8 @@ def load_report_config(folder: Path) -> ReportConfig:
         raise SystemExit(unknown_route_message(config.route))
     if FORMAT_KEY in raw and not config.format_is_known:
         raise SystemExit(unknown_format_message(config.format or ""))
+    if FORMAT_HINT_KEY in raw and not config.format_hint_is_known:
+        raise SystemExit(unknown_format_message(config.format_hint or "").replace("'format'", "'format_hint'"))
 
     declares_final_pdf = any(key in raw for key in ("pdf", "output_pdf"))
     if declares_final_pdf and targets_local_outputs(config):

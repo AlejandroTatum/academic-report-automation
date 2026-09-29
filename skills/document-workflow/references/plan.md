@@ -16,6 +16,11 @@ check judges one criterion at a time. A rubric item with no section that could
 satisfy it is a gap to raise with the user, never a criterion to drop, merge, or
 invent.
 
+When `report.yml` records `format_hint: ape`, map criteria to the APE fixed
+sections (Objetivo(s), Materiales, Procedimiento, Resultados, Preguntas de
+Control, Conclusiones, Recomendaciones, Bibliografía/Referencias, Anexos).
+The hint guides planning only: it does not choose the final format for the user.
+
 Validate the shape before drafting:
 `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/rubric_plan.py"
 "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`. A malformed rubric blocks the route

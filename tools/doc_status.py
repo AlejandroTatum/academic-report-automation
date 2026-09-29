@@ -33,8 +33,9 @@ from pathlib import Path
 import content_check
 import final_review_marker
 import rubric_plan
+from guide_facts import load_guide_facts
 from approval_marker import approval_state, bound_file_names, sha256_file
-from report_config import ROOT, ReportConfig, is_placeholder_value, read_yaml
+from report_config import ROOT, DEFAULT_STUDENT, ReportConfig, is_placeholder_value, read_yaml
 from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
 from source_count import source_gate
 from structure_contract import structure_confirmation_state, structure_gate_engaged
@@ -80,8 +81,9 @@ _GUIDANCE = {
         "<judgments-file>, then re-run doc_status"
     ),
     "format": (
-        "ask the user the single question: APE, AA or libre, record the answer "
-        "and its required metadata in {report_yml}, then re-run doc_status"
+        "use ask_user_choice for APE, AA or libre and each remaining metadata gap "
+        "with suggested options (never free text); decide group work and members here; "
+        "record the answer in {report_yml}, then re-run doc_status"
     ),
     "generate": "build with {build_command}, then re-run doc_status",
     "validate": "record {validation} for the final PDF, then re-run doc_status",
@@ -140,6 +142,8 @@ def _phase_intake(folder: Path, config: ReportConfig, _documents_root: Path | No
         return PhaseState(
             "intake", BLOCKED, f"format={config.format} not recognized", "unknown_format"
         )
+    if config.format_hint is not None and not config.format_hint_is_known:
+        return PhaseState("intake", BLOCKED, f"format_hint={config.format_hint} not recognized", "unknown_format_hint")
     missing = [key for key in ("title", "student") if not config.metadata.get(key)]
     if missing:
         return PhaseState("intake", PENDING, f"missing metadata: {', '.join(missing)}")
@@ -507,6 +511,35 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     folder = Path(work_folder)
     if config is None:
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    if phase_name == "intake" and not config.metadata.get("student"):
+        template += (
+            f"; suggest {DEFAULT_STUDENT} as the default student and confirm "
+            "with the user through a single-choice prompt (do not auto-fill)"
+        )
+    if phase_name == "format":
+        facts = load_guide_facts(folder, config)
+        family = facts.get("family") or config.format_hint
+        if family:
+            template += f"; guide suggests {family} (confirm the format)"
+        known = {key: facts[key] for key in ("practice_number", "practice_type", "planned_time") if key in facts}
+        if known:
+            template += "; guide already states " + ", ".join(f"{key}={value}" for key, value in known.items())
+        if config.format == "ape" or (not config.format and family == "ape"):
+            missing = [key for key in config.format_required_metadata if not config.metadata.get(key) or is_placeholder_value(config.metadata.get(key))] if config.format == "ape" else [key for key in ("cycle", "unit", "learning_outcome", "practice_number", "practice_type", "schedule", "place", "planned_time") if not config.metadata.get(key)]
+            gaps = [key for key in missing if key not in known]
+            if gaps:
+                template += "; remaining gaps: " + ", ".join(gaps)
+    if phase_name in ("generate", "review"):
+        pdf = config.pdf_path
+        try:
+            relative = pdf.parent.resolve().relative_to(Path.home().resolve())
+            directory = "~/" + str(relative)
+            prefix = pdf.stem[:12]
+            command = f"set d {directory.replace(' ', chr(92) + ' ')}\nbrave $d/{prefix}*.pdf"
+            if all(len(line) < 90 for line in command.splitlines()):
+                template += "; present PDF to the user (never screenshots):\n" + command
+        except ValueError:
+            pass
     return template.format(
         folder=folder,
         report_yml=folder / "report.yml",

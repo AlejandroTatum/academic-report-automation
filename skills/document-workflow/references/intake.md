@@ -17,15 +17,20 @@ actually reads; the full shape and its semantics live in
 The content-first route asks for the minimum only:
 
 - `metadata.title` and `metadata.student` - the identity this phase is done on;
+  suggest the default student Alejandro Padilla through ask_user_choice as a
+  single-choice confirmation, but never auto-fill without the user's answer;
 - the teacher's guide and rubric material, plus any teacher explanation, kept as
-  inputs for the `plan` phase;
+  inputs for the `plan` phase; record the folder-relative `guide:` path in
+  `report.yml`, run `tools/guide_facts.py <folder>` and, when it detects a family,
+  record `format_hint: ape` or `format_hint: aa` for planning (not `format:`);
 - top-level `route:` (document type), resolved with the user, never inferred;
-- `metadata.date`, `metadata.members` for a group roster, and the optional record
+- `metadata.date` and the optional record
   keys `metadata.audience`, `metadata.purpose`, `metadata.visual_direction`,
   top-level `template:`, `cover:`, and `output:` - fill them from supplied material
   when it names them, and never interrogate the user for them here.
 
-Intake never asks formatting questions: template, identity tables, cover, output
+Group work (`metadata.practice_type: Grupal` and `metadata.members`) is decided
+at format, not intake. Intake never asks formatting questions: template, identity tables, cover, output
 look, and the document format (APE, AA or libre) are decided at the `format` phase,
 after the content is approved. `metadata.subject` and `metadata.teacher` are
 recorded when the guide names them; the `format` phase completes whatever its

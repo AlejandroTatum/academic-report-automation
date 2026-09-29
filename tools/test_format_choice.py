@@ -130,6 +130,14 @@ def test_format_is_case_insensitive_and_trimmed(tmp_path, written, expected):
     assert config.format_is_known is True
 
 
+def test_optional_format_hint_is_validated_without_choosing_format(tmp_path):
+    config = ReportConfig(tmp_path, {"format_hint": "APE"})
+    assert config.format is None
+    assert config.format_hint == "ape"
+    assert config.format_hint_is_known
+    assert not ReportConfig(tmp_path, {"format_hint": "unknown"}).format_hint_is_known
+
+
 def test_unknown_format_fails_loudly_on_load(tmp_path):
     """A typo must not silently pick a format, like an unknown route."""
     folder = tmp_path / "r"
