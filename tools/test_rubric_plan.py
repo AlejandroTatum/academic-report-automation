@@ -152,6 +152,19 @@ def test_invalid_checks_are_schema_errors(check: dict) -> None:
     assert rubric_plan.validate_rubric(data)
 
 
+@pytest.mark.parametrize("check", [
+    {"type": "min_citations", "count": 5},
+    {"type": "min_citations", "count": 2, "section": "Resultados"},
+    {"type": "ordered_list", "section": "Procedimiento", "min_items": 3},
+    {"type": "keywords_from_section", "section": "C", "from_section": "O", "min": 2},
+])
+def test_well_formed_numeric_checks_validate(check: dict) -> None:
+    data = {"schema": RUBRIC_SCHEMA, "source": "guide", "criteria": [
+        dict(DEFAULT_RUBRIC_CRITERIA[0], checks=[check])
+    ]}
+    assert rubric_plan.validate_rubric(data) == []
+
+
 def test_checked_criteria_count_and_semantic_backwards_compatibility() -> None:
     criteria = [dict(DEFAULT_RUBRIC_CRITERIA[0], checks=[{"type": "heading_present", "section": "Objetivos"}]),
                 dict(DEFAULT_RUBRIC_CRITERIA[1])]

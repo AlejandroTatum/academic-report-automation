@@ -47,6 +47,11 @@ CHECK_PARAMS = {
 }
 
 
+# Numeric parameters: presence is checked with the required keys, the value by
+# the positive-integer rule below.
+_INT_KEYS = ("count", "min_items", "min")
+
+
 def count_checked_criteria(criteria: list[dict]) -> int:
     """Count criteria that carry at least one deterministic check."""
     return sum(bool(c.get("checks")) for c in criteria)
@@ -61,12 +66,15 @@ def _check_errors(check: object, label: str) -> list[str]:
     required, optional = CHECK_PARAMS[kind]
     errors = []
     for key in required:
-        if not _is_text(check.get(key)):
+        if key in _INT_KEYS:
+            if key not in check:
+                errors.append(f"{label} {key} is required")
+        elif not _is_text(check.get(key)):
             errors.append(f"{label} {key} must be a non-empty string")
     for key in ("section", "source", "text", "from_section", "pattern"):
         if key in check and not _is_text(check[key]):
             errors.append(f"{label} {key} must be a non-empty string")
-    for key in ("count", "min_items", "min"):
+    for key in _INT_KEYS:
         if key in check and (type(check[key]) is not int or check[key] <= 0):
             errors.append(f"{label} {key} must be a positive integer")
     for key in check.keys() - {"type", *required, *optional}:
