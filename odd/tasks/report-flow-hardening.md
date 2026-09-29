@@ -311,20 +311,33 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   acknowledged/burned by the parent (2026-09-29). Advisory R3-001 is
   informational only; no correction was offered or required. The
   source/tests/prose files are unchanged after review; this completion note is
-  passive bookkeeping. Implementation closed by work-unit commit (SHA recorded
-  below). Rollback boundary: reverse only the T14 changes in
+  passive bookkeeping. Implementation closed by work-unit commit `8ad1a9a`
+  (8ad1a9ade9d55440088ba23df921d3eb98ae4f40) on `feat/report-flow-hardening`.
+  Rollback boundary: reverse only the T14 changes in
   `tools/content_check.py`, `tools/test_content_check.py`, and
   `skills/document-workflow/references/verify.md`; unrelated T12/T13 remain intact.
 - A different-guide E2E remains a future cycle, outside these T1-T14 tasks.
+- Final status (2026-09-29): ALL tasks T1-T14 are complete. T14 was the last
+  task; its work-unit commit is `8ad1a9a`
+  (8ad1a9ade9d55440088ba23df921d3eb98ae4f40) and this entry is the closing
+  passive, doc-only evidence note. No known failing or pending checks exist for
+  the T tasks; the full suite last ran green at 1558 tests with zero skips.
+  Push, PR, and merge remain unauthorized and were not performed. A
+  different-guide E2E and any report publishing flow are separate future work,
+  outside this feature's tasks. This bookkeeping does not start a new native
+  review.
 
 ## Out of scope (user decision, report data not tooling)
 - Factual claims in body.md (commit/branch counts) are not checkable without
   access to the student's repository.
 - Prana year warning in research/sources-verification.yml.
 
-## Follow-ups (next cycle, from T5b advisories)
-- Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
-- `verify_sources.py`: empty bib must not pass vacuously; malformed registry JSON
-  must not abort the run; DOI given as URL; author compare false mismatch; retry
-  on HTTP 429.
-- `guide_facts` conflicts contract documented; moving-argument URL proof test.
+## Historical follow-ups from T5b advisories (completed — not open work)
+- DONE in T8 — fish quoting: backslashes inside single quotes, quoted directory
+  in `set d`.
+- DONE in T8/T12 — `verify_sources.py`: empty bib no longer passes vacuously;
+  malformed registry JSON does not abort; DOI given as URL normalized; author
+  compare accent/particle tolerant; retry on HTTP 429; registry-data errors
+  report MISMATCH (T12).
+- DONE in T13 — `guide_facts` conflicts contract documented; moving-argument
+  URL proof test compiles a real PDF offline.
