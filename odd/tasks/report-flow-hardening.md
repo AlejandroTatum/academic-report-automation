@@ -63,7 +63,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       mechanical-set rule (stale, not malformed) with correct Gate text; judge
       brief explains `[@key]` renders as IEEE at build; `verbatim_from_guide`
       tolerates only a first-letter case difference (user decision 2026-09-29).
-- [ ] T8 Advisory fixes (sources and handoff): empty bib never passes; malformed
+- [x] T8 Advisory fixes (sources and handoff): empty bib never passes; malformed
       registry JSON does not abort; DOI given as URL normalized; author compare
       accent/particle tolerant; one retry on HTTP 429; fish quoting escapes
       backslashes and quotes the directory.
@@ -144,6 +144,10 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   new code `stale`) and added it as a regression test. GREEN 1513 passed.
   Commit `604627b`. RDD lineage `review-9597b0e2bb0bb6e1`: approved, acknowledged/
   burned.
+- T8: RED verified by the parent (implementation stashed: 8 tests fail across the
+  6 items); GREEN 1519 passed. Real-network smoke on the APE bib still 7/7 verified
+  (Prana year warning). The worker reported "blocked, no changes" while it had in
+  fact written the full change; the parent verified the tree directly.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
