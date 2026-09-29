@@ -88,7 +88,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       report MISMATCH, not NETWORK_ERROR.
 - [x] T13 guide_facts conflicts contract documented in its reference; proof test
       that a URL inside a moving argument (heading/caption) builds.
-- [ ] T14 Judge quote check: every single-quoted fragment in a judge `where` must
+- [x] T14 Judge quote check: every single-quoted fragment in a judge `where` must
       appear in body.md (whitespace-normalized); a missing fragment is a warning
       naming the judge and criterion, never a block.
 
@@ -285,8 +285,37 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   intake-reference and link-test additions. RDD lineage
   `review-12df821d0eb6e608`: native review approved, acknowledged/burned by the
   parent; no new native review run. Advisories informational; none blocking.
-  Implementation verified and closed by work-unit commit (SHA recorded below).
-- T14 and the next E2E remain pending.
+  Implementation verified and closed by work-unit commit `8cdb8e2`
+  (8cdb8e20b1ac4ae416d2e5b7612e699ffe406d89).
+- T14 in progress: a missing single-quoted fragment in a judge's `where`
+  emits a warning naming that judge's file and criterion; body containment is
+  case-sensitive and whitespace-normalized, never a new blocking check.
+  Route: delegated writer (source, tests and verify-reference; multi-file).
+  Allowed surfaces: `tools/content_check.py`, `tools/test_content_check.py`,
+  `skills/document-workflow/references/verify.md`. Forecast: about 100-160
+  authored diff lines. Check-first: missing quote warnings RED, then GREEN;
+  preserve pass/state/exit code, both-judge attribution before merge, matching
+  and unquoted evidence, whitespace variants, ordinary apostrophes. Run
+  focused content-check tests, full suite, independent spot check as assessed,
+  native review and work-unit commit. Rollback only T14 source/tests/prose.
+- T14 functional evidence: observed RED 5 failures / 93 passes before any
+  production edit; GREEN 98 focused tests and 1558 full-suite tests, zero
+  skips, `git diff --check` clean. Independent verifier repeated 98 focused
+  passes, diff clean. Warnings preserve both judge-file identities and
+  criterion IDs before strictest merge; pass remains pass, semantic failure
+  remains fail, ordinary/quoted apostrophes and normalized whitespace tested.
+  Actual source/tests/prose diff: 166 authored lines (forecast 100-160).
+  Native assessment high (`process_boundary`).
+  RDD lineage `review-8b9d14e4194b8aca`: all four lenses approved against the
+  reviewed work-unit tree `6fe7cffbb0047ecc402c208c182884990362bf76`;
+  acknowledged/burned by the parent (2026-09-29). Advisory R3-001 is
+  informational only; no correction was offered or required. The
+  source/tests/prose files are unchanged after review; this completion note is
+  passive bookkeeping. Implementation closed by work-unit commit (SHA recorded
+  below). Rollback boundary: reverse only the T14 changes in
+  `tools/content_check.py`, `tools/test_content_check.py`, and
+  `skills/document-workflow/references/verify.md`; unrelated T12/T13 remain intact.
+- A different-guide E2E remains a future cycle, outside these T1-T14 tasks.
 
 ## Out of scope (user decision, report data not tooling)
 - Factual claims in body.md (commit/branch counts) are not checkable without

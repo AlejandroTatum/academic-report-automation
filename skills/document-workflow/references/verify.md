@@ -28,6 +28,13 @@ eligible book or paper sources are actually cited), derives the verdict itself, 
 writes `content-check.yml` bound to `body.md`, `rubric.yml`, and the bib by hash
 (plus the guide by hash when the report declares one).
 The strictest verdict wins per criterion (`falta` > `flojo` > `cumple`).
+Single-quoted fragments in a judge's `where` are advisory evidence: a quoted
+fragment that does not appear in the current `body.md` (whitespace-normalized,
+case-sensitive) becomes a `quote warning` finding naming the judgments file and
+criterion id. It never blocks: statuses, the verdict, and the exit code are
+unchanged, and ordinary apostrophes (`don't`, `student's`) are not treated as
+quoted passages. A quote warning is fixed like any finding: the user decides
+whether the judge misquoted or the body is missing the evidence.
 
 The check only REPORTS findings: per-criterion cumple/flojo/falta with where,
 citation problems, the cited-source count, confusing paragraphs, and figures that

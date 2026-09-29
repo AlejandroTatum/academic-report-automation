@@ -1054,3 +1054,122 @@ def test_non_list_judges_with_foreign_schema_is_malformed_not_a_crash(tmp_path: 
     _content_check(folder, judges=7, schema="academic.content-check/v2")
 
     assert content_check.content_check_state(folder) == "malformed"
+
+
+# ---------------------------------------------------------------------------
+# report-flow-hardening T14: a judge's single-quoted ``where`` fragments are
+# advisory evidence; a fragment missing from body.md warns, never blocks.
+# ---------------------------------------------------------------------------
+
+
+def _quote_warnings(folder: Path) -> list[str]:
+    return [f for f in _marker(folder)["findings"] if f.startswith("quote warning")]
+
+
+def test_missing_quoted_fragment_warns_and_never_blocks(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    body_before = (folder / "body.md").read_bytes()
+    first = _judgments(folder, name="a.yml", criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "seccion 'Instalacion de LuaLaTeX' del cuerpo", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+    ])
+
+    assert _run(folder, first) == 0
+
+    marker = _marker(folder)
+    assert marker["result"] == "pass"
+    assert content_check.content_check_state(folder) == "pass"
+    assert (folder / "body.md").read_bytes() == body_before
+    assert _quote_warnings(folder) == [
+        "quote warning: a.yml: criterion 'objetivo': "
+        "quoted fragment not found in body.md: 'Instalacion de LuaLaTeX'"
+    ]
+    assert [c["status"] for c in marker["criteria"]] == ["cumple", "cumple"]
+    assert len(marker["mechanical"]) == 4 and all(e["ok"] for e in marker["mechanical"])
+
+
+def test_missing_quotes_warn_for_each_judge_file_before_merge(tmp_path: Path) -> None:
+    """Provenance survives the strictest merge: each warning names its file."""
+    folder = _verify_folder(tmp_path / "wf")
+    first = _judgments(folder, name="a.yml", criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "cite 'fragmento ausente uno' aqui", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+    ])
+    second = _judgments(folder, name="b.yml", findings=["second"], criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "ver 'fragmento ausente dos' abajo", "note": "ok"},
+    ])
+
+    assert content_check.main([str(folder), "--judgments", str(first), "--judgments", str(second)]) == 0
+
+    assert _quote_warnings(folder) == [
+        "quote warning: a.yml: criterion 'objetivo': quoted fragment not found in body.md: 'fragmento ausente uno'",
+        "quote warning: b.yml: criterion 'metodologia': quoted fragment not found in body.md: 'fragmento ausente dos'",
+    ]
+
+
+def test_multiple_missing_fragments_in_one_where_all_warn(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    first = _judgments(folder, name="a.yml", criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "'primera ausente' y 'segunda ausente'", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+    ])
+
+    assert _run(folder, first) == 0
+
+    assert [w.split(": ", 4)[-1] for w in _quote_warnings(folder)] == ["'primera ausente'", "'segunda ausente'"]
+
+
+def test_present_or_whitespace_normalized_quotes_do_not_warn(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    first = _judgments(folder, name="a.yml", criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "aparece 'Cuerpo con fuentes' tal cual", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "salto de linea 'Cuerpo\n\tcon   fuentes' normalizado", "note": "ok"},
+    ])
+
+    assert _run(folder, first) == 0
+
+    assert _quote_warnings(folder) == []
+
+
+def test_quoted_fragment_comparison_is_case_sensitive(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    first = _judgments(folder, name="a.yml", criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "no existe 'CUERPO con fuentes' en mayusculas", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+    ])
+
+    assert _run(folder, first) == 0
+
+    assert len(_quote_warnings(folder)) == 1
+    assert "objetivo" in _quote_warnings(folder)[0]
+
+
+def test_ordinary_apostrophes_never_masquerade_as_quotes(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, DEFAULT_CITED_BODY + "\nDo not touch the student's own text: don't polish it.\n")
+    first = _judgments(folder, name="a.yml", criteria=[
+        {"id": "objetivo", "status": "cumple", "where": "don't polish the student's draft", "note": "ok"},
+        {"id": "metodologia", "status": "cumple", "where": "citado 'the student's own text' existe", "note": "ok"},
+    ])
+
+    assert _run(folder, first) == 0
+
+    assert _quote_warnings(folder) == []
+
+
+def test_missing_quote_warning_does_not_soften_strictest_merge(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    first = _judgments(folder, name="a.yml")
+    second = _judgments(folder, name="b.yml", findings=["second"], criteria=[
+        {"id": "objetivo", "status": "falta", "where": "nunca aparece 'paso faltante'", "note": "gap"},
+        {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+    ])
+
+    assert content_check.main([str(folder), "--judgments", str(first), "--judgments", str(second)]) == 1
+
+    marker = _marker(folder)
+    assert marker["result"] == "fail"
+    assert content_check.content_check_state(folder) == "fail"
+    assert [c["status"] for c in marker["criteria"]] == ["falta", "cumple"]
+    assert any(f.startswith("quote warning") and "b.yml" in f and "objetivo" in f for f in marker["findings"])

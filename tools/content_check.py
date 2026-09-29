@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -255,6 +256,38 @@ def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, 
     return judgments, findings, data.get("judge"), data.get("body_sha256"), data.get("rubric_sha256"), errors
 
 
+# A single-quoted ``where`` fragment (T14). The opening quote may not sit
+# between word characters -- that is an ordinary apostrophe (``don't``,
+# ``student's``), not a quotation -- while apostrophes strictly inside a
+# quoted passage (``'the student's draft'``) are content, so judges may quote
+# possessives without breaking the passage.
+_QUOTED_FRAGMENT = re.compile(r"(?<!\w)'((?:[^']|(?<=\w)'(?=\w))+)'")
+
+
+def _missing_quote_warnings(judgments_file: str, judgments: list[dict], body_text: str) -> list[str]:
+    """Advisory warnings for quoted ``where`` fragments absent from body.md.
+
+    report-flow-hardening T14: a judge is asked to quote ``where`` locations
+    from body.md, so a quoted fragment that the body does not show
+    (whitespace-normalized, case-sensitive) hints at misquoted or paraphrased
+    evidence. It is a warning naming the originating judgments file and the
+    criterion id, pushed through the existing findings channel, and never a
+    check: it cannot change a status, the verdict or the exit code. Called per
+    judgments file before the strictest merge so every warning keeps its
+    judge's provenance; ``body_text`` is the one T11 read, never re-read.
+    """
+    normalized_body = " ".join(body_text.split())
+    warnings: list[str] = []
+    for record in judgments:
+        for fragment in _QUOTED_FRAGMENT.findall(record.get("where") or ""):
+            if " ".join(fragment.split()) not in normalized_body:
+                warnings.append(
+                    f"quote warning: {judgments_file}: criterion '{record['id']}': "
+                    f"quoted fragment not found in body.md: '{fragment}'"
+                )
+    return warnings
+
+
 def mechanical_checks(
     body_text: str, bib_text: str, criteria: list[dict], judgments: list[dict]
 ) -> list[dict]:
@@ -425,6 +458,11 @@ def run_check(
         return CheckOutcome("", {}, tuple(errors))
 
     rank = {"cumple": 0, "flojo": 1, "falta": 2}
+    # T14: judge each file's quoted ``where`` evidence against body.md before
+    # the merge, so a warning always names the judge that wrote the quote.
+    quote_warnings: list[str] = []
+    for name, parsed_file in zip(names, parsed):
+        quote_warnings.extend(_missing_quote_warnings(name, parsed_file[0], body_text))
     first, second = parsed[0][0], parsed[1][0]
     second_by_id = {record["id"]: record for record in second}
     judgments = []
@@ -438,7 +476,7 @@ def run_check(
         if a["status"] != b["status"]:
             disagreements.append({"id": a["id"], "statuses": [a["status"], b["status"]]})
     judgments.extend(b for b in second if b["id"] not in {a["id"] for a in first})
-    findings = list(dict.fromkeys([*parsed[0][1], *parsed[1][1], *(
+    findings = list(dict.fromkeys([*parsed[0][1], *parsed[1][1], *quote_warnings, *(
         f"judges disagreed on {d['id']}: {d['statuses'][0]} vs {d['statuses'][1]}"
         for d in disagreements
     )]))
