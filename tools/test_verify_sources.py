@@ -11,7 +11,7 @@ from verify_sources import verify_sources, main
 
 def report(tmp_path, entry):
     folder = tmp_path / "report"
-    folder.mkdir()
+    folder.mkdir(parents=True)
     (folder / "report.yml").write_text("title: Test report\n", encoding="utf-8")
     (folder / "sources.bib").write_text(entry, encoding="utf-8")
     return folder
@@ -19,6 +19,52 @@ def report(tmp_path, entry):
 
 def doi_response(year=2020, title="A Study of Trees", author="García"):
     return {"message": {"title": [title], "issued": {"date-parts": [[year]]}, "author": [{"family": author}]}}
+
+
+def result_rows(folder):
+    return yaml.safe_load((folder / 'research/sources-verification.yml').read_text())['results']
+
+
+def test_empty_bib_fails_with_reason(tmp_path):
+    folder = report(tmp_path, '')
+    assert verify_sources(folder, fetch=lambda *_: (_ for _ in ()).throw(AssertionError())) == 1
+    assert 'empty' in result_rows(folder)[0]['detail'].lower()
+
+
+def test_malformed_registry_continues(tmp_path):
+    for bad in ('not json', [], {'message': []}, {'message': {'issued': {}}}):
+        folder = report(tmp_path / str(len(list(tmp_path.iterdir()))), '@article{x, title={A Study of Trees}, doi={10.1/x}}\n@article{y, title={A Study of Trees}, year={2020}, doi={10.1/y}}')
+        calls = iter([bad, doi_response()])
+        assert verify_sources(folder, fetch=lambda *_: next(calls)) == 1
+        rows = result_rows(folder)
+        assert rows[0]['status'] in ('NETWORK_ERROR', 'MISMATCH') and rows[0].get('detail')
+        assert rows[1]['status'] == 'VERIFIED'
+
+
+def test_doi_url_forms_normalized(tmp_path):
+    for index, value in enumerate(('https://doi.org/10.1234/tree', 'http://dx.doi.org/10.1234/tree', 'doi:10.1234/tree')):
+        folder = report(tmp_path / str(index), '@article{x, title={A Study of Trees}, year={2020}, doi={' + value + '}}')
+        urls = []
+        assert verify_sources(folder, fetch=lambda request, timeout: (urls.append(request.full_url), doi_response())[1]) == 0
+        assert urls == ['https://api.crossref.org/works/10.1234/tree']
+
+
+def test_author_particles_accents_hyphens_and_missing(tmp_path):
+    for index, (author, remote) in enumerate((('de García-López, Ana', 'Garcia Lopez'), ('Van der García, Ana', 'garcia'), ('García, Ana', ''), ('', 'García'))):
+        folder = report(tmp_path / str(index), '@article{x, title={A Study of Trees}, year={2020}, doi={10.1/x}, author={' + author + '}}')
+        assert verify_sources(folder, fetch=lambda *_: doi_response(author=remote)) == 0
+
+
+def test_retry_429_and_503_once_with_injected_sleep(tmp_path):
+    for index, code in enumerate((429, 503)):
+        folder = report(tmp_path / str(index), '@article{x, title={A Study of Trees}, year={2020}, doi={10.1/x}}')
+        calls, sleeps = [], []
+        def fetch(request, timeout):
+            calls.append(timeout)
+            raise HTTPError(request.full_url, code, 'busy', {}, None)
+        assert verify_sources(folder, fetch=fetch, sleep=sleeps.append) == 1
+        assert calls == [15, 15] and sleeps == [2]
+        assert result_rows(folder)[0]['status'] == 'NETWORK_ERROR'
 
 
 def test_verified_doi_and_bib_hash(tmp_path):

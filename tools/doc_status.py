@@ -541,14 +541,13 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
         pdf = config.pdf_path
         try:
             relative = pdf.parent.resolve().relative_to(Path.home().resolve())
-            directory = "~/" + str(relative)
-            escaped_dir = directory.replace(' ', chr(92) + ' ')
-            escaped_file = pdf.name.replace("'", "\\'")
-            command = f"set d {escaped_dir}\nset f '{escaped_file}'\nbrave $d/$f"
+            escaped_dir = str(relative).replace('\\', '\\\\').replace("'", "\\'")
+            escaped_file = pdf.name.replace('\\', '\\\\').replace("'", "\\'")
+            command = f"set d ~/'{escaped_dir}'\nset f '{escaped_file}'\nbrave $d/$f"
             if all(len(line) < 90 for line in command.splitlines()):
                 template += "; present PDF to the user (never screenshots):\n" + command
         except ValueError:
-            quoted = str(pdf).replace("'", "\\'")
+            quoted = str(pdf).replace('\\', '\\\\').replace("'", "\\'")
             handoff = "present PDF to the user (never screenshots):\nbrave '" + quoted + "'"
             if phase_name == "review":
                 template += "; " + handoff

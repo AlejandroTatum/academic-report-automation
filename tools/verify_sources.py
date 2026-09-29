@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import re
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,11 +77,28 @@ def year_of(value: object) -> int | None:
     return int(match.group()) if match else None
 
 
+def _family_tokens(value: str) -> list[str]:
+    return [word for word in re.findall(r'[a-z0-9]+', normalized(value))
+            if word not in {'de', 'del', 'van', 'von', 'da', 'der'}]
+
+
 def compare(fields: dict, remote: dict, kind: str) -> dict:
     mismatches = {}
     warnings = {}
+    if not isinstance(remote, dict):
+        raise ValueError('registry response is not an object')
     message = remote.get("message", {}) if kind == "doi" else remote
-    found_title = (message.get("title") or [""])[0] if kind == "doi" else message.get("title", "")
+    if not isinstance(message, dict):
+        raise ValueError('registry record is not an object')
+    titles = message.get('title')
+    if kind == 'doi':
+        if not isinstance(titles, list) or not titles or not isinstance(titles[0], str) or not titles[0].strip():
+            raise ValueError('registry title missing or malformed')
+        found_title = titles[0]
+    else:
+        if not isinstance(titles, str) or not titles.strip():
+            raise ValueError('registry title missing or malformed')
+        found_title = titles
     expected_title = fields.get("title", "")
     if not _title_matches(expected_title, found_title):
         mismatches["title"] = {"expected": expected_title, "found": found_title}
@@ -98,7 +116,7 @@ def compare(fields: dict, remote: dict, kind: str) -> dict:
         author = fields["author"].split(" and ", 1)[0]
         expected = author.split(",", 1)[0].strip() if "," in author else author.split()[-1]
         found = message["author"][0].get("family", "")
-        if normalized(expected) != normalized(found):
+        if expected and found and _family_tokens(expected) != _family_tokens(found):
             mismatches["author"] = {"expected": expected, "found": found}
     result = {"status": "MISMATCH" if mismatches else "VERIFIED_WITH_WARNINGS" if warnings else "VERIFIED"}
     if mismatches:
@@ -113,7 +131,7 @@ def default_fetch(request: Request, timeout: int):
         return json.load(response)
 
 
-def verify_sources(folder: Path, fetch=None) -> int:
+def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
     folder = Path(folder)
     if not (folder / "report.yml").is_file():
         raise ValueError("report.yml does not exist")
@@ -125,7 +143,7 @@ def verify_sources(folder: Path, fetch=None) -> int:
     results = []
     for key, fields in entries(data.decode("utf-8")):
         result = {"key": key}
-        doi = fields.get("doi", "").strip()
+        doi = re.sub(r'^(?:https?://(?:dx\.)?doi\.org/|doi:)', '', fields.get('doi', '').strip(), flags=re.I)
         isbn = re.sub(r"[^0-9Xx]", "", fields.get("isbn", ""))
         if doi:
             url, kind = "https://api.crossref.org/works/" + quote(doi, safe="/"), "doi"
@@ -137,13 +155,23 @@ def verify_sources(folder: Path, fetch=None) -> int:
             continue
         request = Request(url, headers={"User-Agent": USER_AGENT})
         try:
-            remote = (fetch or default_fetch)(request, 15)
+            try:
+                remote = (fetch or default_fetch)(request, 15)
+            except HTTPError as error:
+                if error.code not in (429, 503):
+                    raise
+                (sleep or time.sleep)(2)
+                remote = (fetch or default_fetch)(request, 15)
             result.update(compare(fields, remote, kind))
         except HTTPError as error:
-            result["status"] = "NOT_FOUND" if error.code == 404 else "NETWORK_ERROR"
-        except (URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
-            result["status"] = "NETWORK_ERROR"
+            result['status'] = 'NOT_FOUND' if error.code == 404 else 'NETWORK_ERROR'
+            result['detail'] = f'HTTP {error.code}: {error.reason}'
+        except (URLError, TimeoutError, OSError, ValueError, TypeError, KeyError, IndexError) as error:
+            result['status'] = 'NETWORK_ERROR'
+            result['detail'] = f'Invalid or unavailable registry response: {error}'
         results.append(result)
+    if not results:
+        results.append({'key': '', 'status': 'NO_IDENTIFIER', 'detail': 'Empty bibliography: no entries to verify'})
     output = {"schema": "academic.sources-verification/v1", "bib_sha256": hashlib.sha256(data).hexdigest(),
               "checked_at": datetime.now(timezone.utc).isoformat(), "results": results}
     destination = folder / "research" / "sources-verification.yml"

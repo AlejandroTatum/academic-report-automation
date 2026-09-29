@@ -59,7 +59,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       loose lists; warn on figure-path precedence.
 - [x] T6 Skill prose, contract tests, runtime sync, and an E2E re-run on the
       APE Semana 1 folder.
-- [ ] T7 E2E bug fixes (content check): legacy marker detected before the
+- [x] T7 E2E bug fixes (content check): legacy marker detected before the
       mechanical-set rule (stale, not malformed) with correct Gate text; judge
       brief explains `[@key]` renders as IEEE at build; `verbatim_from_guide`
       tolerates only a first-letter case difference (user decision 2026-09-29).
@@ -136,6 +136,14 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   IEEE at build time.
 - The blocked-verify Gate now correctly says "fix findings ... through the user's
   literal edit orders, then re-approve".
+
+- T7: RED verified by the parent (implementation stashed: judge-brief, initial-case
+  verbatim and malformed-guidance tests fail). The worker's legacy test used a
+  pre-T1 shape that already passed; the parent reproduced the real E2E marker
+  shape (rubric/bib hashes, no judge, 3 mechanical checks: old code `malformed`,
+  new code `stale`) and added it as a regression test. GREEN 1513 passed.
+  Commit `604627b`. RDD lineage `review-9597b0e2bb0bb6e1`: approved, acknowledged/
+  burned.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
