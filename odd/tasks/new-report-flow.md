@@ -59,7 +59,7 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
 ## Tasks
 - [x] T1 Markers: approval binds `body.md` only (drop preview), stale -> pending;
       new `final-review.yml` marker bound to the PDF; deliver/publish require it.
-- [ ] T2 Research gate: >= 5 eligible book/paper entries in `sources.bib`;
+- [x] T2 Research gate: >= 5 eligible book/paper entries in `sources.bib`;
       remove `research: skipped`.
 - [ ] T3 Rubric plan + content check: `rubric.yml` schema/validator and
       `content-check.yml` validator (per-criterion cumple/flojo/falta + where,
@@ -79,6 +79,9 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
   final-review marker has no producer yet (T5/T6 owns it); non-mapping YAML and
   missing-PDF cases in `final_review_marker.py`; gate ownership wording in
   `deliver_report.py`; hidden validated-PDF coupling in `test_pdf_publication.py`.
+- T2: RED `source_count` missing + 27 focused failures; GREEN `pytest tools/ tests/ -q`
+  1236 passed. `research: skipped` and matrix-only no longer complete research.
+  Residual skip prose in `intake.md`, `draft.md`, `preview.md` left for T6.
 
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow

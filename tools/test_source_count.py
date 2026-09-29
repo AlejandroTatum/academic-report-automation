@@ -92,6 +92,19 @@ def test_source_gate_unreadable_file_is_reported(
     assert "unreadable" in result.reason
 
 
+def test_source_gate_non_utf8_file_is_reported_not_raised(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    folder.mkdir()
+    (folder / "sources.bib").write_bytes(
+        "@book{a, author={Muñoz}, title={A}}\n".encode("latin-1")
+    )
+    result = source_count.source_gate(folder, _config(folder))
+
+    assert result.count == 0
+    assert result.ok is False
+    assert "UTF-8" in result.reason
+
+
 def test_source_gate_four_eligible_entries_is_short(tmp_path: Path) -> None:
     """TRIANGULATE: 4 eligible entries plus 2 web-only ones still fail the gate."""
     folder = tmp_path / "wf"

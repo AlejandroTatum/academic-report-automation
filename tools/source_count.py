@@ -90,6 +90,8 @@ def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
         )
     try:
         text = bib.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return SourceCount(0, (), False, f"{declared} is not valid UTF-8; save it as UTF-8")
     except OSError:
         return SourceCount(0, (), False, f"{declared} unreadable")
 
