@@ -21,6 +21,14 @@ sections (Objetivo(s), Materiales, Procedimiento, Resultados, Preguntas de
 Control, Conclusiones, Recomendaciones, Bibliografía/Referencias, Anexos).
 The hint guides planning only: it does not choose the final format for the user.
 
+Write deterministic `checks:` before the draft exists for every mechanically
+checkable criterion. Rubric TDD starts red and the draft turns checks green.
+Use the check types supported by `tools/rubric_plan.py` CHECK_PARAMS:
+`heading_present`, `contains`, `matches`, `verbatim_from_guide`,
+`ordered_list`, `min_citations`, `figure_referenced`, `link_present`, and
+`keywords_from_section`. Purely semantic criteria may have no checks. For
+`format_hint: ape`, map criteria and checks to the fixed APE sections above.
+
 Validate the shape before drafting:
 `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/rubric_plan.py"
 "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`. A malformed rubric blocks the route

@@ -14,7 +14,9 @@ output, and nothing from the drafting conversation, to ONE independent read-only
 judge subagent. The judge must use only the named inputs, quote `where` locations,
 and return YAML with `judge`, `body_sha256`, `rubric_sha256`, `criteria` (one
 `id`, `status: cumple|flojo|falta`, `where`, `note` per rubric criterion), and
-optional `findings`. Save that YAML unchanged as the judgments file. Then run:
+optional `findings`. Save that YAML unchanged as the judgments file; the drafting agent never writes judgments.
+A stale marker means re-run the independent judge on the current inputs, not
+reuse old judgments. Then run:
 
 ```bash
 "$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --judgments <judgments-file>

@@ -53,7 +53,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       confined and judge inputs resolved one way, rubric section parser (code
       fences, setext headings), unknown check type at run time, blocked `verify`
       Gate text.
-- [ ] T5b Sources and rendering: deterministic `verify_sources.py` (CrossRef/Open
+- [x] T5b Sources and rendering: deterministic `verify_sources.py` (CrossRef/Open
       Library, mocked in tests); PDF handoff uses the exact file name with fish-safe
       quoting; guide facts report conflicting matches; URLs in headings/captions;
       loose lists; warn on figure-path precedence.
@@ -99,3 +99,18 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   Commit `f0803f2`. RDD lineage `review-027442804a898217`: approved, acknowledged/
   burned. Advisory, taken into T5b: setext `---` vs thematic break, stale-marker
   guidance untested, narrow except in `run_check`, mechanical round-trip.
+- T5b: RED 6 focused failures (handoff, guide conflicts, setext, moving-argument
+  URLs, loose lists, figure precedence) + verify_sources collection error; GREEN
+  `pytest tools/ tests/ -q` 1498 passed. Real-network smoke on the APE bib found a
+  false MISMATCH (Open Library stores only the main title); fixed test-first. Final
+  real run: 7/7 verified (Prana 2018/2019 year warning). Two worker attempts failed
+  on a runtime incident (0 tool calls); retried after recovery.
+  Commit `07f8c21`. RDD lineage `review-966e559bb44a4c17`: approved, acknowledged/
+  burned.
+
+## Follow-ups (next cycle, from T5b advisories)
+- Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
+- `verify_sources.py`: empty bib must not pass vacuously; malformed registry JSON
+  must not abort the run; DOI given as URL; author compare false mismatch; retry
+  on HTTP 429.
+- `guide_facts` conflicts contract documented; moving-argument URL proof test.

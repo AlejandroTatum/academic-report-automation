@@ -35,6 +35,9 @@ Between drafts the user answers with literal edit orders: "in paragraph X replac
 '...' with '...'", "delete section Y", "move this paragraph before that one". Apply
 the user's text VERBATIM: never polish, never rephrase, and never improve
 user-authored text - the wording is theirs, and polishing it forges authorship.
+Batch all literal edit orders from one reading into one round: collect them all,
+apply them verbatim, and only then ask for re-approval. Each re-approval re-runs
+verify (with a fresh independent judge), generate and validate before final review.
 Every applied edit changes `body.md`, which stales the approval and returns the
 route to `approval` as `pending`; present the gate again for the new bytes. That
 loop is the normal review cycle, not a failure, and it repeats until the user

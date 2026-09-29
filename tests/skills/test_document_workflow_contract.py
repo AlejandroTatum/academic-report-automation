@@ -453,6 +453,58 @@ def test_deliver_reference_names_the_executable_and_the_receipt_precondition() -
 
 
 # --------------------------------------------------------------------------
+# T6 — report-flow-hardening prose contracts
+# --------------------------------------------------------------------------
+
+
+def test_research_verifies_every_bibliography_entry() -> None:
+    text = read(SKILL_ROOT / "references" / "research.md")
+    for phrase in ("verify_sources.py", "VERIFIED", "VERIFIED_WITH_WARNINGS", "MISMATCH", "NOT_FOUND", "NO_IDENTIFIER", "DOI", "ISBN"):
+        assert phrase in text
+    assert re.search(r"after writing.*sources\.bib.*verify_sources\.py", re.sub(r"\s+", " ", text), re.I)
+
+
+def test_plan_defines_rubric_tdd_before_drafting() -> None:
+    text = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "plan.md"))
+    for kind in ("heading_present", "contains", "matches", "verbatim_from_guide", "ordered_list", "min_citations", "figure_referenced", "link_present", "keywords_from_section"):
+        assert kind in text
+    for phrase in ("checks:", "before the draft", "red", "green", "semantic", "format_hint: ape", "fixed"):
+        assert phrase in text
+
+
+def test_draft_runs_mechanical_checks_before_presentation() -> None:
+    text = read(SKILL_ROOT / "references" / "draft.md")
+    for phrase in ("every rubric check", "green", "content_check.py", "mechanical", "before presenting"):
+        assert phrase in text
+
+
+def test_approval_batches_literal_orders_and_rechecks() -> None:
+    text = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "approval.md"))
+    for phrase in ("Batch", "all literal edit orders", "one reading", "verbatim", "only then", "re-approval", "verify", "generate", "validate"):
+        assert phrase in text
+
+
+def test_verify_refuses_drafter_judgments_and_stale_marker() -> None:
+    text = read(SKILL_ROOT / "references" / "verify.md")
+    assert "drafting agent never writes judgments" in text
+    assert "stale marker" in text and "re-run the independent judge" in text
+
+
+def test_pdf_handoff_uses_exact_doc_status_fish_command() -> None:
+    for phase in ("generate", "review"):
+        text = read(SKILL_ROOT / "references" / f"{phase}.md")
+        for phrase in ("doc_status", "set d", "set f", "brave $d/$f", "exact", "zathura", "internal links", "Never send screenshots"):
+            assert phrase.lower() in text.lower(), phase
+        assert "*.pdf" not in text
+
+
+def test_skill_hard_rules_summarize_four_guards() -> None:
+    hard = read(SKILL_MD).split("## Hard Rules", 1)[1].split("## Decision Gates", 1)[0]
+    for phrase in ("rubric TDD", "independent judge", "verified sources", "batched edit orders"):
+        assert len([line for line in hard.splitlines() if phrase.lower() in line.lower()]) == 1
+
+
+# --------------------------------------------------------------------------
 # T6 — content-first prose rules
 # --------------------------------------------------------------------------
 

@@ -19,11 +19,11 @@ again. Delivery runs only after this gate is `done`.
 
 ## PDF handoff
 
-Present the current PDF with a short copy-paste fish command, two lines each
-under 90 characters: `set d ~/<folder relative to $HOME>` then
-`brave $d/<slug prefix>*.pdf`. Never send screenshots; the user reviews the
-PDF itself. If the folder path is too long, choose a shorter home-relative
-location rather than wrapping or truncating a command.
+Present the current PDF with the exact short fish command produced by
+`doc_status` guidance: `set d <folder>`, `set f <exact PDF filename>`,
+`brave $d/$f`. Copy its quoting exactly; do not glob or truncate the filename.
+Never send screenshots; the user reviews the PDF itself. The default viewer
+zathura does not follow internal links.
 
 ## Steps
 

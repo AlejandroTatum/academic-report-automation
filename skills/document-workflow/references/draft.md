@@ -39,7 +39,10 @@ the body changes only through the user's literal edit orders (see
    to its source and proposed figures where they genuinely help.
 3. Build any figure with `academic-visual-builder` and reference it as
    `![caption](relative/path.png)`.
-4. Write `reports/<wf>/body.md`.
+4. Write `reports/<wf>/body.md`. Turn every rubric check green; run the
+   mechanical part of `content_check.py` against the draft before presenting it.
+   Fix failed checks in the draft, without writing semantic judgments or an
+   approval marker.
 5. Re-run `doc_status` and report the new current phase.
 
 ## Never

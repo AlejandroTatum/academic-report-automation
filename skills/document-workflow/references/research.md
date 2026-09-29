@@ -49,9 +49,14 @@ source stays a `lead` and is never written into `sources.bib`.
 3. Write the document's `sources.bib` with every eligible book or paper entry
    (at least 5), each one verifiable and IEEE-ready, plus the claim-level
    matrix, separating quotations from paraphrases.
-4. Reconcile duplicates, gaps, and contradictions without converting uncertainty
+4. After writing `sources.bib`, run
+   `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/verify_sources.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`.
+   Finish only when every entry is VERIFIED or VERIFIED_WITH_WARNINGS. Fix or
+   replace MISMATCH and NOT_FOUND entries; never keep them. Give NO_IDENTIFIER
+   entries a DOI or ISBN and verify again.
+5. Reconcile duplicates, gaps, and contradictions without converting uncertainty
    into fact.
-5. Re-run `doc_status` and report the new current phase.
+6. Re-run `doc_status` and report the new current phase.
 
 ## Never
 

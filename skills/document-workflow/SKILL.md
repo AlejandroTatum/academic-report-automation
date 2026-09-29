@@ -24,6 +24,10 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 
 ## Hard Rules
 
+- Require rubric TDD checks in the plan before drafting; the draft turns them green.
+- Use an independent judge for semantic verification; the drafter never grades itself.
+- Require verified sources before research is finished.
+- Apply batched edit orders verbatim before seeking re-approval.
 - Route exclusively from the `next` token; load only that phase's reference.
 - The phase/reference/executor routing table is the whole routing logic:
 

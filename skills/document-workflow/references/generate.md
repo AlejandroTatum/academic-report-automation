@@ -48,10 +48,10 @@ the only publication route, and approval state is derived by
 
 ## PDF handoff
 
-When presenting the generated PDF, give the user a short two-line fish command
-(each line under 90 characters), using a home-relative folder and a short slug
-glob: `set d ~/<folder relative to $HOME>` then `brave $d/<slug prefix>*.pdf`.
-Never send screenshots in place of the PDF.
+When presenting the generated PDF, use the exact short fish command produced by
+`doc_status` guidance: `set d <folder>`, `set f <exact PDF filename>`,
+`brave $d/$f`. Copy its quoting exactly; never use a glob. Never send screenshots
+in place of the PDF. The default viewer zathura does not follow internal links.
 
 ## Steps
 
