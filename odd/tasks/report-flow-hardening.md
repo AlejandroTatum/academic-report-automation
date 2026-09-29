@@ -166,6 +166,9 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
 
 - T9: RED verified by the parent (implementation stashed: two-judge merge,
   exactly-two, identical-files and guidance tests fail); GREEN 1525 passed.
+  Commit `4dbf1d3`. RDD lineage `review-b32871479c3c6bac`: approved, acknowledged/
+  burned. Advisory: merge runs before full validation of both files, identical-
+  bytes heuristic, len() on non-list judges in state, judge errors unattributed.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
