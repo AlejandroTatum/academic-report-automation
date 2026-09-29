@@ -67,7 +67,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       registry JSON does not abort; DOI given as URL normalized; author compare
       accent/particle tolerant; one retry on HTTP 429; fish quoting escapes
       backslashes and quotes the directory.
-- [ ] T9 Two independent judges: content_check requires two judgments files from
+- [x] T9 Two independent judges: content_check requires two judgments files from
       independent judges bound to the same body/rubric hashes, merges them per
       criterion keeping the strictest status (falta > flojo > cumple), records both
       judges and any disagreement; verify.md launches two judges (user decision
@@ -163,6 +163,9 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   (LuaLaTeX/Biber missing from install steps). Judge verdicts are not stable.
   Next cycle: turn that class of gap into a deterministic check, or keep the
   stricter verdict of two judges per criterion.
+
+- T9: RED verified by the parent (implementation stashed: two-judge merge,
+  exactly-two, identical-files and guidance tests fail); GREEN 1525 passed.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
