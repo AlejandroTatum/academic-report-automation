@@ -28,6 +28,8 @@
 \usepackage[table]{xcolor}
 \usepackage{ifthen}
 \usepackage[hidelinks]{hyperref}
+% xurl permits breaks throughout long URL and nolinkurl runs.
+\usepackage{xurl}
 
 \newcommand{\reporthasbib}{{{HAS_BIB}}}
 \ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}

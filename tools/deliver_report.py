@@ -133,6 +133,10 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
 
     action = "ENTREGADO" if publication.created else "REUTILIZADO"
     granted = _granted_gates(receipt)
+    if final_review_state(folder, pdf).state == "current":
+        granted = [gate for gate in KNOWN_GATES if gate == "HUMAN_REVIEW" or gate in granted]
+    else:
+        granted = [gate for gate in granted if gate != "HUMAN_REVIEW"]
     missing = [gate for gate in KNOWN_GATES if gate not in granted]
     status_note = f"gates otorgados: {', '.join(granted) if granted else 'ninguno'}"
     if missing:

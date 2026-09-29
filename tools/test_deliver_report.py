@@ -77,6 +77,16 @@ def test_delivery_message_lists_gates_from_the_receipt(tmp_path: Path, capsys) -
     assert "READY_TO_SUBMIT" in out
 
 
+def test_delivery_grants_current_human_review_but_not_other_gates(tmp_path: Path, capsys) -> None:
+    folder, pdf = _ready_folder(tmp_path)
+    _validation(folder, pdf=pdf, gates=['BUILD_PASS', 'VALIDATION_PASS'])
+    assert _run(folder, tmp_path / 'docs') == 0
+    out = capsys.readouterr().out
+    assert 'gates otorgados: BUILD_PASS, VALIDATION_PASS, HUMAN_REVIEW' in out
+    assert 'sin VISUAL_PASS, READY_TO_SUBMIT' in out
+    assert 'sin HUMAN_REVIEW' not in out
+
+
 def test_delivery_message_grants_no_gate_from_a_string(tmp_path: Path, capsys) -> None:
     """A malformed ``gates:`` string never turns substring matches into grants (#37).
 
@@ -91,7 +101,7 @@ def test_delivery_message_grants_no_gate_from_a_string(tmp_path: Path, capsys) -
     assert _run(folder, documents_root) == 0
 
     out = capsys.readouterr().out
-    assert "gates otorgados: ninguno" in out
+    assert "gates otorgados: HUMAN_REVIEW" in out
     assert "VISUAL_PASS" in out  # only in the missing list, never as granted
 
 
@@ -104,7 +114,7 @@ def test_delivery_message_grants_no_gate_from_a_mapping(tmp_path: Path, capsys) 
     assert _run(folder, documents_root) == 0
 
     out = capsys.readouterr().out
-    assert "gates otorgados: ninguno" in out
+    assert "gates otorgados: HUMAN_REVIEW" in out
 
 
 def test_delivery_is_idempotent_for_identical_bytes(tmp_path: Path, capsys) -> None:

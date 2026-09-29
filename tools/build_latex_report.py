@@ -215,6 +215,8 @@ def inline_code(value: str) -> str:
     trailing separator gets none, since a break at the very end of the run
     would leave the box empty.
     """
+    if re.match(r"^(?:https?://|git@|ssh://)", value):
+        return r"\nolinkurl{" + value + "}"
     characters = list(value)
     last = len(characters) - 1
     pieces: list[str] = []
@@ -239,6 +241,9 @@ def convert_inline(text: str) -> str:
     keep(r"\[@([A-Za-z0-9_:\-.,; ]+)\]", lambda m: r"\cite{" + re.sub(r"\s+", "", m.group(1)) + "}")
     keep(r"\$([^$]+)\$", lambda m: "$" + m.group(1) + "$")
     keep(r"`([^`]+)`", lambda m: inline_code(m.group(1)))
+    keep(r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
+         lambda m: r"\href{" + m.group(2) + "}{" + latex_escape(m.group(1)) + "}")
+    keep(r"<(https?://[^\s>]+)>", lambda m: r"\url{" + m.group(1) + "}")
     escaped = latex_escape(text)
     escaped = re.sub(r"\*\*([^*]+)\*\*", lambda m: r"\textbf{" + m.group(1) + "}", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", lambda m: r"\emph{" + m.group(1) + "}", escaped)
@@ -363,7 +368,7 @@ def markdown_to_latex(
     lines = markdown.splitlines()
     output: list[str] = []
     paragraph: list[str] = []
-    list_env: str | None = None
+    list_stack: list[tuple[int, str]] = []
 
     def split_table_row(row: str) -> list[str]:
         stripped = row.strip().strip("|")
@@ -441,20 +446,19 @@ def markdown_to_latex(
             paragraph = []
 
     def close_list() -> None:
-        nonlocal list_env
-        if list_env:
-            output.append(rf"\end{{{list_env}}}")
+        while list_stack:
+            _, env = list_stack.pop()
+            output.append(rf"\end{{{env}}}")
             output.append("")
-            list_env = None
 
-    def open_list(env: str) -> None:
-        """Start ``env``, closing a list of the other kind still open."""
-        nonlocal list_env
-        if list_env == env:
-            return
-        close_list()
-        output.append(rf"\begin{{{env}}}")
-        list_env = env
+    def open_list(env: str, indent: int) -> None:
+        while list_stack and (list_stack[-1][0] > indent or
+                              (list_stack[-1][0] == indent and list_stack[-1][1] != env)):
+            _, previous = list_stack.pop()
+            output.append(rf"\end{{{previous}}}")
+        if not list_stack or list_stack[-1] != (indent, env):
+            output.append(rf"\begin{{{env}}}")
+            list_stack.append((indent, env))
 
     def render_code_block(code_lines: list[str]) -> None:
         r"""Emit a fenced block as page-breakable verbatim.
@@ -504,7 +508,12 @@ def markdown_to_latex(
         stripped = line.strip()
         if not stripped:
             flush_paragraph()
-            close_list()
+            if list_stack:
+                next_line = next((item for item in lines[i + 1:] if item.strip()), "")
+                next_indent = len(next_line) - len(next_line.lstrip())
+                if not next_line or (next_indent < list_stack[0][0] or
+                    (next_indent == list_stack[0][0] and not re.match(r"(?:[-*]|\d+[.)])\s+", next_line.strip()))):
+                    close_list()
             i += 1
             continue
 
@@ -619,9 +628,9 @@ def markdown_to_latex(
         if image:
             flush_paragraph(); close_list()
             caption = convert_inline(image.group("caption"))
-            src = latex_escape(image.group("src"))
             raw_src = image.group("src")
             resolved = resolve_figure(raw_src, build_dir) if build_dir is not None else None
+            src = latex_escape(os.path.relpath(resolved, build_dir) if resolved is not None and build_dir is not None else raw_src)
             options = figure_includegraphics_options(resolved)
             output.extend([
                 r"\Needspace{6\baselineskip}",
@@ -697,7 +706,7 @@ def markdown_to_latex(
         bullet = re.match(r"^[-*]\s+(.+)$", stripped)
         if bullet:
             flush_paragraph()
-            open_list("itemize")
+            open_list("itemize", len(line) - len(line.lstrip()))
             output.append(r"\item " + convert_inline(bullet.group(1)))
             i += 1
             continue
@@ -708,11 +717,19 @@ def markdown_to_latex(
         ordered = re.match(r"^\d+[.)]\s+(.+)$", stripped)
         if ordered:
             flush_paragraph()
-            open_list("enumerate")
+            open_list("enumerate", len(line) - len(line.lstrip()))
             output.append(r"\item " + convert_inline(ordered.group(1)))
             i += 1
             continue
 
+        if list_stack and len(line) - len(line.lstrip()) > list_stack[0][0]:
+            flush_paragraph()
+            while len(list_stack) > 1:
+                _, env = list_stack.pop()
+                output.append(rf"\end{{{env}}}")
+            output.append(convert_inline(stripped))
+            i += 1
+            continue
         paragraph.append(stripped)
         i += 1
 
@@ -1027,18 +1044,20 @@ def figure_references(markdown: str) -> list[str]:
 def resolve_figure(reference: str, build_dir: Path) -> Path | None:
     r"""Resolve a figure reference the way ``\includegraphics`` will.
 
-    Relative references resolve from the build directory — the documented
-    convention (``../../../assets/generated/...``). A reference with no suffix
-    matches any of the graphics extensions LaTeX would try on its own.
+    Prefer report-relative references, retaining build-relative legacy paths.
+    A reference with no suffix matches graphics extensions LaTeX would try.
     """
     candidate = Path(reference)
-    base = candidate if candidate.is_absolute() else build_dir / candidate
-    if base.suffix:
-        return base if base.exists() else None
-    for suffix in FIGURE_SUFFIXES:
-        with_suffix = base.with_suffix(suffix)
-        if with_suffix.exists():
-            return with_suffix
+    bases = [candidate] if candidate.is_absolute() else [build_dir.parent / candidate, build_dir / candidate]
+    for base in bases:
+        if base.suffix:
+            if base.exists():
+                return base
+        else:
+            for suffix in FIGURE_SUFFIXES:
+                with_suffix = base.with_suffix(suffix)
+                if with_suffix.exists():
+                    return with_suffix
     return None
 
 

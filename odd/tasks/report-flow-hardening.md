@@ -43,7 +43,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       format question and missing metadata through `ask_user_choice`; group work
       decided at format; documents shared as short `brave` commands, never
       screenshots.
-- [ ] T4 PDF quality (P2): nested ordered lists keep numbering; `<https://...>`
+- [x] T4 PDF quality (P2): nested ordered lists keep numbering; `<https://...>`
       autolinks become clickable `\url`; figure paths resolve from the report folder
       (build-relative still accepted); long monospace URLs break; deliver grants
       `HUMAN_REVIEW` from a current `final-review.yml`.
@@ -75,3 +75,12 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   1456 passed. On the real APE guide `guide_facts.py` returns family ape, practice 1,
   Individual, 3 horas. Optional `format_hint:`; guidance uses ask_user_choice and a
   two-line `brave` command.
+  Commit `e359a32`. RDD lineage `review-66f28982e101a927`: approved, acknowledged/
+  burned. Advisory, taken into T5: fish quoting/escaping of the handoff path, the
+  glob may match a stale PDF (prefer the exact file name), guide facts can be
+  ambiguous (report the conflicting matches), `format_hint` gate divergence.
+- T4: RED 4 + 3 focused failures (autolinks, nested lists, figure precedence,
+  HUMAN_REVIEW, SSH remote rendering, URL escaping, xurl); GREEN `pytest tools/ tests/ -q`
+  1464 passed. Real E2E PDF rebuilt: 0 Overfull hbox (was 4), 5 GitHub URI links,
+  4 DOI links, 7 cite links, steps numbered 5 and 6. First pass missed the
+  overflow; the parent's PDF check caught it before commit.
