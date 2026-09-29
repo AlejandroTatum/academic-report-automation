@@ -116,6 +116,15 @@ def test_verify_uses_independent_judge_without_drafting_conversation() -> None:
     assert text.count("Artifact:") == 1
 
 
+def test_verify_requires_two_parallel_judges_and_strictest_verdict() -> None:
+    text = read(SKILL_ROOT / "references" / "verify.md")
+    assert "two independent read-only judge subagents in parallel" in text
+    assert "same brief" in text
+    assert "judgments-a.yml" in text and "judgments-b.yml" in text
+    assert "--judgments judgments-a.yml --judgments judgments-b.yml" in text
+    assert "strictest verdict wins" in text.lower()
+
+
 def test_required_files_and_frontmatter() -> None:
     text = read(SKILL_MD)
     meta = frontmatter(text)

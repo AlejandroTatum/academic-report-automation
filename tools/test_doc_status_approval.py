@@ -35,7 +35,8 @@ def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path)
     status = doc_status.derive(folder)
     verify = doc_status._phase_verify(folder, None, None)
     assert verify.state == doc_status.PENDING
-    assert "re-run the independent judge" in status.gate
+    assert "TWO independent judges" in status.gate
+    assert "--judgments a.yml --judgments b.yml" in status.gate
     assert "malformed" not in status.gate
 
 
@@ -51,7 +52,8 @@ def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Pa
     _approval(folder)
     _content_check(folder, mechanical=[])
     status = doc_status.derive(folder)
-    assert "re-run the independent judge" in status.gate
+    assert "TWO independent judges" in status.gate
+    assert "--judgments a.yml --judgments b.yml" in status.gate
     assert "content_check.py" in status.gate
 
 

@@ -212,7 +212,8 @@ def _content_check(
         "body_sha256": body_sha256 or _sha256(body_path),
         "rubric_sha256": _sha256(folder / "rubric.yml"),
         "bib_sha256": _sha256(config.bib_path) if config.bib_path else "",
-        "judge": {"role": "independent", "inputs": ["rubric.yml", "body.md", config.bib_path.name if config.bib_path else "sources.bib"]},
+        "judges": [{"role": "independent", "inputs": ["rubric.yml", "body.md", config.bib_path.name if config.bib_path else "sources.bib"]}] * 2,
+        "disagreements": [],
         "checked_at": "2026-09-28T10:00:00+00:00",
         "criteria": [
             {"id": c["id"], "status": "cumple", "where": str(c["section"]), "note": "ok"}

@@ -77,8 +77,8 @@ _GUIDANCE = {
     "draft": "draft {body}, then re-run doc_status",
     "approval": "generation runs only after you approve {body}",
     "verify": (
-        "judge the draft against {rubric}: run {check_command} --judgments "
-        "<judgments-file>, then re-run doc_status"
+        "launch TWO independent judges for {rubric}; run {check_command} "
+        "--judgments a.yml --judgments b.yml, then re-run doc_status"
     ),
     "format": (
         "use ask_user_choice for APE, AA or libre and each remaining metadata gap "
@@ -267,7 +267,7 @@ def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | N
         return PhaseState(
             "verify",
             PENDING,
-            "content-check.yml is stale: inputs changed or legacy marker; re-run the independent judge",
+            "content-check.yml is stale: inputs changed or legacy marker; re-run two independent judges",
             "content_check_stale",
         )
     if state == "fail":
@@ -513,9 +513,9 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     if config is None:
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     if phase_name == "verify" and blocked_reason == "content_check_stale":
-        template = "re-run the independent judge for {body}, then run {check_command} --judgments <judgments-file>"
+        template = "launch TWO independent judges for {body}, then run {check_command} --judgments a.yml --judgments b.yml"
     if phase_name == "verify" and blocked_reason == "content_check_malformed":
-        template = "re-run the independent judge for {body}, then run the content check: {check_command} --judgments <judgments-file>"
+        template = "launch TWO independent judges for {body}, then run the content check: {check_command} --judgments a.yml --judgments b.yml"
     if phase_name == "verify" and blocked_reason == "content_check_failed":
         template = ("fix findings in {body} through the user's literal edit orders, "
                     "then re-approve the draft and re-run the independent judge")

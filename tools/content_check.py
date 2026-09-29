@@ -66,7 +66,8 @@ REQUIRED_MARKER_KEYS = (
     "body_sha256",
     "rubric_sha256",
     "bib_sha256",
-    "judge",
+    "judges",
+    "disagreements",
     "checked_at",
     "criteria",
     "findings",
@@ -136,6 +137,7 @@ def judge_brief(folder: Path) -> str:
     }
     return ("You are an independent read-only judge. Judge only from these inputs; "
             "do not use the drafting conversation or any other files. Do not edit any file.\n"
+            "Two judges run independently; do not coordinate with another judge.\n"
             "Citations [@key] in body.md render in IEEE format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
             "Allowed input paths (absolute):\n"
             + "\n".join(str(folder / name) for name in inputs)
@@ -309,7 +311,7 @@ def _write_marker_atomically(path: Path, text: str) -> None:
 
 
 def run_check(
-    folder: Path, judgments_path: Path, config: ReportConfig | None = None
+    folder: Path, judgments_path: list[Path] | tuple[Path, ...], config: ReportConfig | None = None
 ) -> CheckOutcome:
     """Run the content check for a report folder and write content-check.yml.
 
@@ -335,7 +337,15 @@ def run_check(
     except OSError:
         return CheckOutcome("", {}, (f"{BODY_NAME} missing or unreadable",))
 
-    judgments, findings, judge, judged_body, judged_rubric, errors = parse_judgments(judgments_path)
+    if not isinstance(judgments_path, (list, tuple)) or len(judgments_path) != 2:
+        return CheckOutcome("", {}, ("two independent judges required: pass exactly two judgments files",))
+    try:
+        if Path(judgments_path[0]).read_bytes() == Path(judgments_path[1]).read_bytes():
+            return CheckOutcome("", {}, ("two independent judges required: judgments files are identical",))
+    except OSError:
+        pass  # parse_judgments supplies the precise unreadable-file error
+    parsed = [parse_judgments(path) for path in judgments_path]
+    errors = [error for item in parsed for error in item[5]]
     if errors:
         return CheckOutcome("", {}, tuple(errors))
     if config is None:
@@ -351,18 +361,44 @@ def run_check(
         return CheckOutcome("", {}, (f"rubric or guide missing, malformed or unreadable: {exc}",))
     if not criteria:
         return CheckOutcome("", {}, ("rubric.yml missing or malformed",))
-    if not isinstance(judge, dict) or judge.get("role") != "independent":
-        errors.append("judge.role must be independent")
-    elif judge.get("inputs") != expected_inputs:
-        errors.append(f"judge.inputs must list exactly: {', '.join(expected_inputs)}")
-    if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
-        errors.append("body_sha256 and rubric_sha256 are required")
-    elif judged_body != sha256_file(body_path) or judged_rubric != rubric_hash:
-        errors.append("judgments are for a different draft; re-run the judge")
+    for _, _, judge, judged_body, judged_rubric, _ in parsed:
+        if not isinstance(judge, dict) or judge.get("role") != "independent":
+            errors.append("judge.role must be independent")
+        elif judge.get("inputs") != expected_inputs:
+            errors.append(f"judge.inputs must list exactly: {', '.join(expected_inputs)}")
+        if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
+            errors.append("body_sha256 and rubric_sha256 are required")
+        elif judged_body != sha256_file(body_path) or judged_rubric != rubric_hash:
+            errors.append("judgments are for a different draft; re-run the judge")
+    if parsed[0][3:5] != parsed[1][3:5]:
+        errors.append("judges must bind the same body_sha256 and rubric_sha256")
     if errors:
         return CheckOutcome("", {}, tuple(errors))
 
+    rank = {"cumple": 0, "flojo": 1, "falta": 2}
+    first, second = parsed[0][0], parsed[1][0]
+    second_by_id = {record["id"]: record for record in second}
+    judgments = []
+    disagreements = []
+    for a in first:
+        b = second_by_id.get(a["id"])
+        if b is None:
+            judgments.append(a)
+            continue
+        judgments.append(a if rank[a["status"]] >= rank[b["status"]] else b)
+        if a["status"] != b["status"]:
+            disagreements.append({"id": a["id"], "statuses": [a["status"], b["status"]]})
+    judgments.extend(b for b in second if b["id"] not in {a["id"] for a in first})
+    findings = list(dict.fromkeys([*parsed[0][1], *parsed[1][1], *(
+        f"judges disagreed on {d['id']}: {d['statuses'][0]} vs {d['statuses'][1]}"
+        for d in disagreements
+    )]))
+    judges = [item[2] for item in parsed]
+    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0])[-1] for item in parsed]
     checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments)
+    if not all(check["ok"] for check in individual_checks):
+        checks[-1] = {"check": "judgments_match_rubric", "ok": False,
+                      "detail": "; ".join(check["detail"] for check in individual_checks if not check["ok"])}
     rubric_results = [vars(item) for item in rubric_checks.run_checks(folder, criteria, body_text)]
     failed = [item for item in rubric_results if not item["ok"]]
     statuses = {item["id"]: item["status"] for item in judgments}
@@ -379,7 +415,8 @@ def run_check(
         "body_sha256": sha256_file(body_path),
         "rubric_sha256": _sha256_or_empty(folder / rubric_plan.RUBRIC_NAME),
         "bib_sha256": _sha256_or_empty(config.bib_path),
-        "judge": judge,
+        "judges": judges,
+        "disagreements": disagreements,
         "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "criteria": judgments,
         # The agent's free-text findings verbatim, plus every mechanical
@@ -421,12 +458,14 @@ def content_check_state(report_dir: Path) -> str:
         return "malformed"
     if not isinstance(data, dict):
         return "malformed"
-    if data.get("schema") == CONTENT_CHECK_SCHEMA and ("judge" not in data or "rubric_sha256" not in data):
+    if data.get("schema") == CONTENT_CHECK_SCHEMA and ("rubric_sha256" not in data or "judges" not in data or not isinstance(data.get("judges"), list) or len(data["judges"]) < 2):
         return "stale"
     for key in REQUIRED_MARKER_KEYS:
         if data.get(key) is None:
             return "malformed"
-    if not isinstance(data["judge"], dict) or data["judge"].get("role") != "independent":
+    if len(data["judges"]) != 2 or any(not isinstance(judge, dict) or judge.get("role") != "independent" for judge in data["judges"]):
+        return "malformed"
+    if not isinstance(data["disagreements"], list):
         return "malformed"
     if data["schema"] != CONTENT_CHECK_SCHEMA:
         return "malformed"
@@ -504,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("folder", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--judgments", type=Path)
+    mode.add_argument("--judgments", type=Path, action="append")
     mode.add_argument("--judge-brief", action="store_true")
     args = parser.parse_args(argv)
     if args.judge_brief:

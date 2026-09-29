@@ -10,21 +10,22 @@ judge and runs the hard content check.
 ## Contract
 
 After approval, run `content_check.py <folder> --judge-brief`. Give its exact
-output, and nothing from the drafting conversation, to ONE independent read-only
-judge subagent. The judge must use only the named inputs, quote `where` locations,
+output, and nothing from the drafting conversation, to TWO independent read-only
+judge subagents in parallel with the same brief; they must not coordinate. Each judge must use only the named inputs, quote `where` locations,
 and return YAML with `judge`, `body_sha256`, `rubric_sha256`, `criteria` (one
 `id`, `status: cumple|flojo|falta`, `where`, `note` per rubric criterion), and
-optional `findings`. Save that YAML unchanged as the judgments file; the drafting agent never writes judgments.
-A stale marker means re-run the independent judge on the current inputs, not
+optional `findings`. Save each YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; the drafting agent never writes judgments.
+A stale marker means re-run the independent judges on the current inputs, not
 reuse old judgments. Then run:
 
 ```bash
-"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --judgments <judgments-file>
+"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --judgments judgments-a.yml --judgments judgments-b.yml
 ```
 
 The tool adds the mechanical checks (every `[@key]` citation resolves, at least five
 eligible book or paper sources are actually cited), derives the verdict itself, and
 writes `content-check.yml` bound to `body.md`, `rubric.yml`, and the bib by hash.
+The strictest verdict wins per criterion (`falta` > `flojo` > `cumple`).
 
 The check only REPORTS findings: per-criterion cumple/flojo/falta with where,
 citation problems, the cited-source count, confusing paragraphs, and figures that
@@ -39,9 +40,9 @@ edited draft, rubric, or bib simply stales the marker and the check reruns.
 
 1. Run `content_check.py <folder> --judge-brief` using the same Python and folder
    as the command above. Do not pass the drafting conversation to the judge.
-2. Launch ONE independent read-only judge subagent with only that brief.
-3. Save the judge's YAML unchanged as `<judgments-file>`; run `content_check.py`
-   with `--judgments` (absolute command above).
+2. Launch two independent read-only judge subagents in parallel with only that same brief.
+3. Save their YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; run
+   `content_check.py` with both `--judgments` arguments (absolute command above).
 4. Report every finding verbatim and collect literal edit orders; never fix findings
    on your own initiative. Re-run `doc_status` and report the new phase.
 

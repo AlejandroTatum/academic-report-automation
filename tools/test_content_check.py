@@ -54,7 +54,48 @@ def _verify_folder(folder: Path) -> Path:
 def _run(folder: Path, judgments: Path | None = None) -> int:
     """Run the check the way the CLI does and return its exit code."""
     path = judgments if judgments is not None else _judgments(folder)
-    return content_check.main([str(folder), "--judgments", str(path)])
+    other = _judgments(folder, name="second.yml", findings=["Second independent review"])
+    return content_check.main([str(folder), "--judgments", str(path), "--judgments", str(other)])
+
+
+def test_two_judges_merge_strictest_and_dedupe_findings(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    first = _judgments(folder, name="a.yml", findings=["shared", "first"])
+    second = _judgments(folder, name="b.yml", findings=["shared", "second"], criteria=[
+        {"id": "objetivo", "status": "falta", "where": "missing", "note": "gap"},
+        {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+    ])
+    assert content_check.main([str(folder), "--judgments", str(first), "--judgments", str(second)]) == 1
+    marker = _marker(folder)
+    assert len(marker["judges"]) == 2
+    assert marker["criteria"][0] == {"id": "objetivo", "status": "falta", "where": "missing", "note": "gap"}
+    assert marker["disagreements"] == [{"id": "objetivo", "statuses": ["cumple", "falta"]}]
+    assert marker["findings"][:3] == ["shared", "first", "second"]
+    assert "judges disagreed on objetivo: cumple vs falta" in marker["findings"]
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_exactly_two_judgments_required(tmp_path: Path, capsys: pytest.CaptureFixture[str], count: int) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    args = [str(folder)]
+    for index in range(count):
+        args.extend(["--judgments", str(_judgments(folder, name=f"{index}.yml"))])
+    assert content_check.main(args) == 2
+    assert "two independent judges required" in capsys.readouterr().err
+
+
+def test_identical_judgments_rejected(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    a = _judgments(folder, name="a.yml")
+    b = _judgments(folder, name="b.yml")
+    assert content_check.main([str(folder), "--judgments", str(a), "--judgments", str(b)]) == 2
+    assert "two independent judges required" in capsys.readouterr().err
+
+
+def test_single_judge_marker_is_stale(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder, judges=[{"role": "independent", "inputs": ["rubric.yml", "body.md", "sources.bib"]}])
+    assert content_check.content_check_state(folder) == "stale"
 
 
 def _marker(folder: Path) -> dict:
@@ -132,7 +173,7 @@ def test_pass_case_writes_marker_and_exits_zero(tmp_path: Path) -> None:
     assert [c["id"] for c in marker["criteria"]] == ["objetivo", "metodologia"]
     assert all(c["status"] == "cumple" for c in marker["criteria"])
     assert all(entry["ok"] for entry in marker["mechanical"])
-    assert marker["findings"] == []
+    assert marker["findings"] == ["Second independent review"]
 
 
 def _sha(path: Path) -> str:
@@ -186,7 +227,7 @@ def test_marker_write_is_atomic_and_cleans_up_on_failure(
 
     monkeypatch.setattr(content_check.os, "replace", _boom)
     with pytest.raises(OSError):
-        content_check.run_check(folder, _judgments(folder))
+        content_check.run_check(folder, [_judgments(folder), _judgments(folder, name="second.yml", findings=["second"])])
 
     assert not (folder / "content-check.yml").exists()
     assert not (folder / "content-check.yml.tmp").exists()
@@ -448,7 +489,7 @@ def test_real_cli_subprocess_exit_codes(tmp_path: Path) -> None:
     script = Path(content_check.__file__)
 
     passed = subprocess.run(
-        [runner, str(script), str(folder), "--judgments", str(_judgments(folder))],
+        [runner, str(script), str(folder), "--judgments", str(_judgments(folder)), "--judgments", str(_judgments(folder, name="second.yml", findings=["second"]))],
         capture_output=True,
         text=True,
     )
@@ -456,7 +497,7 @@ def test_real_cli_subprocess_exit_codes(tmp_path: Path) -> None:
 
     broken = _judgments(folder, name="bad.yml", criteria=[{"id": "inventado", "status": "cumple"}])
     failed = subprocess.run(
-        [runner, str(script), str(folder), "--judgments", str(broken)],
+        [runner, str(script), str(folder), "--judgments", str(broken), "--judgments", str(_judgments(folder, name="second.yml", findings=["second"]))],
         capture_output=True,
         text=True,
     )
@@ -530,7 +571,7 @@ def test_pre_judge_marker_with_current_hashes_is_stale(tmp_path: Path) -> None:
 
 def test_legacy_marker_is_stale_not_malformed(tmp_path: Path) -> None:
     folder = _verify_folder(tmp_path / "wf")
-    _content_check(folder, drop=("judge", "rubric_sha256"))
+    _content_check(folder, drop=("judges", "rubric_sha256"))
     assert content_check.content_check_state(folder) == "stale"
 
 
@@ -539,7 +580,7 @@ def test_parse_failure_has_no_binding_cascade(tmp_path: Path, text: str) -> None
     folder = _verify_folder(tmp_path / "wf")
     path = folder / "judgments.yml"
     path.write_text(text)
-    outcome = content_check.run_check(folder, path)
+    outcome = content_check.run_check(folder, [path, _judgments(folder, name="second.yml", findings=["second"])])
     assert len(outcome.errors) == 1
     assert "judge" not in outcome.errors[0]
 
@@ -573,7 +614,11 @@ def test_missing_guide_is_omitted_from_judge_inputs(tmp_path: Path) -> None:
     data = yaml.safe_load(path.read_text())
     data["judge"]["inputs"].remove("missing.md")
     path.write_text(yaml.safe_dump(data))
-    assert content_check.run_check(folder, path).result == "pass"
+    second = _judgments(folder, name="second.yml", findings=["second"])
+    other = yaml.safe_load(second.read_text())
+    other["judge"]["inputs"].remove("missing.md")
+    second.write_text(yaml.safe_dump(other))
+    assert content_check.run_check(folder, [path, second]).result == "pass"
 
 
 def test_content_check_state_absent(tmp_path: Path) -> None:
@@ -713,7 +758,7 @@ def test_content_check_state_dedupes_id_comparison_not_sets(tmp_path: Path) -> N
     "kwargs",
     [
         {"drop": ("body_sha256",)},
-        {"judge": {"role": "drafter"}},
+        {"judges": [{"role": "drafter"}, {"role": "independent"}]},
         {"drop": ("bib_sha256",)},
         {"drop": ("result",)},
         {"drop": ("criteria",)},
