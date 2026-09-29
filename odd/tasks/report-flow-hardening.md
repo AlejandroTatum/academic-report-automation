@@ -58,3 +58,8 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
 (commit ids recorded per task)
 - T1: RED 10 focused failures; GREEN `pytest tools/ tests/ -q` 1439 passed. New
   `tools/rubric_checks.py`; content check adds a `rubric_checks` mechanical check.
+  Commits `215fc5b` + correction `f2de8c7` (every well-formed `min_citations` check
+  was rejected: integer `count` failed the string rule). RDD lineage
+  `review-585ecb610a36931c`: correction validated, approved, acknowledged/burned.
+  Advisory, taken into T5: fragile section parser in `rubric_checks.py`, unknown
+  check type not caught at run time, state gate not proved end to end.

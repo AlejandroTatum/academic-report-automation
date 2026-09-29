@@ -107,6 +107,15 @@ def human_template(text: str) -> str:
     raise AssertionError("SKILL.md must embed the fenced human status block template")
 
 
+def test_verify_uses_independent_judge_without_drafting_conversation() -> None:
+    text = read(SKILL_ROOT / "references" / "verify.md")
+    assert "--judge-brief" in text
+    assert "independent read-only judge" in text
+    assert "Do not pass the drafting conversation" in text
+    assert text.count("Executor:") == 1
+    assert text.count("Artifact:") == 1
+
+
 def test_required_files_and_frontmatter() -> None:
     text = read(SKILL_MD)
     meta = frontmatter(text)

@@ -85,6 +85,38 @@ def test_contract_constants_are_pinned() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_rejects_unbound_or_nonindependent_judgments(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import yaml
+
+    folder = _verify_folder(tmp_path / "wf")
+    path = _judgments(folder)
+    original = yaml.safe_load(path.read_text())
+    for change, message in (
+        ({"judge": None}, "judge"),
+        ({"judge": {"role": "drafter", "inputs": original["judge"]["inputs"]}}, "independent"),
+        ({"judge": {"role": "independent", "inputs": original["judge"]["inputs"] + ["conversation"]}}, "inputs"),
+        ({"body_sha256": "0" * 64}, "judgments are for a different draft; re-run the judge"),
+        ({"rubric_sha256": "0" * 64}, "judgments are for a different draft; re-run the judge"),
+    ):
+        path.write_text(yaml.safe_dump(dict(original, **change)))
+        assert _run(folder, path) == 2
+        assert message in capsys.readouterr().err
+        assert not (folder / "content-check.yml").exists()
+
+
+def test_judge_brief_is_bound_and_read_only(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    assert content_check.main([str(folder), "--judge-brief"]) == 0
+    brief = capsys.readouterr().out
+    for name in ("rubric.yml", "body.md", "sources.bib"):
+        assert str(folder / name) in brief
+    assert _sha(folder / "body.md") in brief
+    assert _sha(folder / "rubric.yml") in brief
+    assert "independent" in brief and "cumple|flojo|falta" in brief
+    assert "Do not edit" in brief and "where" in brief
+    assert not (folder / "content-check.yml").exists()
+
+
 def test_pass_case_writes_marker_and_exits_zero(tmp_path: Path) -> None:
     folder = _verify_folder(tmp_path / "wf")
 

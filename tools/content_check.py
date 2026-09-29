@@ -65,6 +65,7 @@ REQUIRED_MARKER_KEYS = (
     "body_sha256",
     "rubric_sha256",
     "bib_sha256",
+    "judge",
     "checked_at",
     "criteria",
     "findings",
@@ -87,7 +88,44 @@ class CheckOutcome:
     errors: tuple[str, ...]
 
 
-def parse_judgments(path: Path) -> tuple[list[dict], list[str], list[str]]:
+def judge_inputs(folder: Path, config: ReportConfig) -> list[str]:
+    """Exact report-relative names available to the independent judge."""
+    inputs = [rubric_plan.RUBRIC_NAME, BODY_NAME,
+              Path(str(config.raw.get("bibliography") or config.raw.get("bib") or "sources.bib")).name]
+    guide = config.raw.get("guide")
+    if guide:
+        inputs.append(str(guide))
+    return inputs
+
+
+def judge_brief(folder: Path) -> str:
+    """A self-contained, read-only assignment with hashes for the current draft."""
+    folder = folder.resolve()
+    if rubric_plan.rubric_state(folder) != "valid":
+        raise ValueError("rubric.yml missing or malformed")
+    for name in (BODY_NAME, rubric_plan.RUBRIC_NAME):
+        if not (folder / name).is_file():
+            raise ValueError(f"{name} missing or unreadable")
+    config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    inputs = judge_inputs(folder, config)
+    schema = {
+        "judge": {"role": "independent", "inputs": inputs},
+        "body_sha256": sha256_file(folder / BODY_NAME),
+        "rubric_sha256": sha256_file(folder / rubric_plan.RUBRIC_NAME),
+        "criteria": [{"id": "<rubric criterion id>", "status": "cumple|flojo|falta",
+                      "where": "<quoted location in body.md>", "note": "<reason>"}],
+        "findings": [],
+    }
+    return ("You are an independent read-only judge. Judge only from these inputs; "
+            "do not use the drafting conversation or any other files. Do not edit any file.\n"
+            "Allowed input paths (absolute):\n"
+            + "\n".join(str(folder / name) for name in inputs)
+            + "\nReturn only judgments YAML using this schema. Judge every rubric criterion; "
+              "allowed statuses: cumple|flojo|falta. Quote where locations.\n"
+            + yaml.safe_dump(schema, sort_keys=False))
+
+
+def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, list[str]]:
     """Parse an agent judgments file into ``(judgments, findings, errors)``.
 
     A judgments file is the agent's *input* contract, so a structural violation
@@ -100,20 +138,20 @@ def parse_judgments(path: Path) -> tuple[list[dict], list[str], list[str]]:
     try:
         text = Path(path).read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return [], [], [f"{name} is not valid UTF-8; save it as UTF-8"]
+        return [], [], {}, "", "", [f"{name} is not valid UTF-8; save it as UTF-8"]
     except OSError:
-        return [], [], [f"{name} unreadable"]
+        return [], [], {}, "", "", [f"{name} unreadable"]
 
     try:
         data = yaml.safe_load(text)
     except Exception:
-        return [], [], [f"{name} is not valid YAML"]
+        return [], [], {}, "", "", [f"{name} is not valid YAML"]
     if not isinstance(data, dict):
-        return [], [], [f"{name} must be a YAML mapping"]
+        return [], [], {}, "", "", [f"{name} must be a YAML mapping"]
 
     records = data.get("criteria")
     if not isinstance(records, list) or not records:
-        return [], [], [f"{name} criteria must be a non-empty list"]
+        return [], [], {}, "", "", [f"{name} criteria must be a non-empty list"]
 
     errors: list[str] = []
     judgments: list[dict] = []
@@ -145,7 +183,7 @@ def parse_judgments(path: Path) -> tuple[list[dict], list[str], list[str]]:
     if not isinstance(findings, list) or any(not isinstance(f, str) for f in findings):
         errors.append(f"{name} findings must be a list of strings")
         findings = []
-    return judgments, findings, errors
+    return judgments, findings, data.get("judge"), data.get("body_sha256"), data.get("rubric_sha256"), errors
 
 
 def mechanical_checks(
@@ -278,14 +316,23 @@ def run_check(
     except OSError:
         return CheckOutcome("", {}, (f"{BODY_NAME} missing or unreadable",))
 
-    judgments, findings, errors = parse_judgments(judgments_path)
-    if errors:
-        return CheckOutcome("", {}, tuple(errors))
-
+    judgments, findings, judge, judged_body, judged_rubric, errors = parse_judgments(judgments_path)
     if config is None:
         # Build directly (doc_status's production rule): a missing report.yml is
         # an empty mapping, so the bib default (sources.bib) still applies.
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+
+    expected_inputs = judge_inputs(folder, config)
+    if not isinstance(judge, dict) or judge.get("role") != "independent":
+        errors.append("judge.role must be independent")
+    elif judge.get("inputs") != expected_inputs:
+        errors.append(f"judge.inputs must list exactly: {', '.join(expected_inputs)}")
+    if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
+        errors.append("body_sha256 and rubric_sha256 are required")
+    elif judged_body != sha256_file(body_path) or judged_rubric != sha256_file(folder / rubric_plan.RUBRIC_NAME):
+        errors.append("judgments are for a different draft; re-run the judge")
+    if errors:
+        return CheckOutcome("", {}, tuple(errors))
 
     criteria = rubric_plan.load_rubric(folder)
     checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments)
@@ -305,6 +352,7 @@ def run_check(
         "body_sha256": sha256_file(body_path),
         "rubric_sha256": _sha256_or_empty(folder / rubric_plan.RUBRIC_NAME),
         "bib_sha256": _sha256_or_empty(config.bib_path),
+        "judge": judge,
         "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "criteria": judgments,
         # The agent's free-text findings verbatim, plus every mechanical
@@ -347,6 +395,8 @@ def content_check_state(report_dir: Path) -> str:
     for key in REQUIRED_MARKER_KEYS:
         if data.get(key) is None:
             return "malformed"
+    if not isinstance(data["judge"], dict) or data["judge"].get("role") != "independent":
+        return "malformed"
     if data["schema"] != CONTENT_CHECK_SCHEMA:
         return "malformed"
     if data["result"] not in RESULT_VALUES:
@@ -412,8 +462,17 @@ def main(argv: list[str] | None = None) -> int:
         description="Run the hard content check for a report folder (never edits body.md)."
     )
     parser.add_argument("folder", type=Path)
-    parser.add_argument("--judgments", type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--judgments", type=Path)
+    mode.add_argument("--judge-brief", action="store_true")
     args = parser.parse_args(argv)
+    if args.judge_brief:
+        try:
+            print(judge_brief(args.folder))
+        except (ValueError, OSError) as exc:
+            print(f"content check input error: {exc}", file=sys.stderr)
+            return 2
+        return 0
 
     outcome = run_check(args.folder, args.judgments)
     if outcome.errors:

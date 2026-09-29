@@ -163,7 +163,16 @@ def _judgments(
             {"id": c["id"], "status": "cumple", "where": str(c["section"]), "note": "ok"}
             for c in DEFAULT_RUBRIC_CRITERIA
         ]
-    body: dict[str, object] = {"criteria": criteria}
+    config = _config(folder)
+    inputs = ["rubric.yml", "body.md", config.bib_path.name if config.bib_path else "sources.bib"]
+    if config.raw.get("guide"):
+        inputs.append(Path(str(config.raw["guide"])).name)
+    body: dict[str, object] = {
+        "judge": {"role": "independent", "inputs": inputs},
+        "body_sha256": _sha256(folder / "body.md") if (folder / "body.md").is_file() else "",
+        "rubric_sha256": _sha256(folder / "rubric.yml") if (folder / "rubric.yml").is_file() else "",
+        "criteria": criteria,
+    }
     if findings is not None:
         body["findings"] = findings
     path = folder / name
@@ -203,6 +212,7 @@ def _content_check(
         "body_sha256": body_sha256 or _sha256(body_path),
         "rubric_sha256": _sha256(folder / "rubric.yml"),
         "bib_sha256": _sha256(config.bib_path) if config.bib_path else "",
+        "judge": {"role": "independent", "inputs": ["rubric.yml", "body.md", config.bib_path.name if config.bib_path else "sources.bib"]},
         "checked_at": "2026-09-28T10:00:00+00:00",
         "criteria": [
             {"id": c["id"], "status": "cumple", "where": str(c["section"]), "note": "ok"}

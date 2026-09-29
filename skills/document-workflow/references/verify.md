@@ -4,15 +4,17 @@ Executor: document-workflow
 Artifact: `reports/<wf>/content-check.yml`
 
 Load this reference only when `doc_status` returns `next: verify`. This skill executes
-the phase itself: it judges the approved draft against the plan and runs the hard
-content check.
+the phase itself: it delegates semantic judgments to an independent read-only
+judge and runs the hard content check.
 
 ## Contract
 
-After approval, judge every rubric criterion in a judgments file - one record per
-criterion with `id`, `status: cumple|flojo|falta`, and `where` (the paragraph or
-section the judgment comes from) - plus optional free-text `findings` such as
-confusing paragraphs or figures that serve no criterion. Then run:
+After approval, run `content_check.py <folder> --judge-brief`. Give its exact
+output, and nothing from the drafting conversation, to ONE independent read-only
+judge subagent. The judge must use only the named inputs, quote `where` locations,
+and return YAML with `judge`, `body_sha256`, `rubric_sha256`, `criteria` (one
+`id`, `status: cumple|flojo|falta`, `where`, `note` per rubric criterion), and
+optional `findings`. Save that YAML unchanged as the judgments file. Then run:
 
 ```bash
 "$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --judgments <judgments-file>
@@ -33,12 +35,13 @@ edited draft, rubric, or bib simply stales the marker and the check reruns.
 
 ## Steps
 
-1. Judge every `rubric.yml` criterion in a judgments file (`cumple`, `flojo`, or
-   `falta`, each with its `where`), and record free-text findings.
-2. Run `content_check.py` with `--judgments` (absolute command above).
-3. Report every finding to the user verbatim and collect literal edit orders for the
-   fixes; never fix findings on your own initiative.
-4. Re-run `doc_status` and report the new current phase.
+1. Run `content_check.py <folder> --judge-brief` using the same Python and folder
+   as the command above. Do not pass the drafting conversation to the judge.
+2. Launch ONE independent read-only judge subagent with only that brief.
+3. Save the judge's YAML unchanged as `<judgments-file>`; run `content_check.py`
+   with `--judgments` (absolute command above).
+4. Report every finding verbatim and collect literal edit orders; never fix findings
+   on your own initiative. Re-run `doc_status` and report the new phase.
 
 ## Never
 
