@@ -31,6 +31,7 @@ from pathlib import Path
 from approval_marker import approval_state, bound_file_names, sha256_file
 from report_config import ROOT, ReportConfig, read_yaml
 from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
+from source_count import source_gate
 from structure_contract import structure_confirmation_state, structure_gate_engaged
 
 PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
@@ -48,7 +49,7 @@ SCHEMA_VERSION = 1
 _GUIDANCE = {
     "intake": "complete {report_yml}, then re-run doc_status",
     "research": (
-        "write {matrix} or record research: skipped, "
+        "write at least 5 book or paper sources to {sources}, "
         "then re-run doc_status"
     ),
     "preview": "draft {preview}, then re-run doc_status",
@@ -109,27 +110,31 @@ def _phase_intake(folder: Path, config: ReportConfig, _documents_root: Path | No
 
 
 def _phase_research(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
-    # #11: once a report has written research/evidence.yml at all, the
-    # research phase stays incomplete until the matrix validates
-    # structurally -- unsupported, conflicting, or insufficient claims
-    # (R12) block this phase exactly like any other final-gate failure. A
-    # report that never wrote evidence.yml keeps the pre-existing,
-    # matrix.md-only behaviour untouched.
-    if evidence_gate_engaged(folder):
+    # new-report-flow T2: research is a hard source gate. The phase is done
+    # only when the report's own BibTeX file carries at least
+    # MIN_ACADEMIC_SOURCES eligible book-or-paper entries; a recorded
+    # `research: skipped` in report.yml and a non-empty evidence-matrix.md no
+    # longer satisfy it. #11 still applies: once research/evidence.yml
+    # exists at all, it must validate structurally on top of the source
+    # gate -- unsupported, conflicting, or insufficient claims (R12) block
+    # this phase exactly like any other final-gate failure.
+    engaged = evidence_gate_engaged(folder)
+    if engaged:
         package = load_evidence_package(folder) or {}
         result = validate_evidence_package(package)
         if result.errors:
             return PhaseState(
                 "research", PENDING, "evidence.yml invalid: " + "; ".join(result.errors)
             )
+    sources = source_gate(folder, config)
+    if not sources.ok:
+        detail = sources.reason
+        if str(config.raw.get("research") or "").strip().lower() == "skipped":
+            detail += " (research: skipped is no longer accepted)"
+        return PhaseState("research", PENDING, detail)
+    if engaged:
         return PhaseState("research", DONE, "research/evidence.yml validated")
-
-    matrix = _read_text(folder / "research" / "evidence-matrix.md")
-    if matrix is not None and matrix.strip():
-        return PhaseState("research", DONE, "research/evidence-matrix.md present")
-    if str(config.raw.get("research") or "").strip().lower() == "skipped":
-        return PhaseState("research", DONE, "skipped in report.yml")
-    return PhaseState("research", PENDING, "no evidence matrix and research not skipped")
+    return PhaseState("research", DONE, sources.reason)
 
 
 def _phase_preview(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -357,7 +362,7 @@ def _guidance(phase_name: str, work_folder: Path) -> str:
     return template.format(
         folder=folder,
         report_yml=folder / "report.yml",
-        matrix=folder / "research" / "evidence-matrix.md",
+        sources=folder / "sources.bib",
         preview=folder / "preview.md",
         body=folder / "body.md",
         validation=folder / "validation.yml",

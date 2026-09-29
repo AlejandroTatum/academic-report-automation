@@ -69,9 +69,32 @@ def _report(folder: Path, *, route: str | None = "academic", **metadata: object)
 
 
 def _skip_research(folder: Path, value: str = "skipped") -> None:
-    """Append the top-level ``research:`` key to an existing ``report.yml``."""
+    """Append the legacy top-level ``research:`` key to an existing ``report.yml``.
+
+    new-report-flow T2 removed the recorded-skip shortcut: the research phase no
+    longer reads this key as ``done``. The builder stays only so tests can write
+    the key and prove it is ignored.
+    """
     report = folder / "report.yml"
     report.write_text(report.read_text(encoding="utf-8") + f"research: {value}\n", encoding="utf-8")
+
+
+def _sources_bib(folder: Path, count: int = 5, name: str = "sources.bib") -> Path:
+    """Write a BibTeX file with ``count`` eligible book-or-paper entries.
+
+    The research phase is done only when the report's BibTeX file holds at
+    least five eligible entries (new-report-flow T2), so later-phase fixtures
+    call this with the default ``count=5`` to get past research.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    types = ("book", "article", "inproceedings", "phdthesis", "incollection")
+    lines = []
+    for i in range(count):
+        entry_type = types[i % len(types)]
+        lines.append(f'@{entry_type}{{key{i + 1}, title = "Title {i + 1}"}}')
+    path = folder / name
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def _preview(folder: Path, text: str = DEFAULT_PREVIEW) -> Path:
@@ -95,6 +118,33 @@ def _evidence_matrix(folder: Path, text: str = DEFAULT_MATRIX) -> Path:
     research = folder / "research"
     research.mkdir(parents=True, exist_ok=True)
     path = research / "evidence-matrix.md"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _evidence_yml(folder: Path, text: str | None = None) -> Path:
+    """Write a valid ``research/evidence.yml`` (the #11 structured package).
+
+    A custom ``text`` replaces the default single valid claim, e.g. to build
+    an invalid package for a negative test.
+    """
+    research = folder / "research"
+    research.mkdir(parents=True, exist_ok=True)
+    path = research / "evidence.yml"
+    if text is None:
+        text = (
+            "claims:\n"
+            "  - claim_id: c1\n"
+            "    section: introduction\n"
+            "    source_id: s1\n"
+            "    source_class: book\n"
+            "    locator: p. 12\n"
+            "    citation_key: key1\n"
+            "    evidence: Verbatim finding.\n"
+            "    confidence: high\n"
+            "    use_type: paraphrase\n"
+            "    identifier: ISBN 9780134685991\n"
+        )
     path.write_text(text, encoding="utf-8")
     return path
 

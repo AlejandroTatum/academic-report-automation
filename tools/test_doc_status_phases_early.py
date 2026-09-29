@@ -14,7 +14,16 @@ from pathlib import Path
 import pytest
 
 import doc_status
-from conftest import _body, _config, _evidence_matrix, _preview, _report, _skip_research
+from conftest import (
+    _body,
+    _config,
+    _evidence_matrix,
+    _evidence_yml,
+    _preview,
+    _report,
+    _skip_research,
+    _sources_bib,
+)
 
 
 def _early_phases(folder: Path) -> list[doc_status.PhaseState]:
@@ -107,47 +116,102 @@ def test_intake_route_alias_uses_the_mapped_route_and_its_own_metadata(tmp_path:
 # ---------------------------------------------------------------------------
 
 
-def test_research_evidence_matrix_present_is_done(tmp_path: Path) -> None:
+def test_research_five_eligible_entries_is_done(tmp_path: Path) -> None:
+    """new-report-flow T2: research is done only with >= 5 eligible sources."""
     folder = tmp_path / "wf"
     _report(folder)
-    _evidence_matrix(folder)
+    _sources_bib(folder)
 
     phase = doc_status._phase_research(folder, _config(folder), None)
 
     assert phase.state == doc_status.DONE
-    assert "evidence-matrix.md" in phase.detail
+    assert "5/5" in phase.detail
 
 
-def test_research_skipped_is_done(tmp_path: Path) -> None:
+def test_research_four_eligible_entries_is_pending_with_count(tmp_path: Path) -> None:
     folder = tmp_path / "wf"
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder, count=4)
 
     phase = doc_status._phase_research(folder, _config(folder), None)
 
-    assert phase.state == doc_status.DONE
-    assert "skipped" in phase.detail
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+    assert phase.detail == "sources.bib has 4/5 book or paper sources"
 
 
-def test_research_neither_matrix_nor_skip_is_pending(tmp_path: Path) -> None:
+def test_research_missing_sources_bib_reports_zero_of_five(tmp_path: Path) -> None:
     folder = tmp_path / "wf"
     _report(folder)
 
     phase = doc_status._phase_research(folder, _config(folder), None)
 
     assert phase.state == doc_status.PENDING
-    assert phase.blocked_reason == ""
+    assert phase.detail == "sources.bib has 0/5 book or paper sources"
 
 
-def test_research_skip_value_is_trimmed_and_case_insensitive(tmp_path: Path) -> None:
-    """TRIANGULATE: ``research: '  SKIPPED  '`` still counts as skipped."""
+def test_research_evidence_matrix_alone_no_longer_satisfies(tmp_path: Path) -> None:
+    """A non-empty matrix is still evidence work, but never the phase artifact."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _evidence_matrix(folder)
+
+    phase = doc_status._phase_research(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert "sources.bib" in phase.detail
+
+
+def test_research_skipped_in_report_yml_is_no_longer_accepted(tmp_path: Path) -> None:
+    """new-report-flow T2: the recorded skip decision is ignored, and named."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _skip_research(folder)
+
+    phase = doc_status._phase_research(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert "no longer accepted" in phase.detail
+
+
+def test_research_skip_value_case_variants_stay_pending(tmp_path: Path) -> None:
+    """TRIANGULATE: ``research: '  SKIPPED  '`` is ignored exactly like the rest."""
     folder = tmp_path / "wf"
     _report(folder)
     _skip_research(folder, value="'  SKIPPED  '")
 
     phase = doc_status._phase_research(folder, _config(folder), None)
 
+    assert phase.state == doc_status.PENDING
+
+
+def test_research_valid_evidence_yml_still_validates_on_top_of_sources(
+    tmp_path: Path,
+) -> None:
+    """#11: once evidence.yml exists it must validate, even with five sources."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _evidence_yml(folder)
+
+    phase = doc_status._phase_research(folder, _config(folder), None)
+
     assert phase.state == doc_status.DONE
+    assert "research/evidence.yml validated" in phase.detail
+
+
+def test_research_invalid_evidence_yml_keeps_the_phase_pending(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _evidence_yml(folder, text="claims: []\n")
+
+    phase = doc_status._phase_research(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert "evidence.yml invalid" in phase.detail
 
 
 # ---------------------------------------------------------------------------

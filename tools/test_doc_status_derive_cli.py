@@ -16,7 +16,7 @@ import hashlib
 from pathlib import Path
 
 import doc_status
-from conftest import _approval, _body, _marker_text, _pdf, _preview, _report, _skip_research
+from conftest import _approval, _body, _marker_text, _pdf, _preview, _report, _sources_bib
 
 
 def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
@@ -37,7 +37,7 @@ def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
 def _working_folder(folder: Path) -> Path:
     """Build a folder that reaches the approval phase: report, research, preview, body."""
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder)
     _preview(folder)
     _body(folder)
     return folder
@@ -100,7 +100,7 @@ def test_derive_focuses_on_draft_when_preview_done_and_body_missing(tmp_path: Pa
     """Acceptance: preview.md present with no body.md routes to ``next: draft``."""
     folder = tmp_path / "wf"
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder)
     _preview(folder)
 
     status = doc_status.derive(folder)

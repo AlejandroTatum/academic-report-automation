@@ -32,7 +32,7 @@ from conftest import (
     _preview,
     _published,
     _report,
-    _skip_research,
+    _sources_bib,
     _validation,
 )
 
@@ -53,7 +53,7 @@ PAYLOAD_KEYS = {
 def _golden_folder(folder: Path) -> Path:
     """The design's documented state: intake+research done, preview waits, no marker."""
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder)
     return folder
 
 
@@ -73,7 +73,7 @@ def _all_done(tmp_path: Path) -> tuple[Path, Path]:
     """A folder whose every phase is ``done``; returns (folder, Documents root)."""
     folder = tmp_path / "wf"
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder)
     _preview(folder)
     marker = _approval(folder)
     pdf = _pdf(folder)
@@ -129,7 +129,7 @@ def test_render_human_golden(tmp_path: Path) -> None:
             "",
             "**Summary**",
             "- intake: done - route=academic, metadata complete",
-            "- research: done - skipped in report.yml",
+            "- research: done - sources.bib has 5/5 book or paper sources",
             "- preview: current - preview.md missing",
             "- draft: pending",
             "- approval: pending",
@@ -225,7 +225,7 @@ def test_human_and_json_gate_agree_across_the_state_matrix(tmp_path: Path) -> No
     _approval(stale_approval, body_sha256="0" * 64)
     mismatched = tmp_path / "mismatched"
     _report(mismatched)
-    _skip_research(mismatched)
+    _sources_bib(mismatched)
     _preview(mismatched)
     marker = _approval(mismatched)
     pdf = _pdf(mismatched)
@@ -273,7 +273,7 @@ def test_render_human_gate_falls_to_focus_after_approval(tmp_path: Path) -> None
     """TRIANGULATE: once approval passes the gate names the waiting focus."""
     folder = tmp_path / "wf"
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder)
     _approval(folder)
 
     status = doc_status.derive(folder)
@@ -302,7 +302,7 @@ def test_gate_names_body_md_when_draft_is_current(tmp_path: Path) -> None:
     """Acceptance: preview done, body.md missing gates on draft naming body.md."""
     folder = tmp_path / "wf"
     _report(folder)
-    _skip_research(folder)
+    _sources_bib(folder)
     _preview(folder)
 
     status = doc_status.derive(folder)

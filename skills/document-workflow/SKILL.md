@@ -83,7 +83,7 @@ Route: intake > research > [preview] > draft > approval > generate > validate > 
 
 **Summary**
 - intake: done - route=academic, metadata complete
-- research: done - skipped in report.yml
+- research: done - sources.bib has 5/5 book or paper sources
 - preview: current - preview.md missing
 - draft: pending
 - approval: pending
@@ -97,7 +97,7 @@ Route: intake > research > [preview] > draft > approval > generate > validate > 
 ## References
 
 - `references/intake.md` - intake contract and `report.yml` completion.
-- `references/research.md` - optional evidence collection and `research: skipped`.
+- `references/research.md` - the mandatory five-source BibTeX gate (`sources.bib`).
 - `references/preview.md` - pre-build content preview composition.
 - `references/draft.md` - full document body drafted before approval.
 - `references/approval.md` - the single human approval gate.

@@ -45,7 +45,7 @@ REFERENCE_EXECUTOR = {
 # The single artifact each phase must produce, exactly as its reference declares it.
 REFERENCE_ARTIFACT = {
     "intake": "reports/<wf>/report.yml",
-    "research": "reports/<wf>/research/evidence-matrix.md",
+    "research": "reports/<wf>/sources.bib",
     "preview": "reports/<wf>/preview.md",
     "draft": "reports/<wf>/body.md",
     "generate": "outputs/<materia>/<final>.pdf",
@@ -316,16 +316,26 @@ def test_draft_reference_names_authoring_format_and_single_artifact() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_research_reference_names_local_inspected_evidence_when_skipped() -> None:
-    """Skipping research must still cite the local inspected evidence that covers it."""
+def test_research_reference_names_the_five_source_gate() -> None:
+    """new-report-flow T2: research is a hard gate, never a skippable phase.
+
+    The reference must name the per-document BibTeX artifact, the five-source
+    minimum, and the forbidden web-only types -- and the recorded skip path
+    must be gone.
+    """
     text = read(SKILL_ROOT / "references" / "research.md")
     flat = re.sub(r"\s+", " ", text).lower()
 
-    assert "source_library.py" in flat, (
-        "a skipped research phase must name the local source inventory the evidence comes from"
+    assert "sources.bib" in flat, "the phase must name the per-document BibTeX file"
+    assert re.search(r"at least 5\b", flat), "the reference must state the five-source minimum"
+    assert "@misc" in flat and "@online" in flat, (
+        "the reference must name the web-only types that never count"
     )
-    assert "inspected" in flat, "the local evidence must be the inspected kind"
-    assert "research: skipped" in flat, "the recorded skip decision must stay"
+    assert "research: skipped" not in flat, "the recorded skip decision must be gone"
+    assert "source_library.py" in flat, (
+        "the reference must still name the local source inventory tool"
+    )
+    assert "inspected" in flat, "only inspected local sources are bibliography-eligible"
 
 
 def test_preview_reference_allows_utf8_and_protects_approved_bytes() -> None:

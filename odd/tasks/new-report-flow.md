@@ -74,6 +74,11 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
 (commit ids recorded per task)
 - T1: RED 19 focused failures + missing `final_review_marker`; GREEN `pytest tools/ tests/ -q`
   1222 passed (baseline 1208). Schema kept at `academic.doc-approval/v1`.
+  Commit `78ed109`. RDD lineage `review-d6e32b187ef0cee2`: approved (high tier,
+  4 lenses), acknowledged/burned. Advisory follow-ups (non-blocking):
+  final-review marker has no producer yet (T5/T6 owns it); non-mapping YAML and
+  missing-PDF cases in `final_review_marker.py`; gate ownership wording in
+  `deliver_report.py`; hidden validated-PDF coupling in `test_pdf_publication.py`.
 
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow
