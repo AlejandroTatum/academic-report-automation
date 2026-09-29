@@ -55,6 +55,10 @@ def tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", normalized(value)))
 
 
+class RegistryDataError(ValueError):
+    """Registry answered 200 but the payload or a required field is unusable."""
+
+
 def _covers(reference: set[str], candidate: set[str]) -> bool:
     return bool(reference) and len(reference & candidate) / len(reference) >= 0.8
 
@@ -86,25 +90,29 @@ def compare(fields: dict, remote: dict, kind: str) -> dict:
     mismatches = {}
     warnings = {}
     if not isinstance(remote, dict):
-        raise ValueError('registry response is not an object')
+        raise RegistryDataError('registry response is not an object')
     message = remote.get("message", {}) if kind == "doi" else remote
     if not isinstance(message, dict):
-        raise ValueError('registry record is not an object')
+        raise RegistryDataError('registry record is not an object')
     titles = message.get('title')
     if kind == 'doi':
         if not isinstance(titles, list) or not titles or not isinstance(titles[0], str) or not titles[0].strip():
-            raise ValueError('registry title missing or malformed')
+            raise RegistryDataError('registry title missing or malformed')
         found_title = titles[0]
     else:
         if not isinstance(titles, str) or not titles.strip():
-            raise ValueError('registry title missing or malformed')
+            raise RegistryDataError('registry title missing or malformed')
         found_title = titles
     expected_title = fields.get("title", "")
     if not _title_matches(expected_title, found_title):
         mismatches["title"] = {"expected": expected_title, "found": found_title}
     if kind == "doi":
         date = message.get("issued") or message.get("published-print") or {}
+        if not isinstance(date, dict):
+            raise RegistryDataError('registry issued date is not an object')
         parts = date.get("date-parts") or [[]]
+        if not isinstance(parts, list) or not parts or not isinstance(parts[0], list):
+            raise RegistryDataError('registry date-parts is not a list of lists')
         found_year = year_of(parts[0][0] if parts[0] else None)
     else:
         found_year = year_of(message.get("publish_date"))
@@ -112,10 +120,15 @@ def compare(fields: dict, remote: dict, kind: str) -> dict:
     if expected_year != found_year:
         target = warnings if expected_year is not None and found_year is not None and abs(expected_year - found_year) == 1 else mismatches
         target["year"] = {"expected": expected_year, "found": found_year}
-    if kind == "doi" and message.get("author") and fields.get("author"):
+    authors = message.get("author")
+    if kind == "doi" and authors and fields.get("author"):
+        if not isinstance(authors, list) or not isinstance(authors[0], dict):
+            raise RegistryDataError('registry author list is not a list of objects')
         author = fields["author"].split(" and ", 1)[0]
         expected = author.split(",", 1)[0].strip() if "," in author else author.split()[-1]
-        found = message["author"][0].get("family", "")
+        found = authors[0].get("family", "")
+        if not isinstance(found, str):
+            raise RegistryDataError('registry author family name is not a string')
         if expected and found and _family_tokens(expected) != _family_tokens(found):
             mismatches["author"] = {"expected": expected, "found": found}
     result = {"status": "MISMATCH" if mismatches else "VERIFIED_WITH_WARNINGS" if warnings else "VERIFIED"}
@@ -163,12 +176,18 @@ def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
                 (sleep or time.sleep)(2)
                 remote = (fetch or default_fetch)(request, 15)
             result.update(compare(fields, remote, kind))
+        except RegistryDataError as error:
+            result['status'] = 'MISMATCH'
+            result['detail'] = f'Registry data unusable: {error}'
         except HTTPError as error:
             result['status'] = 'NOT_FOUND' if error.code == 404 else 'NETWORK_ERROR'
             result['detail'] = f'HTTP {error.code}: {error.reason}'
-        except (URLError, TimeoutError, OSError, ValueError, TypeError, KeyError, IndexError) as error:
+        except json.JSONDecodeError as error:
+            result['status'] = 'MISMATCH'
+            result['detail'] = f'Registry returned malformed JSON: {error}'
+        except (URLError, TimeoutError, OSError) as error:
             result['status'] = 'NETWORK_ERROR'
-            result['detail'] = f'Invalid or unavailable registry response: {error}'
+            result['detail'] = f'Registry unreachable: {error}'
         results.append(result)
     if not results:
         results.append({'key': '', 'status': 'NO_IDENTIFIER', 'detail': 'Empty bibliography: no entries to verify'})

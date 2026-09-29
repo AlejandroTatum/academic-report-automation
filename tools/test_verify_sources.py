@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 
 import yaml
 
+import verify_sources as verify_sources_module
 from verify_sources import verify_sources, main
 
 
@@ -37,7 +38,7 @@ def test_malformed_registry_continues(tmp_path):
         calls = iter([bad, doi_response()])
         assert verify_sources(folder, fetch=lambda *_: next(calls)) == 1
         rows = result_rows(folder)
-        assert rows[0]['status'] in ('NETWORK_ERROR', 'MISMATCH') and rows[0].get('detail')
+        assert rows[0]['status'] == 'MISMATCH' and rows[0].get('detail')
         assert rows[1]['status'] == 'VERIFIED'
 
 
@@ -152,3 +153,72 @@ def test_no_identifier_and_usage_exit(tmp_path):
     assert verify_sources(folder, fetch=forbidden) == 1
     assert yaml.safe_load((folder / "research/sources-verification.yml").read_text())["results"][0]["status"] == "NO_IDENTIFIER"
     assert main([str(tmp_path / "missing")], fetch=forbidden) == 2
+
+
+def test_malformed_json_from_default_fetch_reports_mismatch(tmp_path, monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return self.payload
+
+    payloads = iter([FakeResponse(b'<html>not json</html>'),
+                     FakeResponse(json.dumps({'title': 'A Study of Trees', 'publish_date': '2020'}).encode())])
+    monkeypatch.setattr(verify_sources_module, 'urlopen', lambda request, timeout: next(payloads))
+    bib = '@article{x, title={A Study of Trees}, doi={10.1/x}}\n@book{y, title={A Study of Trees}, year={2020}, isbn={978-1-234-56789-7}}'
+    folder = report(tmp_path, bib)
+    assert verify_sources(folder) == 1
+    rows = result_rows(folder)
+    assert rows[0]['status'] == 'MISMATCH' and 'json' in rows[0]['detail'].lower()
+    assert rows[1]['status'] == 'VERIFIED'
+
+
+def test_crossref_shape_errors_report_mismatch_and_continue(tmp_path):
+    bad_payloads = (
+        {'message': {'title': ['A Study of Trees'], 'issued': '2020'}},
+        {'message': {'title': ['A Study of Trees'], 'issued': {'date-parts': 2020}}},
+        {'message': {'title': ['A Study of Trees'], 'issued': {'date-parts': [[2020]]}, 'author': 'Garcia'}},
+    )
+    for index, bad in enumerate(bad_payloads):
+        bib = '@article{x, title={A Study of Trees}, year={2020}, doi={10.1/x}, author={Garcia, Ana}}\n@article{y, title={A Study of Trees}, year={2020}, doi={10.1/y}}'
+        folder = report(tmp_path / str(index), bib)
+        calls = iter([bad, doi_response()])
+        assert verify_sources(folder, fetch=lambda *_: next(calls)) == 1
+        rows = result_rows(folder)
+        assert rows[0]['status'] == 'MISMATCH' and rows[0].get('detail')
+        assert rows[1]['status'] == 'VERIFIED'
+
+
+def test_openlibrary_shape_errors_report_mismatch_and_continue(tmp_path):
+    bad_payloads = ([], {'title': ['A Study of Trees'], 'publish_date': '2020'}, {'publish_date': '2020'})
+    for index, bad in enumerate(bad_payloads):
+        bib = '@book{b, title={A Study of Trees}, year={2020}, isbn={978-1-234-56789-7}}\n@book{c, title={A Study of Trees}, year={2020}, isbn={978-1-234-56789-7}}'
+        folder = report(tmp_path / str(index), bib)
+        calls = iter([bad, {'title': 'A Study of Trees', 'publish_date': '2020'}])
+        assert verify_sources(folder, fetch=lambda *_: next(calls)) == 1
+        rows = result_rows(folder)
+        assert rows[0]['status'] == 'MISMATCH' and rows[0].get('detail')
+        assert rows[1]['status'] == 'VERIFIED'
+
+
+def test_network_error_keeps_status_and_later_entries_run(tmp_path):
+    for index, boom in enumerate((URLError('offline'), TimeoutError('slow'))):
+        bib = '@article{x, title={A Study of Trees}, doi={10.1/x}}\n@article{y, title={A Study of Trees}, year={2020}, doi={10.1/y}}'
+        folder = report(tmp_path / str(index), bib)
+
+        def flaky(request, timeout, boom=boom):
+            if request.full_url.endswith('10.1/x'):
+                raise boom
+            return doi_response()
+
+        assert verify_sources(folder, fetch=flaky) == 1
+        rows = result_rows(folder)
+        assert rows[0]['status'] == 'NETWORK_ERROR' and rows[0].get('detail')
+        assert rows[1]['status'] == 'VERIFIED'

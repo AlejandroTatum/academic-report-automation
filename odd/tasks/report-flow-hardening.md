@@ -84,7 +84,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       the checks use the same bytes; tolerance text comes from one constant shared
       with rubric_checks; content-check.yml binds the guide hash (a changed guide
       stales the marker); move the T10 tests out of the middle of another test.
-- [ ] T12 verify_sources: registry-data errors (bad fields in a 200 response)
+- [x] T12 verify_sources: registry-data errors (bad fields in a 200 response)
       report MISMATCH, not NETWORK_ERROR.
 - [ ] T13 guide_facts conflicts contract documented in its reference; proof test
       that a URL inside a moving argument (heading/caption) builds.
@@ -220,7 +220,44 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
 - T11: RED by the worker (10 failing tests + ImportError on TOLERANCE_RULES);
   parent's scratch-copy RED stopped at collection (TOLERANCE_RULES missing at
   HEAD). GREEN 1546 passed; the delivered APE report stays `next: done` (markers
-  without guide_sha256 remain valid).
+  without guide_sha256 remain valid). Commit `4490701`; RDD lineage
+  `review-b25435178a429457`: all four lenses approved, acknowledged/burned on
+  resume (2026-09-29). The host relay timeout is now 1800000 ms; no runtime
+  configuration was changed in this session. Non-blocking readability advisories
+  are follow-ups, not a reason to reopen this candidate.
+
+## Current work (2026-09-29 resume)
+- T12 commit authorized (2026-09-29): invalid registry JSON/field shapes report `MISMATCH`;
+  transport errors must remain `NETWORK_ERROR`, preserving HTTP 404 and retry
+  behavior. Route: delegated writer (code plus tests; multi-file trigger).
+- Allowed source surfaces: `tools/verify_sources.py`,
+  `tools/test_verify_sources.py`. Forecast: about 60-120 authored diff lines;
+  this is one work unit on the existing stacked feature branch.
+- Checks: observed RED before implementation, focused source-verifier tests,
+  full `pytest tools/ tests/ -q`, and native review of this work-unit slice.
+- T12 implemented, functionally verified, and natively reviewed; work-unit
+  commit delivery authorized. Observed RED: 4 failed / 14 passed before production changes. GREEN: focused
+  source tests 18 passed; full suite 1550 passed; `git diff --check` clean.
+  Independent read-only verifier repeated focused tests: 18 passed, diff clean.
+- Scope: registry-specific `RegistryDataError`, malformed JSON classification,
+  minimal CrossRef/OpenLibrary field guards, and offline continuation/network
+  tests. Source diff: 98 insertions + 9 deletions (107 authored lines).
+- Native assessment: high (`process_boundary`); writer self-verification plus
+  independent verifier completed. No real-network smoke (offline-only scope).
+- RDD `review-fb591c3c30c3ce7f`: four lenses approved, acknowledged/burned;
+  reviewed work-unit tree `64351b408f00fcb05fa800d516e2e71057472455` (136 diff
+  lines including the then-current task evidence). Source files are unchanged
+  after review; this completion note is passive bookkeeping written afterward.
+  Informational advisories only: R2-narrowed-except-chain,
+  R2-repeated-inline-bib-literals, R3-001. No correction was offered.
+- T12 marked done: focused source tests 18 passed and native review
+  `review-fb591c3c30c3ce7f` burned; work-unit commit delivered on
+  `feat/report-flow-hardening` (SHA recorded after commit creation).
+- Rollback boundary: reverse only the T12 changes in `tools/verify_sources.py`
+  and `tools/test_verify_sources.py`; unrelated T11 remains intact.
+- Commit delivery authorized (2026-09-29) for this T12 unit only on the
+  existing branch; push, PR, and merge remain unauthorized. T13/T14 and the
+  next E2E remain pending.
 
 ## Out of scope (user decision, report data not tooling)
 - Factual claims in body.md (commit/branch counts) are not checkable without
