@@ -267,7 +267,8 @@ def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | N
         return PhaseState(
             "verify",
             PENDING,
-            "content-check.yml is stale: the draft, rubric or bib changed since the check",
+            "content-check.yml is stale: inputs changed or legacy marker; re-run the independent judge",
+            "content_check_stale",
         )
     if state == "fail":
         return PhaseState(
@@ -475,7 +476,7 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
         # The one authoritative gate: the actual focus phase, its pre-projection
         # token, and that phase's own readiness guidance. The human renderer and
         # the JSON payload both project this value verbatim.
-        gate = f"{focus.name} {focus.state} - {_guidance(focus.name, folder, config)}"
+        gate = f"{focus.name} {focus.state} - {_guidance(focus.name, folder, config, focus.blocked_reason)}"
         if focus.state == PENDING:
             phases[PHASES.index(focus.name)] = replace(focus, state=CURRENT)
     blocked_reasons = tuple(
@@ -495,7 +496,7 @@ def _tool_command(script: str, work_folder: Path) -> str:
     return shlex.join([sys.executable, str(ROOT / "tools" / script), str(work_folder)])
 
 
-def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None) -> str:
+def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None, blocked_reason: str = "") -> str:
     """Action sentence for ``phase_name``, bound to the real work-folder path.
 
     Every path is absolute and every command is complete: the work folder exactly as
@@ -511,6 +512,11 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     folder = Path(work_folder)
     if config is None:
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    if phase_name == "verify" and blocked_reason == "content_check_stale":
+        template = "re-run the independent judge for {body}, then run {check_command} --judgments <judgments-file>"
+    if phase_name == "verify" and blocked_reason == "content_check_failed":
+        template = ("fix findings in {body} through the user's literal edit orders, "
+                    "then re-approve the draft and re-run the independent judge")
     if phase_name == "intake" and not config.metadata.get("student"):
         template += (
             f"; suggest {DEFAULT_STUDENT} as the default student and confirm "
@@ -613,7 +619,8 @@ def render_human(status: DocStatus) -> str:
     lines.extend(["", "**Summary**", *_summary_lines(status), ""])
     next_line = f"**Next**: {status.next_token}"
     if status.next_token in PHASES:
-        next_line += f" - {_guidance(status.next_token, status.work_folder)}"
+        focus = next(phase for phase in status.phases if phase.name == status.next_token)
+        next_line += f" - {_guidance(status.next_token, status.work_folder, blocked_reason=focus.blocked_reason)}"
     lines.append(next_line)
     return "\n".join(lines) + "\n"
 

@@ -25,12 +25,26 @@ def _fold(text: str) -> str:
 def _section(body: str, title: str) -> str | None:
     lines = body.splitlines()
     start = None
+    fence = None
     for index, line in enumerate(lines):
-        match = re.match(r"^#\s+(.+?)\s*#*\s*$", line)
-        if match:
+        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if marker:
+            token = marker.group(1)
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
+            continue
+        if fence:
+            continue
+        match = re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", line)
+        setext = re.match(r"^\s*(?:={3,}|-{3,})\s*$", line)
+        heading = match.group(1).strip().rstrip("# ").strip() if match else lines[index - 1].strip() if setext and index else None
+        if heading:
+            boundary = index - 1 if setext else index
             if start is not None:
-                return "\n".join(lines[start:index])
-            if _fold(match.group(1).strip()) == _fold(title.strip()):
+                return "\n".join(lines[start:boundary])
+            if _fold(heading.strip()) == _fold(title.strip()):
                 start = index + 1
     return "\n".join(lines[start:]) if start is not None else None
 
@@ -42,6 +56,9 @@ def _words(text: str) -> set[str]:
 
 def _evaluate(folder: Path, check: dict, body: str) -> tuple[bool, str]:
     kind = check["type"]
+    known = {"heading_present", "contains", "matches", "verbatim_from_guide", "ordered_list", "min_citations", "figure_referenced", "link_present", "keywords_from_section"}
+    if kind not in known:
+        return False, f"unknown check type '{kind}'"
     if kind == "heading_present":
         ok = _section(body, check["section"]) is not None
         return ok, f"heading '{check['section']}' {'present' if ok else 'missing'}"

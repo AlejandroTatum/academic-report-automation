@@ -56,6 +56,7 @@ CONTENT_CHECK_NAME = "content-check.yml"
 CONTENT_CHECK_SCHEMA = "academic.content-check/v1"
 JUDGMENT_STATUSES = ("cumple", "flojo", "falta")
 RESULT_VALUES = ("pass", "fail")
+MECHANICAL_NAMES = {"citations_resolve", "eligible_sources_cited", "judgments_match_rubric", "rubric_checks"}
 
 # Keys content-check.yml must carry for content_check_state to trust it; the
 # per-check ``mechanical`` entries and ``criteria`` judgment records are
@@ -88,13 +89,30 @@ class CheckOutcome:
     errors: tuple[str, ...]
 
 
+def _guide_input(folder: Path, config: ReportConfig) -> str | None:
+    """Resolve the optional guide once, rejecting paths outside this report."""
+    raw = config.raw.get("guide")
+    if not raw:
+        return None
+    relative = Path(str(raw))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("guide must be relative to the report folder")
+    root = folder.resolve()
+    resolved = (root / relative).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError("guide must remain inside the report folder")
+    if not resolved.is_file():
+        return None
+    return str(resolved.relative_to(root))
+
+
 def judge_inputs(folder: Path, config: ReportConfig) -> list[str]:
     """Exact report-relative names available to the independent judge."""
     inputs = [rubric_plan.RUBRIC_NAME, BODY_NAME,
               Path(str(config.raw.get("bibliography") or config.raw.get("bib") or "sources.bib")).name]
-    guide = config.raw.get("guide")
+    guide = _guide_input(folder, config)
     if guide:
-        inputs.append(str(guide))
+        inputs.append(guide)
     return inputs
 
 
@@ -317,24 +335,32 @@ def run_check(
         return CheckOutcome("", {}, (f"{BODY_NAME} missing or unreadable",))
 
     judgments, findings, judge, judged_body, judged_rubric, errors = parse_judgments(judgments_path)
+    if errors:
+        return CheckOutcome("", {}, tuple(errors))
     if config is None:
         # Build directly (doc_status's production rule): a missing report.yml is
         # an empty mapping, so the bib default (sources.bib) still applies.
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
 
-    expected_inputs = judge_inputs(folder, config)
+    try:
+        expected_inputs = judge_inputs(folder, config)
+        criteria = rubric_plan.load_rubric(folder)
+        rubric_hash = sha256_file(folder / rubric_plan.RUBRIC_NAME)
+    except (OSError, ValueError, TypeError) as exc:
+        return CheckOutcome("", {}, (f"rubric or guide missing, malformed or unreadable: {exc}",))
+    if not criteria:
+        return CheckOutcome("", {}, ("rubric.yml missing or malformed",))
     if not isinstance(judge, dict) or judge.get("role") != "independent":
         errors.append("judge.role must be independent")
     elif judge.get("inputs") != expected_inputs:
         errors.append(f"judge.inputs must list exactly: {', '.join(expected_inputs)}")
     if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
         errors.append("body_sha256 and rubric_sha256 are required")
-    elif judged_body != sha256_file(body_path) or judged_rubric != sha256_file(folder / rubric_plan.RUBRIC_NAME):
+    elif judged_body != sha256_file(body_path) or judged_rubric != rubric_hash:
         errors.append("judgments are for a different draft; re-run the judge")
     if errors:
         return CheckOutcome("", {}, tuple(errors))
 
-    criteria = rubric_plan.load_rubric(folder)
     checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments)
     rubric_results = [vars(item) for item in rubric_checks.run_checks(folder, criteria, body_text)]
     failed = [item for item in rubric_results if not item["ok"]]
@@ -392,6 +418,10 @@ def content_check_state(report_dir: Path) -> str:
         data = read_yaml(path)
     except Exception:
         return "malformed"
+    if not isinstance(data, dict):
+        return "malformed"
+    if data.get("schema") == CONTENT_CHECK_SCHEMA and "judge" not in data and "rubric_sha256" not in data:
+        return "stale"
     for key in REQUIRED_MARKER_KEYS:
         if data.get(key) is None:
             return "malformed"
@@ -403,7 +433,12 @@ def content_check_state(report_dir: Path) -> str:
         return "malformed"
     if not isinstance(data["criteria"], list) or not data["criteria"]:
         return "malformed"
-    if not isinstance(data["mechanical"], list):
+    mechanical = data["mechanical"]
+    if (not isinstance(mechanical, list)
+            or len(mechanical) != len(MECHANICAL_NAMES)
+            or any(not isinstance(entry, dict) or type(entry.get("ok")) is not bool
+                   for entry in mechanical)
+            or {entry["check"] for entry in mechanical if isinstance(entry.get("check"), str)} != MECHANICAL_NAMES):
         return "malformed"
 
     body_path = folder / BODY_NAME
@@ -436,7 +471,12 @@ def content_check_state(report_dir: Path) -> str:
     mechanical_ok = all(
         isinstance(entry, dict) and entry.get("ok") is True for entry in data["mechanical"]
     )
-    planned = rubric_plan.load_rubric(folder)
+    try:
+        planned = rubric_plan.load_rubric(folder)
+        if not planned or rubric_plan.rubric_state(folder) != "valid":
+            return "malformed"
+    except Exception:
+        return "malformed"
     if rubric_plan.count_checked_criteria(planned):
         recorded = data.get("rubric_check_results")
         expected = [(c["id"], index, check["type"])
@@ -452,7 +492,7 @@ def content_check_state(report_dir: Path) -> str:
         ):
             mechanical_ok = False
     recorded_ids = [str(record.get("id")) for record in criteria if isinstance(record, dict)]
-    current_ids = [str(criterion.get("id")) for criterion in rubric_plan.load_rubric(folder)]
+    current_ids = [str(criterion.get("id")) for criterion in planned]
     ids_match = len(recorded_ids) == len(current_ids) and set(recorded_ids) == set(current_ids)
     return "pass" if criteria_ok and mechanical_ok and ids_match else "fail"
 

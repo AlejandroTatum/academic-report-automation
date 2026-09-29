@@ -12,6 +12,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
+
+def test_failed_verify_guidance_requires_user_orders_and_reapproval(tmp_path: Path) -> None:
+    import doc_status
+    from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
+    _approval(folder)
+    _content_check(folder, result="fail", criteria=[{"id": "objetivo", "status": "flojo"}, {"id": "metodologia", "status": "cumple"}])
+    status = doc_status.derive(folder)
+    assert "user's literal edit orders" in status.gate
+    assert "re-approve" in status.gate
+    assert "run the check" not in status.gate
+
+
 import doc_status
 from conftest import (
     _approval,

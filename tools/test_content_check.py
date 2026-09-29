@@ -473,6 +473,78 @@ def test_real_cli_subprocess_exit_codes(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("mechanical", [[], [{"check": "citations_resolve", "ok": True}]])
+def test_marker_requires_complete_mechanical_set(tmp_path: Path, mechanical: list[dict]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder, mechanical=mechanical)
+    assert content_check.content_check_state(folder) == "malformed"
+
+
+@pytest.mark.parametrize("ok", [1, "true", None])
+def test_marker_requires_boolean_mechanical_results(tmp_path: Path, ok: object) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder)
+    import yaml
+    marker = _marker(folder)
+    marker["mechanical"][0]["ok"] = ok
+    (folder / "content-check.yml").write_text(yaml.safe_dump(marker))
+    assert content_check.content_check_state(folder) == "malformed"
+
+
+def test_no_criteria_cannot_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    monkeypatch.setattr(content_check.rubric_plan, "load_rubric", lambda _: [])
+    assert content_check.run_check(folder, _judgments(folder)).errors
+
+
+def test_legacy_marker_is_stale_not_malformed(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder, drop=("judge", "rubric_sha256"))
+    assert content_check.content_check_state(folder) == "stale"
+
+
+@pytest.mark.parametrize("text", ["criteria: [broken", "- not a mapping"])
+def test_parse_failure_has_no_binding_cascade(tmp_path: Path, text: str) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    path = folder / "judgments.yml"
+    path.write_text(text)
+    outcome = content_check.run_check(folder, path)
+    assert len(outcome.errors) == 1
+    assert "judge" not in outcome.errors[0]
+
+
+def test_invalid_rubric_never_raises_in_state_or_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder)
+    monkeypatch.setattr(content_check.rubric_plan, "load_rubric", lambda _: (_ for _ in ()).throw(OSError("denied")))
+    assert content_check.content_check_state(folder) == "malformed"
+    assert content_check.run_check(folder, _judgments(folder)).errors
+
+
+@pytest.mark.parametrize("guide", ["../outside.md", "/tmp/outside.md", "escape.md"])
+def test_guide_cannot_escape_report(tmp_path: Path, guide: str) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    if guide == "escape.md":
+        outside = tmp_path / "outside.md"
+        outside.write_text("secret")
+        (folder / guide).symlink_to(outside)
+    (folder / "report.yml").write_text((folder / "report.yml").read_text() + f"guide: {guide}\n")
+    assert content_check.main([str(folder), "--judge-brief"]) == 2
+    assert content_check.run_check(folder, _judgments(folder)).errors
+
+
+def test_missing_guide_is_omitted_from_judge_inputs(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "report.yml").write_text((folder / "report.yml").read_text() + "guide: missing.md\n")
+    assert "missing.md" not in content_check.judge_brief(folder)
+    import yaml
+    path = _judgments(folder)
+    data = yaml.safe_load(path.read_text())
+    data["judge"]["inputs"].remove("missing.md")
+    path.write_text(yaml.safe_dump(data))
+    assert content_check.run_check(folder, path).result == "pass"
+
+
 def test_content_check_state_absent(tmp_path: Path) -> None:
     assert content_check.content_check_state(tmp_path / "wf") == "absent"
 
@@ -564,7 +636,7 @@ def test_content_check_state_ignores_recorded_pass_with_failing_mechanical(
     _content_check(
         folder,
         result="pass",
-        mechanical=[{"check": "citations_resolve", "ok": False, "detail": "fantasma"}],
+        mechanical=[{"check": name, "ok": name != "citations_resolve", "detail": "fantasma"} for name in content_check.MECHANICAL_NAMES],
     )
 
     assert content_check.content_check_state(folder) == "fail"

@@ -6,6 +6,33 @@ import pytest
 from rubric_checks import run_checks
 
 
+def test_fenced_and_setext_sections_and_trailing_hashes(tmp_path: Path) -> None:
+    body = """~~~md
+# Fake
+~~~
+Real
+====
+needle
+```md
+# Fake two
+```
+# Next ###
+other
+"""
+    checks = [
+        {"type": "contains", "section": "Real", "text": "needle"},
+        {"type": "heading_present", "section": "Fake"},
+        {"type": "heading_present", "section": "Fake two"},
+        {"type": "heading_present", "section": "Next"},
+    ]
+    assert [r.ok for r in run_checks(tmp_path, [{"id": "x", "checks": checks}], body)] == [True, False, False, True]
+
+
+def test_unknown_runtime_check_fails_with_detail(tmp_path: Path) -> None:
+    result, = run_checks(tmp_path, [{"id": "x", "checks": [{"type": "unknown", "section": "Missing"}]}], "")
+    assert not result.ok and "unknown check type" in result.detail
+
+
 BODY = """# Óbjetivos
 Investigación aplicada y evaluación sistemática [@one] [@two].
 1. Analyze data

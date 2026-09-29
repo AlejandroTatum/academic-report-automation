@@ -47,10 +47,16 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       autolinks become clickable `\url`; figure paths resolve from the report folder
       (build-relative still accepted); long monospace URLs break; deliver grants
       `HUMAN_REVIEW` from a current `final-review.yml`.
-- [ ] T5 Rigor and cost (P3): deterministic source verification script
-      (CrossRef/Open Library); blocked `verify` Gate text; content-check hardening
-      (vacuous pass, recorded mechanical list, unguarded `load_rubric`, legacy
-      markers); skill tells the agent to batch edit orders before re-approval.
+- [ ] T5a Content-check hardening: vacuous pass, re-derivation trusts the recorded
+      mechanical list, unguarded `load_rubric`/rubric hash, pre-T2 markers report
+      "re-run the judge", misleading errors after a parse failure, guide path
+      confined and judge inputs resolved one way, rubric section parser (code
+      fences, setext headings), unknown check type at run time, blocked `verify`
+      Gate text.
+- [ ] T5b Sources and rendering: deterministic `verify_sources.py` (CrossRef/Open
+      Library, mocked in tests); PDF handoff uses the exact file name with fish-safe
+      quoting; guide facts report conflicting matches; URLs in headings/captions;
+      loose lists; warn on figure-path precedence.
 - [ ] T6 Skill prose, contract tests, runtime sync, and an E2E re-run on the
       APE Semana 1 folder.
 
@@ -84,3 +90,6 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   1464 passed. Real E2E PDF rebuilt: 0 Overfull hbox (was 4), 5 GitHub URI links,
   4 DOI links, 7 cite links, steps numbered 5 and 6. First pass missed the
   overflow; the parent's PDF check caught it before commit.
+  Commit `1d72243`. RDD lineage `review-0c61912d7bd664c7`: approved, acknowledged/
+  burned. Advisory, taken into T5b: URLs inside headings/captions (moving
+  arguments), loose lists with blank lines, silent figure-path precedence.

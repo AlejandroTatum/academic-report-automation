@@ -219,7 +219,10 @@ def _content_check(
             for c in DEFAULT_RUBRIC_CRITERIA
         ],
         "findings": [],
-        "mechanical": [{"check": "citations_resolve", "ok": True, "detail": "ok"}],
+        "mechanical": [
+            {"check": name, "ok": True, "detail": "ok"}
+            for name in ("citations_resolve", "eligible_sources_cited", "judgments_match_rubric", "rubric_checks")
+        ],
         "result": result,
     }
     marker_body.update(fields)
