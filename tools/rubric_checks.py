@@ -8,6 +8,15 @@ from pathlib import Path
 
 from validate_ieee_refs import cited_keys
 
+# The tolerances the deterministic checks apply, stated once so the judge brief
+# (content_check.judge_brief) quotes this constant instead of its own copy: a
+# PASS above settles exactly these properties and nothing more.
+TOLERANCE_RULES = (
+    "verbatim_from_guide normalizes whitespace and allows only the first letter to differ in case "
+    "(sentence-initial capitalization is allowed); contains is case-insensitive; section headings "
+    "match case- and accent-insensitively."
+)
+
 
 @dataclass(frozen=True)
 class CheckResult:

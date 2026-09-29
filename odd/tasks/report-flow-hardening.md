@@ -78,7 +78,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       in case; contains/headings: case- and accent-insensitive) and tells judges
       not to downgrade a criterion for a property a passing check verifies
       (fixes the T9 E2E false positive).
-- [ ] T11 Content-check robustness (T9/T10/E2E advisories): validate both
+- [x] T11 Content-check robustness (T9/T10/E2E advisories): validate both
       judgments files fully before merging and attribute every error to its file;
       tolerate non-list `judges` in state; read body.md once so the brief hash and
       the checks use the same bytes; tolerance text comes from one constant shared
@@ -216,6 +216,11 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   lacks a guide hash binding, rubric checks not tied to criterion semantics,
   judge B misattributed one quote, factual claims (commit/branch counts) are not
   verified by any check, sources-verification warning unresolved.
+
+- T11: RED by the worker (10 failing tests + ImportError on TOLERANCE_RULES);
+  parent's scratch-copy RED stopped at collection (TOLERANCE_RULES missing at
+  HEAD). GREEN 1546 passed; the delivered APE report stays `next: done` (markers
+  without guide_sha256 remain valid).
 
 ## Out of scope (user decision, report data not tooling)
 - Factual claims in body.md (commit/branch counts) are not checkable without

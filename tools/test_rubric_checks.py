@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from rubric_checks import run_checks
+from rubric_checks import TOLERANCE_RULES, run_checks
 
 
 def test_fenced_and_setext_sections_and_trailing_hashes(tmp_path: Path) -> None:
@@ -105,3 +105,12 @@ def test_verbatim_requires_guide_and_section_and_normalizes_whitespace(tmp_path:
     guide.write_text("Different guide", encoding="utf-8")
     assert not run_checks(tmp_path, criterion, "# Objetivos\nExact phrase from guide")[0].ok
     assert not run_checks(tmp_path, criterion, "odd body without headings")[0].ok
+
+
+def test_tolerance_rules_constant_pins_the_check_tolerances() -> None:
+    """The judge brief quotes this constant, so its prose cannot drift."""
+    assert "verbatim_from_guide" in TOLERANCE_RULES
+    assert "normalizes whitespace" in TOLERANCE_RULES
+    assert "first letter" in TOLERANCE_RULES
+    assert "contains is case-insensitive" in TOLERANCE_RULES
+    assert "accent-insensitively" in TOLERANCE_RULES

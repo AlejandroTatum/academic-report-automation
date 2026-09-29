@@ -14,7 +14,7 @@ output, and nothing from the drafting conversation, to TWO independent read-only
 judge subagents in parallel with the same brief; they must not coordinate. Each judge must use only the named inputs, quote `where` locations,
 and return YAML with `judge`, `body_sha256`, `rubric_sha256`, `criteria` (one
 `id`, `status: cumple|flojo|falta`, `where`, `note` per rubric criterion), and
-optional `findings`. Save each YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; the drafting agent never writes judgments.
+optional `findings`. Save each YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; the drafting agent never writes judgments. The tool validates both files completely before merging, and every error names the file it came from (e.g. `judgments-b.yml: ...`).
 The brief already carries the deterministic rubric checks run over the current `body.md` plus their tolerance rules; judges must not re-judge a property a check PASSes (a FAILing check may be cited as evidence).
 A stale marker means re-run the independent judges on the current inputs, not
 reuse old judgments. Then run:
@@ -25,7 +25,8 @@ reuse old judgments. Then run:
 
 The tool adds the mechanical checks (every `[@key]` citation resolves, at least five
 eligible book or paper sources are actually cited), derives the verdict itself, and
-writes `content-check.yml` bound to `body.md`, `rubric.yml`, and the bib by hash.
+writes `content-check.yml` bound to `body.md`, `rubric.yml`, and the bib by hash
+(plus the guide by hash when the report declares one).
 The strictest verdict wins per criterion (`falta` > `flojo` > `cumple`).
 
 The check only REPORTS findings: per-criterion cumple/flojo/falta with where,
@@ -35,7 +36,7 @@ coverage, citations, and clarity. Findings are fixed by the user through the sam
 literal edit orders as the approval loop - never by silent polishing - and the
 check reruns on the edited draft. A recorded `fail` blocks the route
 (`content_check_failed`) until the findings are fixed and the check passes; an
-edited draft, rubric, or bib simply stales the marker and the check reruns.
+edited draft, rubric, bib, or guide simply stales the marker and the check reruns.
 
 ## Steps
 

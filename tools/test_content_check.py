@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 import content_check
+import rubric_checks
 import source_count
 from conftest import (
     CONTENT_CHECK_SCHEMA,
@@ -157,64 +158,6 @@ def test_judge_brief_is_bound_and_read_only(tmp_path: Path, capsys: pytest.Captu
     assert "Do not edit" in brief and "where" in brief
     assert "[@key]" in brief and "IEEE" in brief and "sources.bib" in brief
     assert "not a formatting defect" in brief
-
-
-# ---------------------------------------------------------------------------
-# Judge brief: already-run rubric checks, tolerance rules, no-re-judge rule
-# ---------------------------------------------------------------------------
-
-
-def _checked_folder(folder: Path, *, checks: list[dict], body: str, guide: str) -> Path:
-    """A verify folder whose first criterion carries deterministic checks + guide."""
-    _report(folder)
-    _sources_bib(folder)
-    criteria = [dict(DEFAULT_RUBRIC_CRITERIA[0], checks=checks), dict(DEFAULT_RUBRIC_CRITERIA[1])]
-    _rubric(folder, criteria=criteria)
-    _body(folder, body)
-    (folder / "guia.txt").write_text(guide, encoding="utf-8")
-    (folder / "report.yml").write_text((folder / "report.yml").read_text() + "guide: guia.txt\n")
-    return folder
-
-
-def test_judge_brief_lists_passing_rubric_check(tmp_path: Path) -> None:
-    folder = _checked_folder(
-        tmp_path / "wf",
-        checks=[{"type": "verbatim_from_guide", "section": "Objetivos", "source": "guia.txt",
-                 "text": "preparar un informe de laboratorio"}],
-        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n\n## Metodologia\n\nMedimos dos veces.\n",
-        guide="La catedra pide: preparar un informe de laboratorio con formato IEEE.\n",
-    )
-    brief = content_check.judge_brief(folder)
-    assert "- objetivo check 1 (verbatim_from_guide): PASS - verbatim text in guide=True, section=True" in brief
-    assert brief == content_check.judge_brief(folder)  # deterministic for identical inputs
-
-
-def test_judge_brief_lists_failing_rubric_check(tmp_path: Path) -> None:
-    folder = _checked_folder(
-        tmp_path / "wf",
-        checks=[{"type": "contains", "section": "Objetivos", "text": "quantum tunneling result"}],
-        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n",
-        guide="irrelevant",
-    )
-    brief = content_check.judge_brief(folder)
-    assert "- objetivo check 1 (contains): FAIL - text 'quantum tunneling result' missing" in brief
-
-
-def test_judge_brief_states_tolerances_and_no_rejudge_rule(tmp_path: Path) -> None:
-    folder = _verify_folder(tmp_path / "wf")
-    brief = content_check.judge_brief(folder)
-    assert "normalizes whitespace" in brief
-    assert "first letter" in brief and "sentence-initial" in brief
-    assert "contains is case-insensitive" in brief
-    assert "accent-insensitively" in brief
-    assert "a PASSING check" in brief and "flojo or falta" in brief
-    assert "judge only what the checks do not cover" in brief
-
-
-def test_judge_brief_states_when_rubric_has_no_checks(tmp_path: Path) -> None:
-    folder = _verify_folder(tmp_path / "wf")
-    assert "no deterministic checks" in content_check.judge_brief(folder)
-    assert not (folder / "content-check.yml").exists()
 
 
 def test_pass_case_writes_marker_and_exits_zero(tmp_path: Path) -> None:
@@ -444,6 +387,202 @@ def test_body_md_bytes_are_never_modified(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Judge brief: already-run rubric checks, tolerance rules, no-re-judge rule
+# ---------------------------------------------------------------------------
+
+
+def _checked_folder(folder: Path, *, checks: list[dict], body: str, guide: str) -> Path:
+    """A verify folder whose first criterion carries deterministic checks + guide."""
+    _report(folder)
+    _sources_bib(folder)
+    criteria = [dict(DEFAULT_RUBRIC_CRITERIA[0], checks=checks), dict(DEFAULT_RUBRIC_CRITERIA[1])]
+    _rubric(folder, criteria=criteria)
+    _body(folder, body)
+    (folder / "guia.txt").write_text(guide, encoding="utf-8")
+    (folder / "report.yml").write_text((folder / "report.yml").read_text() + "guide: guia.txt\n")
+    return folder
+
+
+def test_judge_brief_lists_passing_rubric_check(tmp_path: Path) -> None:
+    folder = _checked_folder(
+        tmp_path / "wf",
+        checks=[{"type": "verbatim_from_guide", "section": "Objetivos", "source": "guia.txt",
+                 "text": "preparar un informe de laboratorio"}],
+        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n\n## Metodologia\n\nMedimos dos veces.\n",
+        guide="La catedra pide: preparar un informe de laboratorio con formato IEEE.\n",
+    )
+    brief = content_check.judge_brief(folder)
+    assert "- objetivo check 1 (verbatim_from_guide): PASS - verbatim text in guide=True, section=True" in brief
+    assert brief == content_check.judge_brief(folder)  # deterministic for identical inputs
+
+
+def test_judge_brief_lists_failing_rubric_check(tmp_path: Path) -> None:
+    folder = _checked_folder(
+        tmp_path / "wf",
+        checks=[{"type": "contains", "section": "Objetivos", "text": "quantum tunneling result"}],
+        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n",
+        guide="irrelevant",
+    )
+    brief = content_check.judge_brief(folder)
+    assert "- objetivo check 1 (contains): FAIL - text 'quantum tunneling result' missing" in brief
+
+
+def test_judge_brief_states_tolerances_and_no_rejudge_rule(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    brief = content_check.judge_brief(folder)
+    assert "normalizes whitespace" in brief
+    assert "first letter" in brief and "sentence-initial" in brief
+    assert "contains is case-insensitive" in brief
+    assert "accent-insensitively" in brief
+    assert "a PASSING check" in brief and "flojo or falta" in brief
+    assert "judge only what the checks do not cover" in brief
+
+
+def test_judge_brief_states_when_rubric_has_no_checks(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    assert "no deterministic checks" in content_check.judge_brief(folder)
+    assert not (folder / "content-check.yml").exists()
+
+
+# ---------------------------------------------------------------------------
+# report-flow-hardening T11: one body.md read, shared tolerance text, and the
+# guide bound into the marker
+# ---------------------------------------------------------------------------
+
+
+def _guide_folder(folder: Path) -> Path:
+    """A verify folder whose report.yml declares an existing guide input."""
+    _verify_folder(folder)
+    (folder / "guia.txt").write_text("La catedra pide formato IEEE.\n", encoding="utf-8")
+    (folder / "report.yml").write_text((folder / "report.yml").read_text() + "guide: guia.txt\n")
+    return folder
+
+
+def test_judge_brief_reads_body_md_exactly_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recorded hash and the rubric checks see the same bytes: one read.
+
+    ``read_bytes``/``read_text`` are the logical reads (``sha256_file`` opens
+    its own stream), so the spy pins both: exactly one logical read of body.md,
+    and no hash call ever touches it again.
+    """
+    folder = _verify_folder(tmp_path / "wf")
+    expected_hash = _sha(folder / "body.md")
+    reads: list[str] = []
+    real_read_bytes, real_read_text = Path.read_bytes, Path.read_text
+
+    def spy_read_bytes(self: Path, *args: object, **kwargs: object) -> bytes:
+        if self.name == "body.md":
+            reads.append(f"read_bytes:{self}")
+        return real_read_bytes(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    def spy_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "body.md":
+            reads.append(f"read_text:{self}")
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    hashed: list[str] = []
+    real_sha = content_check.sha256_file
+
+    def spy_sha256_file(path: Path) -> str:
+        hashed.append(str(path))
+        return real_sha(path)
+
+    monkeypatch.setattr(Path, "read_bytes", spy_read_bytes)
+    monkeypatch.setattr(Path, "read_text", spy_read_text)
+    monkeypatch.setattr(content_check, "sha256_file", spy_sha256_file)
+
+    brief = content_check.judge_brief(folder)
+
+    assert reads == [f"read_bytes:{folder / 'body.md'}"]
+    assert not any(path.endswith("body.md") for path in hashed)
+    assert expected_hash in brief
+
+
+def test_judge_brief_non_utf8_body_is_input_error(tmp_path: Path) -> None:
+    """A decode failure is the same input-error shape as a missing body.md."""
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_bytes(b"\xff\xfe not utf-8\n")
+
+    with pytest.raises(ValueError, match="body.md missing or unreadable"):
+        content_check.judge_brief(folder)
+
+
+def test_brief_tolerance_text_is_the_rubric_checks_constant(tmp_path: Path) -> None:
+    """The brief quotes rubric_checks.TOLERANCE_RULES verbatim: no drift."""
+    folder = _verify_folder(tmp_path / "wf")
+    brief = content_check.judge_brief(folder)
+
+    assert f"Tolerance rules these checks apply: {rubric_checks.TOLERANCE_RULES}" in brief
+
+
+def test_marker_binds_guide_sha256_when_report_declares_one(tmp_path: Path) -> None:
+    folder = _guide_folder(_verify_folder(tmp_path / "wf"))
+
+    assert _run(folder) == 0
+
+    assert _marker(folder)["guide_sha256"] == _sha(folder / "guia.txt")
+
+
+def test_marker_has_no_guide_sha256_without_a_guide(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+
+    assert _run(folder) == 0
+
+    assert "guide_sha256" not in _marker(folder)
+
+
+def test_guide_edit_stales_the_marker(tmp_path: Path) -> None:
+    folder = _guide_folder(_verify_folder(tmp_path / "wf"))
+    assert _run(folder) == 0
+
+    (folder / "guia.txt").write_text("La catedra pide formato IEEE y APA.\n", encoding="utf-8")
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_deleted_guide_stales_the_marker(tmp_path: Path) -> None:
+    folder = _guide_folder(_verify_folder(tmp_path / "wf"))
+    assert _run(folder) == 0
+
+    (folder / "guia.txt").unlink()
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_unbound_guide_stales_the_marker(tmp_path: Path) -> None:
+    folder = _guide_folder(_verify_folder(tmp_path / "wf"))
+    assert _run(folder) == 0
+
+    (folder / "report.yml").write_text(
+        (folder / "report.yml").read_text().replace("guide: guia.txt\n", "")
+    )
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_escaping_guide_binding_stales_the_marker(tmp_path: Path) -> None:
+    folder = _guide_folder(_verify_folder(tmp_path / "wf"))
+    assert _run(folder) == 0
+
+    (folder / "report.yml").write_text(
+        (folder / "report.yml").read_text().replace("guide: guia.txt", "guide: ../outside.md")
+    )
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_marker_without_guide_sha256_stays_valid_when_guide_appears_later(tmp_path: Path) -> None:
+    """Backward compat: pre-guide markers must not change phase."""
+    folder = _verify_folder(tmp_path / "wf")
+    assert _run(folder) == 0
+
+    (folder / "guia.txt").write_text("guide added after the check\n", encoding="utf-8")
+    (folder / "report.yml").write_text((folder / "report.yml").read_text() + "guide: guia.txt\n")
+
+    assert content_check.content_check_state(folder) == "pass"
+
+
+# ---------------------------------------------------------------------------
 # Usage / input errors: exit 2, nothing written
 # ---------------------------------------------------------------------------
 
@@ -537,6 +676,47 @@ def test_broken_yaml_judgments_is_usage_error(tmp_path: Path) -> None:
     judgments.write_text("criteria: [unclosed\n", encoding="utf-8")
 
     assert _run(folder, judgments) == 2
+
+
+def test_invalid_judgments_file_blocks_merge_and_names_the_file(tmp_path: Path) -> None:
+    """One invalid file aborts the merge; the error names that file only."""
+    folder = _verify_folder(tmp_path / "wf")
+    good = _judgments(folder, name="good.yml", findings=["second"])
+    bad = _judgments(folder, name="bad.yml", criteria=[
+        {"id": "objetivo", "status": "maso", "where": "Objetivos", "note": "typo status"},
+    ])
+
+    outcome = content_check.run_check(folder, [good, bad])
+
+    assert outcome.result == "" and outcome.marker == {}
+    assert len(outcome.errors) == 1
+    assert outcome.errors[0].startswith("bad.yml")
+    assert not any(error.startswith("good.yml") for error in outcome.errors)
+    assert not (folder / "content-check.yml").exists()
+
+
+def test_judge_level_errors_name_the_offending_file(tmp_path: Path) -> None:
+    import yaml
+
+    folder = _verify_folder(tmp_path / "wf")
+    good = _judgments(folder, name="good.yml", findings=["second"])
+    bad = _judgments(folder, name="bad.yml")
+    original = yaml.safe_load(bad.read_text())
+    inputs = original["judge"]["inputs"]
+
+    for change, message in (
+        ({"judge": {"role": "drafter", "inputs": inputs}},
+         ("bad.yml: judge.role must be independent",)),
+        ({"judge": {"role": "independent", "inputs": inputs + ["conversation"]}},
+         ("bad.yml: judge.inputs must list exactly: rubric.yml, body.md, sources.bib",)),
+        ({"body_sha256": "0" * 64},
+         ("bad.yml: judgments are for a different draft; re-run the judge",
+          "good.yml and bad.yml must bind the same body_sha256 and rubric_sha256")),
+    ):
+        bad.write_text(yaml.safe_dump(dict(original, **change)))
+        outcome = content_check.run_check(folder, [good, bad])
+        assert outcome.errors == message, change
+        assert not (folder / "content-check.yml").exists()
 
 
 def test_real_cli_subprocess_exit_codes(tmp_path: Path) -> None:
@@ -855,5 +1035,22 @@ def test_content_check_state_malformed_when_body_md_is_gone(tmp_path: Path) -> N
     _body(folder)
     _content_check(folder)
     (folder / "body.md").unlink()
+
+    assert content_check.content_check_state(folder) == "malformed"
+
+
+@pytest.mark.parametrize("judges", ["two independent judges", {"role": "independent"}, 7])
+def test_non_list_judges_marker_is_stale_not_a_crash(tmp_path: Path, judges: object) -> None:
+    """T11: a present-but-non-list ``judges`` field routes to stale, never raises."""
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder, judges=judges)
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_non_list_judges_with_foreign_schema_is_malformed_not_a_crash(tmp_path: Path) -> None:
+    """T11: ``len()`` on an unsized ``judges`` value must never raise TypeError."""
+    folder = _verify_folder(tmp_path / "wf")
+    _content_check(folder, judges=7, schema="academic.content-check/v2")
 
     assert content_check.content_check_state(folder) == "malformed"

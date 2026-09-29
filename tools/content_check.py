@@ -22,9 +22,12 @@ The check reports findings and never rewrites the draft: its only write is
 ``approval.yml`` binds them, ``rubric.yml`` and the document bib into
 ``rubric_sha256``/``bib_sha256`` (new-report-flow T5), so
 ``content_check_state`` can detect any input edited after the check and route
-the phase back to ``stale``. A missing or unreadable file is data, never a
-crash: ``content_check_state`` never raises. The marker is written atomically
-(temp file + ``os.replace``), so a crash can never leave a half-written verdict.
+the phase back to ``stale``. When the report declares a guide input, the check
+binds it too (``guide_sha256``, report-flow-hardening T11); markers written
+before a guide existed carry no key and stay valid. A missing or unreadable
+file is data, never a crash: ``content_check_state`` never raises. The marker
+is written atomically (temp file + ``os.replace``), so a crash can never leave
+a half-written verdict.
 
 ``content_check_state`` also never trusts the recorded ``result`` blindly: it
 re-derives the verdict from the recorded criteria (every status ``cumple``),
@@ -37,6 +40,7 @@ exits 0 on pass, 1 on fail, 2 on usage/input error.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 from collections import Counter
@@ -137,11 +141,7 @@ def _already_run_checks_section(folder: Path, criteria: list[dict], body_text: s
         )
     else:
         lines.append("- None: this rubric defines no deterministic checks.")
-    lines.append(
-        "Tolerance rules these checks apply: verbatim_from_guide normalizes whitespace and allows "
-        "only the first letter to differ in case (sentence-initial capitalization is allowed); "
-        "contains is case-insensitive; section headings match case- and accent-insensitively."
-    )
+    lines.append("Tolerance rules these checks apply: " + rubric_checks.TOLERANCE_RULES)
     lines.append(
         "Do not mark a criterion flojo or falta for a property a PASSING check above already "
         "verifies (including differences covered by the tolerance rules); judge only what the "
@@ -155,7 +155,8 @@ def judge_brief(folder: Path) -> str:
 
     Carries the already-run deterministic rubric checks and their tolerance
     rules (report-flow-hardening T10), so the judges never re-judge a property
-    a PASSing check has verified.
+    a PASSing check has verified. body.md is read exactly once (T11): the
+    recorded ``body_sha256`` and the rubric checks judge the same bytes.
     """
     folder = folder.resolve()
     if rubric_plan.rubric_state(folder) != "valid":
@@ -166,10 +167,16 @@ def judge_brief(folder: Path) -> str:
     config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     inputs = judge_inputs(folder, config)
     criteria = rubric_plan.load_rubric(folder)
-    body_text = (folder / BODY_NAME).read_text(encoding="utf-8")
+    try:
+        body_bytes = (folder / BODY_NAME).read_bytes()
+        body_text = body_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{BODY_NAME} missing or unreadable") from exc
+    except OSError as exc:
+        raise ValueError(f"{BODY_NAME} missing or unreadable") from exc
     schema = {
         "judge": {"role": "independent", "inputs": inputs},
-        "body_sha256": sha256_file(folder / BODY_NAME),
+        "body_sha256": hashlib.sha256(body_bytes).hexdigest(),
         "rubric_sha256": sha256_file(folder / rubric_plan.RUBRIC_NAME),
         "criteria": [{"id": "<rubric criterion id>", "status": "cumple|flojo|falta",
                       "where": "<quoted location in body.md>", "note": "<reason>"}],
@@ -402,17 +409,18 @@ def run_check(
         return CheckOutcome("", {}, (f"rubric or guide missing, malformed or unreadable: {exc}",))
     if not criteria:
         return CheckOutcome("", {}, ("rubric.yml missing or malformed",))
-    for _, _, judge, judged_body, judged_rubric, _ in parsed:
+    names = [Path(path).name for path in judgments_path]
+    for name, (_, _, judge, judged_body, judged_rubric, _) in zip(names, parsed):
         if not isinstance(judge, dict) or judge.get("role") != "independent":
-            errors.append("judge.role must be independent")
+            errors.append(f"{name}: judge.role must be independent")
         elif judge.get("inputs") != expected_inputs:
-            errors.append(f"judge.inputs must list exactly: {', '.join(expected_inputs)}")
+            errors.append(f"{name}: judge.inputs must list exactly: {', '.join(expected_inputs)}")
         if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
-            errors.append("body_sha256 and rubric_sha256 are required")
+            errors.append(f"{name}: body_sha256 and rubric_sha256 are required")
         elif judged_body != sha256_file(body_path) or judged_rubric != rubric_hash:
-            errors.append("judgments are for a different draft; re-run the judge")
+            errors.append(f"{name}: judgments are for a different draft; re-run the judge")
     if parsed[0][3:5] != parsed[1][3:5]:
-        errors.append("judges must bind the same body_sha256 and rubric_sha256")
+        errors.append(f"{names[0]} and {names[1]} must bind the same body_sha256 and rubric_sha256")
     if errors:
         return CheckOutcome("", {}, tuple(errors))
 
@@ -451,11 +459,16 @@ def run_check(
     checks.append({"check": "rubric_checks", "ok": not failed, "detail": detail})
     mechanical_ok = all(check["ok"] for check in checks)
     criteria_ok = all(judgment["status"] == "cumple" for judgment in judgments)
+    guide = _guide_input(folder, config)
+    guide_binding = {"guide_sha256": _sha256_or_empty(folder / guide)} if guide else {}
     marker = {
         "schema": CONTENT_CHECK_SCHEMA,
         "body_sha256": sha256_file(body_path),
         "rubric_sha256": _sha256_or_empty(folder / rubric_plan.RUBRIC_NAME),
         "bib_sha256": _sha256_or_empty(config.bib_path),
+        # Optional binding (report-flow-hardening T11): recorded only when the
+        # report declares a guide, so pre-guide markers keep their old shape.
+        **guide_binding,
         "judges": judges,
         "disagreements": disagreements,
         "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -482,9 +495,13 @@ def content_check_state(report_dir: Path) -> str:
     be read or is missing required keys is ``malformed``; a marker whose
     ``body_sha256``, ``rubric_sha256`` or ``bib_sha256`` no longer matches the
     folder is ``stale`` (the draft, the rubric or the bib changed since the
-    check). The recorded ``result`` is never trusted blindly: the verdict is
-    re-derived from the recorded criteria (every status ``cumple``), the
-    recorded mechanical checks (every ``ok``) and the recorded criterion ids
+    check), as is a recorded ``guide_sha256`` that no longer matches the
+    guide the report declares (or the guide is gone). A marker without
+    ``guide_sha256`` predates guide binding and stays valid. A non-list
+    ``judges`` field never crashes: under the current schema it is the legacy
+    shape (``stale``), under any other schema it is ``malformed``. The recorded ``result`` is never trusted blindly: the
+    verdict is re-derived from the recorded criteria (every status ``cumple``),
+    the recorded mechanical checks (every ``ok``) and the recorded criterion ids
     (equal to the current rubric ids), so a forged ``result: pass`` fails.
     Never raises, never writes.
     """
@@ -504,7 +521,7 @@ def content_check_state(report_dir: Path) -> str:
     for key in REQUIRED_MARKER_KEYS:
         if data.get(key) is None:
             return "malformed"
-    if len(data["judges"]) != 2 or any(not isinstance(judge, dict) or judge.get("role") != "independent" for judge in data["judges"]):
+    if not isinstance(data["judges"], list) or len(data["judges"]) != 2 or any(not isinstance(judge, dict) or judge.get("role") != "independent" for judge in data["judges"]):
         return "malformed"
     if not isinstance(data["disagreements"], list):
         return "malformed"
@@ -544,6 +561,16 @@ def content_check_state(report_dir: Path) -> str:
         bib_path = None
     if str(data["bib_sha256"]).strip().lower() != _sha256_or_empty(bib_path):
         return "stale"
+
+    if data.get("guide_sha256") is not None:
+        try:
+            config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+            guide = _guide_input(folder, config)
+        except Exception:
+            guide = None
+        guide_hash = _sha256_or_empty(folder / guide) if guide else ""
+        if str(data["guide_sha256"]).strip().lower() != guide_hash:
+            return "stale"
 
     criteria = data["criteria"]
     criteria_ok = all(
