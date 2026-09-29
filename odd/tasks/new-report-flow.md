@@ -68,7 +68,7 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
       per-format required metadata, template mapping, `templates/ape-report.tex`.
 - [x] T5 `doc_status` new 11-phase route, handlers, guidance, tests; content check
       binds `rubric.yml` + bib hashes.
-- [ ] T6 Rewrite `skills/document-workflow` (SKILL.md + references), contract
+- [x] T6 Rewrite `skills/document-workflow` (SKILL.md + references), contract
       tests, skill sync, flow diagram under `docs/`.
 
 ## Evidence
@@ -109,6 +109,16 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
   now the 11 phases; `preview` removed. Content check binds rubric + bib hashes,
   re-derives its verdict, and writes atomically. Minimal skill references for
   plan/verify/format/review; full prose rewrite is T6.
+  Commit `c5f45ed`. RDD lineage `review-98ebd49eea86fb81`: approved, acknowledged/
+  burned. Advisory follow-ups: an empty mechanical list derives a vacuous pass;
+  re-derivation trusts the recorded mechanical list; `load_rubric` unguarded in
+  the state path; legacy content-check markers block after upgrade.
+- T6: RED 11 focused contract failures; GREEN `pytest tools/ tests/ -q` 1410 passed.
+  Skill prose rewritten for the 11 phases (minimum intake, verbatim edit orders,
+  report-only check, one format question, no detector gate). Diagram at
+  `docs/diagrams/new-report-flow.es.{svg,png}`, linked from README. Follow-up:
+  `document-intake.md` keeps a "post-preview confirmation" sentence pinned by
+  `test_report_builder_routing.py`.
 
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow

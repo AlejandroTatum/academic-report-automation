@@ -4,6 +4,15 @@ Run this intake on **every** execution, before designing, structuring, drafting,
 
 Stop after asking. Do not pre-build, do not draft "while waiting", do not produce a provisional structure.
 
+## Content-first route (document-workflow)
+
+When this intake runs under the document-workflow content-first route, ask only for
+the minimum: the title, the student, the teacher's guide and rubric material, and
+any teacher explanation. That route never asks formatting questions here: template,
+identity, delivery look, and the document format itself are decided at the `format`
+phase, after the content is drafted and approved. The confirmations below still
+govern every other run of this skill.
+
 ## Confirmation 1 — Document type
 
 Ask which domain the document belongs to:

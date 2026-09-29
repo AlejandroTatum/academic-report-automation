@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1760" viewBox="0 0 1400 1760" font-family="DejaVu Sans, Liberation Sans, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <filter id="s" x="-5%" y="-5%" width="110%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="1400" height="1760" fill="#fafaf7"/>
+
+  <text x="700" y="46" text-anchor="middle" font-size="28" font-weight="bold" fill="#1d2330">Nuevo flujo de informes (propuesta v2)</text>
+  <text x="700" y="74" text-anchor="middle" font-size="15" fill="#555">La IA propone · vos indicás los cambios · la verificación reporta, no reescribe · sobre ODD</text>
+
+  <!-- ODD band -->
+  <text x="160" y="104" text-anchor="middle" font-size="14" font-weight="bold" fill="#1d2330">Fase ODD</text>
+  <g font-size="14" font-weight="bold" text-anchor="middle">
+    <rect x="70" y="112" width="180" height="170" rx="10" fill="#cfe3ff" stroke="#1f5fbf"/>
+    <text x="160" y="190" fill="#123e7a">Explorar y</text>
+    <text x="160" y="210" fill="#123e7a">resolver dudas</text>
+
+    <rect x="70" y="318" width="180" height="76" rx="10" fill="#e6dcff" stroke="#6a4bc4"/>
+    <text x="160" y="352" fill="#3f2a8a">Trackear</text>
+    <text x="160" y="372" font-size="12" font-weight="normal" fill="#3f2a8a">(antes de escribir)</text>
+
+    <rect x="70" y="428" width="180" height="806" rx="10" fill="#ffe6c7" stroke="#c77700"/>
+    <text x="160" y="825" fill="#7a4700">Implementar</text>
+    <text x="160" y="845" font-size="12" font-weight="normal" fill="#7a4700">tarea por tarea</text>
+    <text x="160" y="863" font-size="12" font-weight="normal" fill="#7a4700">(un commit por tarea)</text>
+
+    <rect x="70" y="1266" width="180" height="226" rx="10" fill="#c9f0d3" stroke="#1a7f37"/>
+    <text x="160" y="1384" fill="#0e4d22">Cerrar</text>
+  </g>
+
+  <!-- Main column -->
+  <rect x="400" y="112" width="400" height="48" rx="24" fill="#e8e8e8" stroke="#666" filter="url(#s)"/>
+  <text x="600" y="142" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">Recibo el trabajo + guía + rúbrica</text>
+
+  <g font-size="13" fill="#222">
+    <rect x="400" y="198" width="400" height="84" rx="8" fill="#fff" stroke="#1f5fbf" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="224" text-anchor="middle" font-size="16" font-weight="bold">1 · Dudas y research</text>
+    <text x="600" y="247" text-anchor="middle">Leer guía y rúbrica · preguntar lo que no esté claro</text>
+    <text x="600" y="268" text-anchor="middle">Buscar fuentes académicas</text>
+
+    <rect x="400" y="318" width="400" height="76" rx="8" fill="#fff" stroke="#6a4bc4" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="345" text-anchor="middle" font-size="16" font-weight="bold">2 · Plan desde la rúbrica</text>
+    <text x="600" y="370" text-anchor="middle">odd/tasks/&lt;trabajo&gt;.md · un criterio = una tarea</text>
+
+    <rect x="400" y="428" width="400" height="84" rx="8" fill="#fff" stroke="#c77700" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="454" text-anchor="middle" font-size="16" font-weight="bold">3 · Borrador de la IA</text>
+    <text x="600" y="477" text-anchor="middle">Texto completo + gráficos propuestos</text>
+    <text x="600" y="498" text-anchor="middle">+ cumplimiento de cada criterio</text>
+
+    <rect x="400" y="546" width="400" height="84" rx="8" fill="#ffe08a" stroke="#b8860b" stroke-width="2.5" filter="url(#s)"/>
+    <text x="600" y="572" text-anchor="middle" font-size="16" font-weight="bold">4 · Tu revisión</text>
+    <text x="600" y="595" text-anchor="middle">Leés y me indicás los cambios</text>
+    <text x="600" y="616" text-anchor="middle">Se aplican tal cual, sin retocar tu texto</text>
+
+    <polygon points="600,666 740,712 600,758 460,712" fill="#ffe08a" stroke="#b8860b" stroke-width="2.5" filter="url(#s)"/>
+    <text x="600" y="708" text-anchor="middle" font-size="15" font-weight="bold">¿Lo marcás</text>
+    <text x="600" y="727" text-anchor="middle" font-size="15" font-weight="bold">como aprobado?</text>
+
+    <rect x="400" y="794" width="400" height="96" rx="8" fill="#fff" stroke="#c0392b" stroke-width="3" filter="url(#s)"/>
+    <text x="600" y="822" text-anchor="middle" font-size="16" font-weight="bold" fill="#7a1a10">5 · Verificación dura de contenido</text>
+    <text x="600" y="846" text-anchor="middle">Se lanza sola al pasar a aprobado</text>
+    <text x="600" y="868" text-anchor="middle" font-weight="bold">Reporta hallazgos · NO reescribe tu texto</text>
+
+    <polygon points="600,924 700,960 600,996 500,960" fill="#fff" stroke="#444" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="966" text-anchor="middle" font-size="15" font-weight="bold">¿Pasa?</text>
+
+    <rect x="400" y="1032" width="400" height="80" rx="8" fill="#ffe08a" stroke="#b8860b" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="1059" text-anchor="middle" font-size="16" font-weight="bold">6 · Formato</text>
+    <text x="600" y="1083" text-anchor="middle">Una sola pregunta: ¿APE, AA o libre?</text>
+    <text x="600" y="1101" text-anchor="middle">El contenido aprobado se vuelca en la plantilla</text>
+
+    <rect x="400" y="1146" width="400" height="88" rx="8" fill="#fff" stroke="#c77700" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="1173" text-anchor="middle" font-size="16" font-weight="bold">7 · Verificación técnica</text>
+    <text x="600" y="1197" text-anchor="middle">Compila · plantilla aplicada · citas renderizadas</text>
+    <text x="600" y="1218" text-anchor="middle">Gráficos numerados y referenciados</text>
+
+    <rect x="400" y="1266" width="400" height="60" rx="8" fill="#fff" stroke="#1a7f37" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="1292" text-anchor="middle" font-size="16" font-weight="bold">8 · RDD</text>
+    <text x="600" y="1313" text-anchor="middle">Revisión automatizada del documento final</text>
+
+    <rect x="400" y="1358" width="400" height="60" rx="8" fill="#ffe08a" stroke="#b8860b" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="1384" text-anchor="middle" font-size="16" font-weight="bold">9 · Revisión humana final</text>
+    <text x="600" y="1405" text-anchor="middle">Vos das el OK de entrega</text>
+
+    <rect x="470" y="1446" width="260" height="46" rx="23" fill="#b8f2c4" stroke="#1a7f37" stroke-width="2" filter="url(#s)"/>
+    <text x="600" y="1476" text-anchor="middle" font-size="17" font-weight="bold" fill="#0e4d22">✔ Entrega</text>
+  </g>
+
+  <g stroke="#444" stroke-width="2" marker-end="url(#a)">
+    <line x1="600" y1="160" x2="600" y2="196"/>
+    <line x1="600" y1="282" x2="600" y2="316"/>
+    <line x1="600" y1="394" x2="600" y2="426"/>
+    <line x1="600" y1="512" x2="600" y2="544"/>
+    <line x1="600" y1="630" x2="600" y2="664"/>
+    <line x1="600" y1="758" x2="600" y2="792"/>
+    <line x1="600" y1="890" x2="600" y2="922"/>
+    <line x1="600" y1="996" x2="600" y2="1030"/>
+    <line x1="600" y1="1112" x2="600" y2="1144"/>
+    <line x1="600" y1="1234" x2="600" y2="1264"/>
+    <line x1="600" y1="1326" x2="600" y2="1356"/>
+    <line x1="600" y1="1418" x2="600" y2="1444"/>
+  </g>
+  <text x="612" y="780" font-size="13" font-weight="bold" fill="#1a7f37">sí</text>
+  <text x="612" y="1018" font-size="13" font-weight="bold" fill="#1a7f37">sí</text>
+
+  <!-- Loop: not approved -> ask AI for changes -->
+  <polyline points="460,712 360,712 360,572 396,572" fill="none" stroke="#c0392b" stroke-width="2.5" marker-end="url(#ar)"/>
+  <text x="372" y="730" font-size="13" font-weight="bold" fill="#c0392b">no</text>
+  <text x="348" y="645" transform="rotate(-90,348,645)" font-size="12" fill="#c0392b" font-style="italic" text-anchor="middle">otra ronda</text>
+
+  <!-- Loop: verification fails -> your revision -->
+  <polyline points="500,960 300,960 300,588 396,588" fill="none" stroke="#c0392b" stroke-width="2.5" marker-end="url(#ar)"/>
+  <text x="312" y="978" font-size="13" font-weight="bold" fill="#c0392b">no</text>
+  <text x="288" y="775" transform="rotate(-90,288,775)" font-size="12" fill="#c0392b" font-style="italic" text-anchor="middle">corregís vos con el reporte</text>
+
+  <!-- Right notes -->
+  <g font-size="13" fill="#222">
+    <line x1="800" y1="240" x2="876" y2="240" stroke="#888" stroke-dasharray="5,4" marker-end="url(#a)"/>
+    <rect x="880" y="198" width="470" height="84" rx="8" fill="#f2f6fb" stroke="#8aa4c8" filter="url(#s)"/>
+    <text x="896" y="224" font-size="14" font-weight="bold">Requisito de fuentes</text>
+    <text x="896" y="247">Mínimo 5 libros o papers</text>
+    <text x="896" y="268">Cada documento lleva su propio archivo .bib</text>
+
+    <line x1="800" y1="356" x2="876" y2="356" stroke="#888" stroke-dasharray="5,4" marker-end="url(#a)"/>
+    <rect x="880" y="318" width="470" height="76" rx="8" fill="#f2f6fb" stroke="#8aa4c8" filter="url(#s)"/>
+    <text x="896" y="344" font-size="14" font-weight="bold">La rúbrica manda</text>
+    <text x="896" y="367">Cada criterio es una tarea con su check.</text>
+    <text x="896" y="386">Si un criterio no tiene tarea, hay un hueco.</text>
+
+    <line x1="800" y1="470" x2="876" y2="470" stroke="#888" stroke-dasharray="5,4" marker-end="url(#a)"/>
+    <rect x="880" y="428" width="470" height="84" rx="8" fill="#fff5e6" stroke="#c77700" filter="url(#s)"/>
+    <text x="896" y="454" font-size="14" font-weight="bold">Punto de partida, no texto final</text>
+    <text x="896" y="477">Tono humano: ni técnico ni adulador,</text>
+    <text x="896" y="498">tomando como modelo cómo escribís.</text>
+
+    <line x1="800" y1="588" x2="876" y2="588" stroke="#888" stroke-dasharray="5,4" marker-end="url(#a)"/>
+    <rect x="880" y="536" width="470" height="104" rx="8" fill="#fff5e6" stroke="#c77700" filter="url(#s)"/>
+    <text x="896" y="562" font-size="14" font-weight="bold">Cómo pedís los cambios</text>
+    <text x="896" y="585">"En el párrafo X, reemplazá '…' por '…'"</text>
+    <text x="896" y="605">"Eliminá la sección Y"</text>
+    <text x="896" y="625">Tu texto se pega literal: la IA no lo pule.</text>
+
+    <line x1="800" y1="842" x2="876" y2="842" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#ar)"/>
+    <rect x="880" y="762" width="470" height="152" rx="8" fill="#fff0ee" stroke="#c0392b" stroke-width="1.5" filter="url(#s)"/>
+    <text x="896" y="786" font-size="14" font-weight="bold" fill="#7a1a10">Checklist de la verificación dura</text>
+    <text x="896" y="811">☐ Cada criterio: cumple / flojo / falta + dónde</text>
+    <text x="896" y="833">☐ Cada afirmación importante tiene su cita</text>
+    <text x="896" y="855">☐ ≥ 5 libros o papers reales en el .bib</text>
+    <text x="896" y="877">☐ Párrafos confusos o incoherentes señalados</text>
+    <text x="896" y="899">☐ Gráficos: ¿aportan a algún criterio?</text>
+
+    <line x1="800" y1="1072" x2="876" y2="1072" stroke="#888" stroke-dasharray="5,4" marker-end="url(#a)"/>
+    <rect x="880" y="1032" width="470" height="80" rx="8" fill="#f2f6fb" stroke="#8aa4c8" filter="url(#s)"/>
+    <text x="896" y="1058" font-size="14" font-weight="bold">Plantillas (las pasás vos)</text>
+    <text x="896" y="1082">APE · AA · Libre</text>
+    <text x="896" y="1101">Sin intake largo: nada más que esta elección</text>
+  </g>
+
+  <!-- Bottom: changes -->
+  <line x1="40" y1="1530" x2="1360" y2="1530" stroke="#ddd"/>
+  <text x="60" y="1564" font-size="16" font-weight="bold" fill="#1d2330">Qué cambia respecto del flujo actual</text>
+  <g font-size="13" fill="#333">
+    <text x="60" y="1592">• El intake largo se reduce a una sola pregunta de formato: APE, AA o libre.</text>
+    <text x="60" y="1614">• La IA arma el borrador; vos indicás reemplazos y eliminaciones, que se aplican literales.</text>
+    <text x="60" y="1636">• Al aprobar se lanza una verificación dura que reporta hallazgos; las correcciones las hacés vos.</text>
+    <text x="60" y="1658">• El formato va DESPUÉS de aprobar el contenido, no antes.</text>
+    <text x="60" y="1680">• El research deja de ser omitible: siempre ≥ 5 fuentes y un .bib por documento.</text>
+    <text x="60" y="1702">• La rúbrica se convierte en las tareas ODD y en el checklist de verificación.</text>
+  </g>
+  <g font-size="13" fill="#333">
+    <rect x="1000" y="1552" width="18" height="14" fill="#ffe08a" stroke="#b8860b"/><text x="1026" y="1564">Paso tuyo (humano)</text>
+    <rect x="1000" y="1578" width="18" height="14" fill="#f2f6fb" stroke="#8aa4c8"/><text x="1026" y="1590">Requisito del docente</text>
+    <rect x="1000" y="1604" width="18" height="14" fill="#fff0ee" stroke="#c0392b"/><text x="1026" y="1616">Verificación / corrección</text>
+  </g>
+</svg>

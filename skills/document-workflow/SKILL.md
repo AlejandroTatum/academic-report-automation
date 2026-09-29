@@ -1,10 +1,10 @@
 ---
 name: document-workflow
-description: "Trigger: document workflow, doc status, where is my report, resume report, approve preview, publish report. Route phases from doc_status and delegate to the existing executor skill."
+description: "Trigger: document workflow, doc status, where is my report, resume report, approve draft, publish report. Route the content-first flow from doc_status."
 license: Apache-2.0
 metadata:
   author: "gentleman-programming"
-  version: "1.0"
+  version: "1.1"
   scope: "orchestration"
 ---
 
@@ -14,13 +14,10 @@ Use to resume, inspect, or advance an in-progress document run under
 `$REPORT_CONTENT_ROOT/reports/<work-folder>/`. Run
 `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/doc_status.py"
 "$REPORT_CONTENT_ROOT/reports/<work-folder>/"` first; the returned `next` token owns
-the route. The source root, the selected interpreter (`REPORT_PYTHON`) and the
-content root are all defined in
-`academic-report-builder/references/automation-contract.md`; the source root may be a
-worktree with no `.venv` of its own. Every path above is
+the route. The selected interpreter (`REPORT_PYTHON`) and the roots are defined in
+`academic-report-builder/references/automation-contract.md`; every path above is
 absolute, so the working directory never changes the answer. This skill orchestrates
-only: it never re-implements intake, research,
-build, validation, or publication, and never reads executor internals to decide
+only: it never re-implements a phase and never reads executor internals to decide
 where a run stands.
 
 Loop: `doc_status -> next -> reference -> delegate -> re-run`.
@@ -46,17 +43,23 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 
 - Each delegation produces exactly one artifact consumed by the derivation table.
 - Present the human block verbatim; never summarize or reword it.
+- Present every human gate losslessly: complete options, consequences, exact
+  allowed answers, no silent default, and never proceed on silence.
 - Never build before approval is `done`; never publish without a current marker.
 - Never present the approval gate before `draft` is `done`.
-- Present the approval gate losslessly: complete options, consequences, exact
-  allowed answers, no silent default, and never proceed on silence.
+- Content-first: intake asks only the minimum and never formatting questions;
+  research is mandatory (at least 5 book or paper sources, IEEE, never invented);
+  the plan mirrors the teacher's rubric; the user's text is applied verbatim; the
+  content check only reports findings; the format is one question (APE, AA or
+  libre).
 
 ## Decision Gates
 
 | Situation | Action |
 |---|---|
 | `next` names a phase | Load its reference and delegate to the executor. |
-| `next: approval` | Present the human gate; write `approval.yml` only on an explicit answer. |
+| `next: approval` | Present the human gate; apply literal edit orders verbatim; write `approval.yml` only on an explicit answer. |
+| `next: review` | Present the final PDF; write `final-review.yml` only on the user's explicit OK. |
 | `next: done` | Report completion; route no further. |
 | Unknown or unavailable executor | Stop, report the blocker, never substitute silently. |
 
@@ -102,13 +105,13 @@ Route: intake > research > [plan] > draft > approval > verify > format > generat
 
 ## References
 
-- `references/intake.md` - intake contract and `report.yml` completion.
-- `references/research.md` - the mandatory five-source BibTeX gate (`sources.bib`).
+- `references/intake.md` - the content-first minimum intake and `report.yml`.
+- `references/research.md` - the mandatory five-source IEEE gate (`sources.bib`).
 - `references/plan.md` - the teacher's rubric as a machine-checkable plan (`rubric.yml`).
-- `references/draft.md` - full document body drafted before approval.
-- `references/approval.md` - the single human approval gate.
-- `references/verify.md` - the hard content check (`content-check.yml`).
-- `references/format.md` - the APE / AA / libre format choice in `report.yml`.
+- `references/draft.md` - the full draft, written to be reviewed (`body.md`).
+- `references/approval.md` - the human gate and the literal edit-order loop.
+- `references/verify.md` - the report-only content check (`content-check.yml`).
+- `references/format.md` - the single APE / AA / libre question in `report.yml`.
 - `references/generate.md` - approved build and PDF generation.
 - `references/validate.md` - RDD or fallback validation branches.
 - `references/review.md` - the final human review gate (`final-review.yml`).

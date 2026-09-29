@@ -14,40 +14,42 @@ derives from: `reports/<wf>/report.yml`. The record uses the keys the pipeline
 actually reads; the full shape and its semantics live in
 `academic-report-builder/references/document-intake.md`.
 
-- top-level `route:` (document type), `output:` (delivery format), `template:` when
-a template was confirmed, and `cover:` when the route default is overridden;
-- `metadata:` for identity and context: the route-mandatory fields (academic:
-`metadata.title`, `metadata.subject`, `metadata.teacher`, `metadata.student`,
-`metadata.date`; every other route: `metadata.title`, `metadata.student`,
-`metadata.date`), `metadata.members` for a group roster, and the recorded
-`metadata.audience`, `metadata.purpose`, and `metadata.visual_direction`;
-- top-level `research: skipped` when the research trigger does not fire.
+The content-first route asks for the minimum only:
 
-`cover:` is top-level: `report.yml`'s own `cover:` key is the only one read, so a
-nested `metadata.cover` would be ignored. Do not invent a parallel key for a meaning
-that already has one.
+- `metadata.title` and `metadata.student` - the identity this phase is done on;
+- the teacher's guide and rubric material, plus any teacher explanation, kept as
+  inputs for the `plan` phase;
+- top-level `route:` (document type), resolved with the user, never inferred;
+- `metadata.date`, `metadata.members` for a group roster, and the optional record
+  keys `metadata.audience`, `metadata.purpose`, `metadata.visual_direction`,
+  top-level `template:`, `cover:`, and `output:` - fill them from supplied material
+  when it names them, and never interrogate the user for them here.
 
-Intake asks only the consequential fields that are still missing; supplied inputs are
-candidate answers, and each missing route-mandatory field may be clarified once. It
-never asks for a generation approval and never renders a confirmation prompt: the one
-explicit human confirmation gate happens after `preview.md` exists
-(`references/approval.md`).
+Intake never asks formatting questions: template, identity tables, cover, output
+look, and the document format (APE, AA or libre) are decided at the `format` phase,
+after the content is approved. `metadata.subject` and `metadata.teacher` are
+recorded when the guide names them; the `format` phase completes whatever its
+chosen format still requires.
 
-Done means `report.yml` exists, `route:` is a known route, and every
-route-mandatory metadata value is truthy. An unknown `route:` is `blocked`
-(`unknown_route`); incomplete metadata leaves intake `pending`, so the route keeps
-waiting at intake instead of advancing.
+Done means `report.yml` exists, `route:` is a known route, and `metadata.title` and
+`metadata.student` are present and real (not bracket templates or fill-in marks).
+An unknown `route:` is `blocked` (`unknown_route`); a missing or placeholder
+identity leaves intake `pending`, so the route keeps waiting at intake instead of
+advancing.
 
 ## Steps
 
 1. Resolve the document type and route with the user; never infer either one.
-2. Ask only for the missing consequential and route-mandatory values.
+2. Collect the minimum: title, student, the teacher's guide and rubric material,
+   and any teacher explanation.
 3. Write `reports/<wf>/report.yml` with the confirmed data record.
 4. Re-run `doc_status` and report the new current phase.
 
 ## Never
 
-- Do not write `preview.md`, `approval.yml`, or `validation.yml`, and do not build,
-  validate, or publish anything: intake produces exactly one artifact.
+- Do not ask formatting questions (template, cover, visual direction, output look):
+  the `format` phase owns every formatting decision.
+- Do not write `approval.yml`, `rubric.yml`, `sources.bib`, or `validation.yml`, and
+  do not build, validate, or publish anything: intake produces exactly one artifact.
 - Do not treat a request text, prior document, or template as confirmed data.
-- Do not add schema fields beyond the record above.
+- Do not add schema fields beyond the record in `document-intake.md`.

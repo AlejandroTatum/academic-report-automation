@@ -19,6 +19,12 @@ never count toward the gate, and a report can no longer record its way past
 research: `doc_status` keeps the phase `pending` until the file holds the five
 sources.
 
+Every entry must be real and verifiable: author, title, year, and
+publisher/venue are checkable facts, never invented, approximated, or borrowed
+from memory. The document's citations are IEEE (biblatex `style=ieee`), so write
+`sources.bib` entries that resolve cleanly under that style; there is no
+alternative citation style anywhere in this route.
+
 The executor also keeps its claim-level evidence practice: `research/
 evidence-matrix.md` (and, once written, `research/evidence.yml`) carries claims,
 conflicts, and unresolved questions into the report, but neither file satisfies
@@ -41,16 +47,17 @@ source stays a `lead` and is never written into `sources.bib`.
 1. Define the research question, scope, and inclusion/exclusion criteria.
 2. Collect, inspect, and assess sources; retain stable locators and provenance.
 3. Write the document's `sources.bib` with every eligible book or paper entry
-   (at least 5) and the claim-level matrix, separating quotations from
-   paraphrases.
+   (at least 5), each one verifiable and IEEE-ready, plus the claim-level
+   matrix, separating quotations from paraphrases.
 4. Reconcile duplicates, gaps, and contradictions without converting uncertainty
    into fact.
 5. Re-run `doc_status` and report the new current phase.
 
 ## Never
 
-- Do not invent a source, locator, quotation, date, author, or finding.
+- Do not invent a source, locator, quotation, date, author, or finding: an
+  unverifiable entry is worse than a missing one.
 - Do not count a `@misc`/`@online` entry, or an uninspected `lead`, toward the
   five-source gate.
-- Do not write `report.yml`, `preview.md`, `approval.yml`, or `validation.yml`.
+- Do not write `report.yml`, `approval.yml`, or `validation.yml`.
 - Do not draft, build, or deliver the document.

@@ -91,4 +91,4 @@ grant `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`.
 - Do not record a pass for an artifact hash that no longer matches the final PDF.
 - Do not claim `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT` from an automatic
   receipt alone.
-- Do not write `approval.yml`, `preview.md`, or `report.yml`.
+- Do not write `approval.yml`, `body.md`, or `report.yml`.
