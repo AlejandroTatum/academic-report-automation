@@ -78,6 +78,19 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       in case; contains/headings: case- and accent-insensitive) and tells judges
       not to downgrade a criterion for a property a passing check verifies
       (fixes the T9 E2E false positive).
+- [ ] T11 Content-check robustness (T9/T10/E2E advisories): validate both
+      judgments files fully before merging and attribute every error to its file;
+      tolerate non-list `judges` in state; read body.md once so the brief hash and
+      the checks use the same bytes; tolerance text comes from one constant shared
+      with rubric_checks; content-check.yml binds the guide hash (a changed guide
+      stales the marker); move the T10 tests out of the middle of another test.
+- [ ] T12 verify_sources: registry-data errors (bad fields in a 200 response)
+      report MISMATCH, not NETWORK_ERROR.
+- [ ] T13 guide_facts conflicts contract documented in its reference; proof test
+      that a URL inside a moving argument (heading/caption) builds.
+- [ ] T14 Judge quote check: every single-quoted fragment in a judge `where` must
+      appear in body.md (whitespace-normalized); a missing fragment is a warning
+      naming the judge and criterion, never a block.
 
 ## Evidence
 (commit ids recorded per task)
@@ -203,6 +216,11 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   lacks a guide hash binding, rubric checks not tied to criterion semantics,
   judge B misattributed one quote, factual claims (commit/branch counts) are not
   verified by any check, sources-verification warning unresolved.
+
+## Out of scope (user decision, report data not tooling)
+- Factual claims in body.md (commit/branch counts) are not checkable without
+  access to the student's repository.
+- Prana year warning in research/sources-verification.yml.
 
 ## Follow-ups (next cycle, from T5b advisories)
 - Fish quoting: backslashes inside single quotes, unquoted directory in `set d`.
