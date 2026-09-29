@@ -25,13 +25,16 @@ import doc_status
 from conftest import (
     _approval,
     _body,
+    _cited_body,
+    _choose_format,
+    _content_check,
     _final_review,
     _marker_text,
     _mtime,
     _pdf,
-    _preview,
     _published,
     _report,
+    _rubric,
     _sources_bib,
     _validation,
 )
@@ -51,17 +54,29 @@ PAYLOAD_KEYS = {
 
 
 def _golden_folder(folder: Path) -> Path:
-    """The design's documented state: intake+research done, preview waits, no marker."""
+    """The design's documented state: intake+research done, the plan waits, no rubric."""
     _report(folder)
     _sources_bib(folder)
     return folder
 
 
-def _deliver_pending(tmp_path: Path, *, name: str = "wf") -> Path:
-    """A folder whose only remaining phase is ``deliver`` (no published copy yet)."""
-    folder = _golden_folder(tmp_path / name)
+def _reviewed_build(folder: Path) -> Path:
+    """Build a folder whose every phase through ``review`` is ``done``.
+
+    The chain: identified report, five sources, a valid plan, an approved and
+    checked draft, a chosen format with complete metadata, a PDF newer than
+    both approval.yml and report.yml, a validation receipt and a final review
+    bound to the PDF bytes.
+    """
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
     marker = _approval(folder)
+    _content_check(folder)
+    _choose_format(folder, "aa")
     pdf = _pdf(folder)
+    _mtime(folder / "report.yml", 1_000_000)
     _mtime(marker, 1_000_000)
     _mtime(pdf, 2_000_000)
     _validation(folder, pdf=pdf)
@@ -69,17 +84,27 @@ def _deliver_pending(tmp_path: Path, *, name: str = "wf") -> Path:
     return folder
 
 
-def _all_done(tmp_path: Path) -> tuple[Path, Path]:
-    """A folder whose every phase is ``done``; returns (folder, Documents root)."""
-    folder = tmp_path / "wf"
+def _build_ready(folder: Path) -> Path:
+    """Build a folder whose next phase is ``generate`` (approved, checked, formatted)."""
     _report(folder)
     _sources_bib(folder)
-    _preview(folder)
-    marker = _approval(folder)
-    pdf = _pdf(folder)
-    _mtime(marker, 1_000_000)
-    _mtime(pdf, 2_000_000)
-    _validation(folder, pdf=pdf)
+    _rubric(folder)
+    _cited_body(folder)
+    _approval(folder)
+    _content_check(folder)
+    _choose_format(folder, "aa")
+    return folder
+
+
+def _deliver_pending(tmp_path: Path, *, name: str = "wf") -> Path:
+    """A folder whose only remaining phase is ``deliver`` (no published copy yet)."""
+    return _reviewed_build(tmp_path / name)
+
+
+def _all_done(tmp_path: Path) -> tuple[Path, Path]:
+    """A folder whose every phase is ``done``; returns (folder, Documents root)."""
+    folder = _reviewed_build(tmp_path / "wf")
+    pdf = folder / "final" / "report.pdf"
     root = tmp_path / "Documents"
     _published(root, category=CATEGORY, slug=SLUG, source=pdf)
     return folder, root
@@ -120,24 +145,28 @@ def test_render_human_golden(tmp_path: Path) -> None:
 
     text = doc_status.render_human(status)
 
-    preview = status.work_folder / "preview.md"
-    guidance = f"draft {preview}, then re-run doc_status"
+    rubric = status.work_folder / "rubric.yml"
+    guidance = f"record the teacher's rubric in {rubric}, then re-run doc_status"
     assert text == "\n".join(
         [
-            f"**Gate**: preview pending - {guidance}",
-            "Route: intake > research > [preview] > draft > approval > generate > validate > deliver",
+            f"**Gate**: plan pending - {guidance}",
+            "Route: intake > research > [plan] > draft > approval > verify > format"
+            " > generate > validate > review > deliver",
             "",
             "**Summary**",
-            "- intake: done - route=academic, metadata complete",
+            "- intake: done - route=academic, title and student recorded",
             "- research: done - sources.bib has 5/5 book or paper sources",
-            "- preview: current - preview.md missing",
+            "- plan: current - rubric.yml missing",
             "- draft: pending",
             "- approval: pending",
+            "- verify: pending",
+            "- format: pending",
             "- generate: pending",
             "- validate: pending",
+            "- review: pending",
             "- deliver: pending",
             "",
-            f"**Next**: preview - {guidance}",
+            f"**Next**: plan - {guidance}",
         ]
     ) + "\n"
     _assert_human_contract(text)
@@ -166,8 +195,7 @@ def test_gate_names_the_runnable_deliver_entrypoint(tmp_path: Path) -> None:
 
 def test_gate_names_the_runnable_generate_entrypoint_without_publication(tmp_path: Path) -> None:
     """Generate names the build entrypoint and still promises no publication."""
-    folder = _golden_folder(tmp_path / "wf")
-    _approval(folder)
+    folder = _build_ready(tmp_path / "wf")
     status = doc_status.derive(folder)
     entrypoint = doc_status.ROOT / "tools" / "build_report_auto.py"
 
@@ -220,22 +248,21 @@ def test_gate_names_the_actual_focus_before_approval_is_reachable(tmp_path: Path
 
 def test_human_and_json_gate_agree_across_the_state_matrix(tmp_path: Path) -> None:
     """The gate text is derived once: human block and JSON payload never disagree."""
-    waiting_approval = _golden_folder(tmp_path / "waiting")
-    stale_approval = _golden_folder(tmp_path / "stale")
+    waiting_plan = _golden_folder(tmp_path / "waiting")
+    stale_approval = tmp_path / "stale"
+    _report(stale_approval)
+    _sources_bib(stale_approval)
+    _rubric(stale_approval)
+    _body(stale_approval)
     _approval(stale_approval, body_sha256="0" * 64)
     mismatched = tmp_path / "mismatched"
-    _report(mismatched)
-    _sources_bib(mismatched)
-    _preview(mismatched)
-    marker = _approval(mismatched)
-    pdf = _pdf(mismatched)
-    _mtime(marker, 1_000_000)
-    _mtime(pdf, 2_000_000)
+    _reviewed_build(mismatched)
+    pdf = mismatched / "final" / "report.pdf"
     _validation(mismatched, pdf=pdf, artifact_sha256="0" * 64)
     done, root = _all_done(tmp_path)
 
     for folder, documents_root in (
-        (waiting_approval, None),
+        (waiting_plan, None),
         (stale_approval, None),
         (mismatched, None),
         (done, root),
@@ -247,6 +274,9 @@ def test_human_and_json_gate_agree_across_the_state_matrix(tmp_path: Path) -> No
         assert _human_gate(human) == payload["gate"]
         _assert_human_contract(human)
 
+    assert _human_gate(doc_status.render_human(doc_status.derive(waiting_plan))).startswith(
+        "plan pending - "
+    )
     assert _human_gate(doc_status.render_human(doc_status.derive(stale_approval))).startswith(
         "approval pending - "
     )
@@ -269,25 +299,47 @@ def test_render_human_omits_gate_when_route_complete(tmp_path: Path) -> None:
     _assert_human_contract(text)
 
 
-def test_render_human_gate_falls_to_focus_after_approval(tmp_path: Path) -> None:
-    """TRIANGULATE: once approval passes the gate names the waiting focus."""
-    folder = tmp_path / "wf"
-    _report(folder)
-    _sources_bib(folder)
-    _approval(folder)
+def test_render_human_gate_falls_to_focus_after_verify(tmp_path: Path) -> None:
+    """TRIANGULATE: once the check passes and the format is complete the gate
+    names the waiting build."""
+    folder = _build_ready(tmp_path / "wf")
 
     status = doc_status.derive(folder)
 
     states = {phase.name: phase.state for phase in status.phases}
     assert states["approval"] == doc_status.DONE
+    assert states["verify"] == doc_status.DONE
+    assert states["format"] == doc_status.DONE
     assert status.current == "generate"
     assert "**Gate**: generate " in doc_status.render_human(status)
     _assert_human_contract(doc_status.render_human(status))
 
 
+def test_render_human_gate_names_a_stale_check(tmp_path: Path) -> None:
+    """TRIANGULATE: a body edited after the check routes back to verify, waiting.
+
+    The user re-approved the edited body (the normal review loop), so approval
+    is current again and the only stale artifact is the content check.
+    """
+    folder = _build_ready(tmp_path / "wf")
+    _body(folder, "# Informe\n\nCuerpo editado despues del chequeo.\n")
+    _approval(folder)
+
+    status = doc_status.derive(folder)
+    text = doc_status.render_human(status)
+
+    assert status.current == "verify"
+    assert "**Gate**: verify pending - " in text
+    _assert_human_contract(text)
+
+
 def test_render_human_gate_reports_waiting_stale_approval(tmp_path: Path) -> None:
     """TRIANGULATE: a stale marker keeps the focus on approval, waiting not blocked."""
-    folder = _golden_folder(tmp_path / "wf")
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
     _approval(folder, body_sha256="0" * 64)
 
     status = doc_status.derive(folder)
@@ -299,11 +351,11 @@ def test_render_human_gate_reports_waiting_stale_approval(tmp_path: Path) -> Non
 
 
 def test_gate_names_body_md_when_draft_is_current(tmp_path: Path) -> None:
-    """Acceptance: preview done, body.md missing gates on draft naming body.md."""
+    """Acceptance: plan done, body.md missing gates on draft naming body.md."""
     folder = tmp_path / "wf"
     _report(folder)
     _sources_bib(folder)
-    _preview(folder)
+    _rubric(folder)
 
     status = doc_status.derive(folder)
     text = doc_status.render_human(status)
@@ -322,9 +374,9 @@ def test_gate_and_guidance_helpers_are_ascii_and_folder_bound(tmp_path: Path) ->
     gate = doc_status._gate(status)
     work = status.work_folder
 
-    assert gate.startswith("preview pending - ") and str(work / "preview.md") in gate
-    assert doc_status._guidance("preview", work) == (
-        f"draft {work}/preview.md, then re-run doc_status"
+    assert gate.startswith("plan pending - ") and str(work / "rubric.yml") in gate
+    assert doc_status._guidance("plan", work) == (
+        f"record the teacher's rubric in {work}/rubric.yml, then re-run doc_status"
     )
     assert doc_status._guidance("draft", work) == (
         f"draft {work}/body.md, then re-run doc_status"
@@ -361,8 +413,10 @@ def test_render_machine_schema_and_payload(tmp_path: Path) -> None:
 
 def test_render_machine_lists_blocked_reasons(tmp_path: Path) -> None:
     """TRIANGULATE: a blocked route surfaces its bounded reason token."""
-    folder = _golden_folder(tmp_path / "wf")
-    _preview(folder)
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
     _body(folder)
     _marker_text(folder, "body_sha256: [unclosed\n")
 
@@ -488,8 +542,7 @@ def test_printed_deliver_command_publishes_with_only_the_documents_root_override
 
 def test_printed_generate_command_names_a_runnable_interpreter_and_tool(tmp_path: Path) -> None:
     """The generate command resolves to an executable interpreter + the current tool."""
-    folder = _golden_folder(tmp_path / "wf")
-    _approval(folder)
+    folder = _build_ready(tmp_path / "wf")
     status = doc_status.derive(folder)
     argv = _printed_command(_human_gate(doc_status.render_human(status)))
 

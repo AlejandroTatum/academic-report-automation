@@ -66,7 +66,7 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
       mechanical checks: citations resolve, >= 5 eligible sources cited).
 - [x] T4 Format choice + APE template: `format: ape|aa|libre` in `report.yml`,
       per-format required metadata, template mapping, `templates/ape-report.tex`.
-- [ ] T5 `doc_status` new 11-phase route, handlers, guidance, tests; content check
+- [x] T5 `doc_status` new 11-phase route, handlers, guidance, tests; content check
       binds `rubric.yml` + bib hashes.
 - [ ] T6 Rewrite `skills/document-workflow` (SKILL.md + references), contract
       tests, skill sync, flow diagram under `docs/`.
@@ -101,6 +101,14 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
   Logo extracted from the teacher DOCX to `assets/ape-faculty-logo.png` (root
   `assets/` is the existing asset convention). Open check for E2E: large blank
   space after section 2 on page 1 of the smoke sample.
+  Commit `f7bf80c`. RDD lineage `review-c33b299e7587dce7`: approved, acknowledged/
+  burned. Advisory follow-ups: annex split ignores code fences; unknown format
+  silently falls back to a template; logo copy guard; duplicated APE
+  identification contract between `report_config.py` and the builder.
+- T5: RED 51 focused failures; GREEN `pytest tools/ tests/ -q` 1399 passed. Route is
+  now the 11 phases; `preview` removed. Content check binds rubric + bib hashes,
+  re-derives its verdict, and writes atomically. Minimal skill references for
+  plan/verify/format/review; full prose rewrite is T6.
 
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow

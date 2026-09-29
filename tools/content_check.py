@@ -19,9 +19,17 @@ for the at-least-five-eligible-sources-cited gate (T2).
 
 The check reports findings and never rewrites the draft: its only write is
 ``content-check.yml``. ``body.md`` bytes flow into ``body_sha256`` exactly as
-``approval.yml`` binds them, so ``content_check_state`` can detect a body
-edited after the check and route the phase back to ``stale``. A missing or
-unreadable file is data, never a crash: ``content_check_state`` never raises.
+``approval.yml`` binds them, ``rubric.yml`` and the document bib into
+``rubric_sha256``/``bib_sha256`` (new-report-flow T5), so
+``content_check_state`` can detect any input edited after the check and route
+the phase back to ``stale``. A missing or unreadable file is data, never a
+crash: ``content_check_state`` never raises. The marker is written atomically
+(temp file + ``os.replace``), so a crash can never leave a half-written verdict.
+
+``content_check_state`` also never trusts the recorded ``result`` blindly: it
+re-derives the verdict from the recorded criteria (every status ``cumple``),
+the recorded mechanical checks (every ``ok``), and the recorded criterion ids
+(equal to the current rubric ids) -- a forged ``result: pass`` fails.
 
 CLI: ``python tools/content_check.py <report-folder> --judgments <file>``
 exits 0 on pass, 1 on fail, 2 on usage/input error.
@@ -29,6 +37,7 @@ exits 0 on pass, 1 on fail, 2 on usage/input error.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -53,6 +62,8 @@ RESULT_VALUES = ("pass", "fail")
 REQUIRED_MARKER_KEYS = (
     "schema",
     "body_sha256",
+    "rubric_sha256",
+    "bib_sha256",
     "checked_at",
     "criteria",
     "findings",
@@ -208,6 +219,37 @@ def _read_bib(config: ReportConfig) -> str:
         return ""
 
 
+def _sha256_or_empty(path: Path | None) -> str:
+    """The hex digest of ``path``, or ``""`` when it is absent/unreadable.
+
+    The empty string is the recorded identity of 'this input did not exist when
+    the check ran', so a file that appears (or disappears) afterwards changes
+    the binding and the state goes stale.
+    """
+    if path is None:
+        return ""
+    try:
+        return sha256_file(path)
+    except OSError:
+        return ""
+
+
+def _write_marker_atomically(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` so readers never see a half-written marker.
+
+    The temp file sits beside the target (same filesystem, so ``os.replace`` is
+    atomic) and is removed even when the replace fails, so a crashed check
+    never leaves a ``content-check.yml.tmp`` behind for the next run to trip on.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def run_check(
     folder: Path, judgments_path: Path, config: ReportConfig | None = None
 ) -> CheckOutcome:
@@ -250,6 +292,8 @@ def run_check(
     marker = {
         "schema": CONTENT_CHECK_SCHEMA,
         "body_sha256": sha256_file(body_path),
+        "rubric_sha256": _sha256_or_empty(folder / rubric_plan.RUBRIC_NAME),
+        "bib_sha256": _sha256_or_empty(config.bib_path),
         "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "criteria": judgments,
         # The agent's free-text findings verbatim, plus every mechanical
@@ -259,8 +303,9 @@ def run_check(
         "mechanical": checks,
         "result": "pass" if mechanical_ok and criteria_ok else "fail",
     }
-    (folder / CONTENT_CHECK_NAME).write_text(
-        yaml.safe_dump(marker, sort_keys=False, allow_unicode=False), encoding="utf-8"
+    _write_marker_atomically(
+        folder / CONTENT_CHECK_NAME,
+        yaml.safe_dump(marker, sort_keys=False, allow_unicode=False),
     )
     return CheckOutcome(str(marker["result"]), marker, ())
 
@@ -270,9 +315,13 @@ def content_check_state(report_dir: Path) -> str:
 
     Exactly one of ``absent|malformed|stale|fail|pass``. A marker that cannot
     be read or is missing required keys is ``malformed``; a marker whose
-    ``body_sha256`` no longer matches ``body.md`` is ``stale`` (the body was
-    edited after the check); otherwise the recorded ``result`` wins. Never
-    raises, never writes.
+    ``body_sha256``, ``rubric_sha256`` or ``bib_sha256`` no longer matches the
+    folder is ``stale`` (the draft, the rubric or the bib changed since the
+    check). The recorded ``result`` is never trusted blindly: the verdict is
+    re-derived from the recorded criteria (every status ``cumple``), the
+    recorded mechanical checks (every ``ok``) and the recorded criterion ids
+    (equal to the current rubric ids), so a forged ``result: pass`` fails.
+    Never raises, never writes.
     """
     folder = Path(report_dir)
     path = folder / CONTENT_CHECK_NAME
@@ -290,6 +339,10 @@ def content_check_state(report_dir: Path) -> str:
         return "malformed"
     if data["result"] not in RESULT_VALUES:
         return "malformed"
+    if not isinstance(data["criteria"], list) or not data["criteria"]:
+        return "malformed"
+    if not isinstance(data["mechanical"], list):
+        return "malformed"
 
     body_path = folder / BODY_NAME
     if not body_path.is_file():
@@ -300,7 +353,31 @@ def content_check_state(report_dir: Path) -> str:
         return "malformed"
     if str(data["body_sha256"]).strip().lower() != body_hash:
         return "stale"
-    return str(data["result"])
+
+    rubric_path = folder / rubric_plan.RUBRIC_NAME
+    rubric_hash = _sha256_or_empty(rubric_path if rubric_path.is_file() else None)
+    if str(data["rubric_sha256"]).strip().lower() != rubric_hash:
+        return "stale"
+
+    try:
+        config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+        bib_path = config.bib_path
+    except Exception:
+        bib_path = None
+    if str(data["bib_sha256"]).strip().lower() != _sha256_or_empty(bib_path):
+        return "stale"
+
+    criteria = data["criteria"]
+    criteria_ok = all(
+        isinstance(record, dict) and record.get("status") == "cumple" for record in criteria
+    )
+    mechanical_ok = all(
+        isinstance(entry, dict) and entry.get("ok") is True for entry in data["mechanical"]
+    )
+    recorded_ids = [str(record.get("id")) for record in criteria if isinstance(record, dict)]
+    current_ids = [str(criterion.get("id")) for criterion in rubric_plan.load_rubric(folder)]
+    ids_match = len(recorded_ids) == len(current_ids) and set(recorded_ids) == set(current_ids)
+    return "pass" if criteria_ok and mechanical_ok and ids_match else "fail"
 
 
 def main(argv: list[str] | None = None) -> int:

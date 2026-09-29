@@ -34,11 +34,14 @@ Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 |---|---|---|
 | intake | `references/intake.md` | `academic-report-builder` (`document-intake.md`) |
 | research | `references/research.md` | `research-workflow` |
-| preview | `references/preview.md` | `academic-report-builder` (composition, pre-build) |
+| plan | `references/plan.md` | this skill (document-workflow) |
 | draft | `references/draft.md` | `academic-report-builder` (composition, body draft) |
 | approval | `references/approval.md` | this skill - human gate, no executor |
+| verify | `references/verify.md` | this skill (document-workflow) |
+| format | `references/format.md` | this skill (document-workflow) |
 | generate | `references/generate.md` | `academic-report-builder` (`automation-contract.md`) |
 | validate | `references/validate.md` | `academic-report-builder` (`quality-gates.md`) or `gentle-ai review` |
+| review | `references/review.md` | this skill - human gate, no executor |
 | deliver | `references/deliver.md` | `academic-report-builder` (`clean-delivery.md`) |
 
 - Each delegation produces exactly one artifact consumed by the derivation table.
@@ -78,29 +81,35 @@ actually waiting on and appears only while a phase is not `done`. The tool binds
 `<report-folder>` to the absolute work folder it was given:
 
 ```text
-**Gate**: preview pending - draft <report-folder>/preview.md, then re-run doc_status
-Route: intake > research > [preview] > draft > approval > generate > validate > deliver
+**Gate**: plan pending - record the teacher's rubric in <report-folder>/rubric.yml, then re-run doc_status
+Route: intake > research > [plan] > draft > approval > verify > format > generate > validate > review > deliver
 
 **Summary**
-- intake: done - route=academic, metadata complete
+- intake: done - route=academic, title and student recorded
 - research: done - sources.bib has 5/5 book or paper sources
-- preview: current - preview.md missing
+- plan: current - rubric.yml missing
 - draft: pending
 - approval: pending
+- verify: pending
+- format: pending
 - generate: pending
 - validate: pending
+- review: pending
 - deliver: pending
 
-**Next**: preview - draft <report-folder>/preview.md, then re-run doc_status
+**Next**: plan - record the teacher's rubric in <report-folder>/rubric.yml, then re-run doc_status
 ```
 
 ## References
 
 - `references/intake.md` - intake contract and `report.yml` completion.
 - `references/research.md` - the mandatory five-source BibTeX gate (`sources.bib`).
-- `references/preview.md` - pre-build content preview composition.
+- `references/plan.md` - the teacher's rubric as a machine-checkable plan (`rubric.yml`).
 - `references/draft.md` - full document body drafted before approval.
 - `references/approval.md` - the single human approval gate.
+- `references/verify.md` - the hard content check (`content-check.yml`).
+- `references/format.md` - the APE / AA / libre format choice in `report.yml`.
 - `references/generate.md` - approved build and PDF generation.
 - `references/validate.md` - RDD or fallback validation branches.
+- `references/review.md` - the final human review gate (`final-review.yml`).
 - `references/deliver.md` - versioned publication to the delivery folder.

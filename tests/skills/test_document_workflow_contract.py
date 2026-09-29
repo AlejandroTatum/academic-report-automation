@@ -26,29 +26,58 @@ def tool_doc_status():
 
     return doc_status
 
-PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
+PHASES = (
+    "intake",
+    "research",
+    "plan",
+    "draft",
+    "approval",
+    "verify",
+    "format",
+    "generate",
+    "validate",
+    "review",
+    "deliver",
+)
 STATE_TOKENS = ("done", "current", "pending", "blocked")
 EXECUTORS = ("academic-report-builder", "research-workflow")
 
 # Slice 3a-ii owns the six executor references below. `approval.md` and
 # `validate.md` belong to Slices 3b-i and 3b-ii and are asserted by their own
-# contract tests, never here.
-OWNED_REFERENCES = ("intake", "research", "preview", "draft", "generate", "deliver")
+# contract tests, never here. new-report-flow T5 adds the four self-executed
+# phase references (plan, verify, format, review).
+OWNED_REFERENCES = (
+    "intake",
+    "research",
+    "plan",
+    "draft",
+    "verify",
+    "format",
+    "generate",
+    "review",
+    "deliver",
+)
 REFERENCE_EXECUTOR = {
     "intake": "academic-report-builder",
     "research": "research-workflow",
-    "preview": "academic-report-builder",
+    "plan": "document-workflow",
     "draft": "academic-report-builder",
+    "verify": "document-workflow",
+    "format": "document-workflow",
     "generate": "academic-report-builder",
+    "review": "document-workflow",
     "deliver": "academic-report-builder",
 }
 # The single artifact each phase must produce, exactly as its reference declares it.
 REFERENCE_ARTIFACT = {
     "intake": "reports/<wf>/report.yml",
     "research": "reports/<wf>/sources.bib",
-    "preview": "reports/<wf>/preview.md",
+    "plan": "reports/<wf>/rubric.yml",
     "draft": "reports/<wf>/body.md",
+    "verify": "reports/<wf>/content-check.yml",
+    "format": "reports/<wf>/report.yml",
     "generate": "outputs/<materia>/<final>.pdf",
+    "review": "reports/<wf>/final-review.yml",
     "deliver": "~/Documents/<category>/<slug>/<slug>-vNNN.pdf",
 }
 
@@ -106,7 +135,8 @@ def test_status_template_contract() -> None:
     route_lines = [line for line in block.splitlines() if line.startswith("Route: ")]
     assert len(route_lines) == 1, "exactly one route line"
     assert route_lines[0] == (
-        "Route: intake > research > [preview] > draft > approval > generate > validate > deliver"
+        "Route: intake > research > [plan] > draft > approval > verify > format"
+        " > generate > validate > review > deliver"
     )
     brackets = re.findall(r"\[([a-z]+)\]", route_lines[0])
     assert len(brackets) == 1 and brackets[0] in PHASES, "exactly one bracketed phase"
@@ -134,7 +164,7 @@ def test_status_template_gate_is_phase_projected_not_approval_frontloaded() -> N
     block = human_template(read(SKILL_MD))
     gate_line = next(line for line in block.splitlines() if line.startswith("**Gate**: "))
 
-    expected = "preview pending - " + doc_status._guidance("preview", Path("<report-folder>"))
+    expected = "plan pending - " + doc_status._guidance("plan", Path("<report-folder>"))
 
     assert gate_line == f"**Gate**: {expected}"
     assert "approval pending" not in gate_line, "the approval front-load must stay gone"
@@ -147,7 +177,7 @@ def test_status_template_next_line_matches_the_tool_guidance() -> None:
     next_line = next(line for line in block.splitlines() if line.startswith("**Next**: "))
 
     assert next_line == (
-        "**Next**: preview - " + doc_status._guidance("preview", Path("<report-folder>"))
+        "**Next**: plan - " + doc_status._guidance("plan", Path("<report-folder>"))
     )
 
 
@@ -277,7 +307,8 @@ def test_phase_references_name_executor_and_single_artifact() -> None:
 
     The declaration is a labelled line contract, so a reference can never claim two
     artifacts or fall back to an implicit executor, and `doc_status` derivation
-    keeps reading exactly the path each phase promises.
+    keeps reading exactly the path each phase promises. The T5 phases (plan,
+    verify, format, review) are executed by this skill itself.
     """
     for phase in OWNED_REFERENCES:
         text = read(SKILL_ROOT / "references" / f"{phase}.md")
@@ -292,6 +323,35 @@ def test_phase_references_name_executor_and_single_artifact() -> None:
         assert REFERENCE_EXECUTOR[phase] in text, (
             f"references/{phase}.md must name its executor in prose too"
         )
+
+
+def test_preview_reference_is_gone() -> None:
+    """new-report-flow T5: the preview phase no longer exists in the route."""
+    assert not (SKILL_ROOT / "references" / "preview.md").exists(), (
+        "preview.md must be deleted: the draft is the only thing the user reviews"
+    )
+    assert "references/preview.md" not in read(SKILL_MD), (
+        "SKILL.md must not route to the removed preview reference"
+    )
+
+
+def test_new_phase_references_state_their_intent() -> None:
+    """T5: plan/verify/format/review are minimal self-executed phase references.
+
+    Each names its marker contract and the one tool that derives its state; the
+    full prose rewrite is T6.
+    """
+    expected_tokens = {
+        "plan": ("rubric.yml", "rubric_plan.py"),
+        "verify": ("content-check.yml", "content_check.py"),
+        "format": ("format:", "APE"),
+        "review": ("final-review.yml", "pdf_sha256"),
+    }
+    for phase, tokens in expected_tokens.items():
+        text = read(SKILL_ROOT / "references" / f"{phase}.md")
+        flat = re.sub(r"\s+", " ", text)
+        for token in tokens:
+            assert token in flat, f"references/{phase}.md must name `{token}`"
 
 
 def test_draft_reference_names_authoring_format_and_single_artifact() -> None:
@@ -336,21 +396,6 @@ def test_research_reference_names_the_five_source_gate() -> None:
         "the reference must still name the local source inventory tool"
     )
     assert "inspected" in flat, "only inspected local sources are bibliography-eligible"
-
-
-def test_preview_reference_allows_utf8_and_protects_approved_bytes() -> None:
-    """Preview content is UTF-8 (Spanish headings allowed) and frozen once approved."""
-    text = read(SKILL_ROOT / "references" / "preview.md")
-    flat = re.sub(r"\s+", " ", text).lower()
-
-    assert not re.search(r"\b(?:stays|remains|must be|is)\s+ascii\b", flat), (
-        "the preview must not be restricted to ASCII"
-    )
-    assert "utf-8" in flat, "the preview encoding must be named"
-    assert re.search(r"(?:never|do not|must not)\s+(?:be\s+)?rewrit(?:e|ten)", flat), (
-        "an approved preview must never be rewritten: the marker binds its exact bytes"
-    )
-    assert "sha256" in flat or "sha-256" in flat, "the binding hash must be named"
 
 
 def test_intake_reference_states_the_record_keys_without_inventing_a_schema() -> None:

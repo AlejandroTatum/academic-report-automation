@@ -3,10 +3,12 @@
 Every ``doc_status`` phase test starts from the same on-disk shapes, so the
 builders live here once instead of being copy-pasted per file. They are plain
 functions rather than fixtures: a test may call a builder as many times as its
-scenario needs. Slice 2a adds the intake/research/preview shapes; slice 2b-i adds
-the approval shape and its marker builder; slice 2b-ii adds the final-PDF builder
+scenario needs. Slice 2a adds the intake/research shapes; slice 2b-i adds the
+approval shape and its marker builder; slice 2b-ii adds the final-PDF builder
 and the timestamp helper its mtime comparison needs; slice 2b-iii adds the
-validation receipt and the published-PDF builder the validate/deliver phases read.
+validation receipt and the published-PDF builder the validate/deliver phases
+read. new-report-flow T5 adds the format-choice builder and binds the content
+check to the rubric and bib hashes.
 
 The helpers never touch production code. ``doc_status`` stays a pure, read-only
 derivation; these functions only materialize the artifacts it reads and the
@@ -20,7 +22,6 @@ from pathlib import Path
 
 from report_config import ReportConfig, read_yaml
 
-DEFAULT_PREVIEW = "# Content Preview: Informe\n\nCuerpo.\n"
 DEFAULT_BODY = "# Informe\n\nCuerpo del documento.\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
@@ -108,14 +109,6 @@ def _sources_bib(folder: Path, count: int = 5, name: str = "sources.bib") -> Pat
     return path
 
 
-def _preview(folder: Path, text: str = DEFAULT_PREVIEW) -> Path:
-    """Write a ``preview.md`` under ``folder`` and return its path."""
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / "preview.md"
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
 def _body(folder: Path, text: str = DEFAULT_BODY) -> Path:
     """Write a ``body.md`` under ``folder`` and return its path."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -186,19 +179,30 @@ def _content_check(
     drop: tuple[str, ...] = (),
     **fields: object,
 ) -> Path:
-    """Write a well-formed ``content-check.yml`` bound to the current body.md.
+    """Write a well-formed ``content-check.yml`` bound to the current artifacts.
 
     Defaults produce a ``pass`` marker over whatever ``body.md`` holds (it must
     exist first); ``body_sha256`` overrides the recorded hash (stale), ``drop``
-    removes required keys and ``result`` flips the verdict (malformed shapes).
+    removes required keys and ``result``/``criteria`` build honest fail shapes.
+    The marker also binds ``rubric.yml`` and the document bib (new-report-flow
+    T5): both files are created with their default shape when missing, so the
+    recorded hashes match unless a test edits them afterwards.
     """
     folder.mkdir(parents=True, exist_ok=True)
     body_path = folder / "body.md"
     if not body_path.is_file():
         body_path.write_text(DEFAULT_BODY, encoding="utf-8")
+    if not (folder / "rubric.yml").is_file():
+        _rubric(folder)
+    config = _config(folder)
+    if config.bib_path is None:
+        _sources_bib(folder)
+        config = _config(folder)
     marker_body: dict[str, object] = {
         "schema": CONTENT_CHECK_SCHEMA,
         "body_sha256": body_sha256 or _sha256(body_path),
+        "rubric_sha256": _sha256(folder / "rubric.yml"),
+        "bib_sha256": _sha256(config.bib_path) if config.bib_path else "",
         "checked_at": "2026-09-28T10:00:00+00:00",
         "criteria": [
             {"id": c["id"], "status": "cumple", "where": str(c["section"]), "note": "ok"}
@@ -285,18 +289,14 @@ def _approval(
     drop: tuple[str, ...] = (),
     **fields: object,
 ) -> Path:
-    """Write ``preview.md``, ``body.md`` and an ``approval.yml`` bound to body.md.
+    """Write ``body.md`` and an ``approval.yml`` bound to body.md.
 
     Defaults produce a current marker. ``body`` rewrites that file before hashing
     (the normal shape), ``body_sha256`` overrides the recorded hash (a stale
     marker), and ``drop`` removes required keys (a malformed marker). The marker
-    itself binds only body.md; ``preview.md`` is still written because the
-    preview phase reads it, but no marker key points at it.
+    binds only body.md.
     """
     folder.mkdir(parents=True, exist_ok=True)
-    preview_path = folder / "preview.md"
-    if not preview_path.is_file():
-        preview_path.write_text(DEFAULT_PREVIEW, encoding="utf-8")
     body_path = folder / "body.md"
     if body is not None or not body_path.is_file():
         body_path.write_text(body if body is not None else DEFAULT_BODY, encoding="utf-8")
@@ -357,6 +357,43 @@ def _marker_text(folder: Path, text: str) -> Path:
 # ---------------------------------------------------------------------------
 # Late-phase builders (slice 2b-ii): generate
 # ---------------------------------------------------------------------------
+
+
+# new-report-flow T4: per-format metadata the format phase requires. Only the
+# APE identification table needs extra fields; ``aa`` is covered by the default
+# route metadata and ``libre`` by a ``format_spec:`` line.
+_APE_METADATA_DEFAULTS = {
+    "cycle": "2026-2026 Ciclo I",
+    "unit": "Unidad 1",
+    "learning_outcome": "Modelar sistemas discretos",
+    "practice_number": "3",
+    "practice_type": "Laboratorio",
+    "schedule": "Lunes 10:00-12:00",
+    "place": "Lab. B",
+    "planned_time": "4 horas",
+}
+
+
+def _choose_format(folder: Path, chosen: str = "aa", **metadata: object) -> Path:
+    """Append a ``format:`` choice and its required metadata to ``report.yml``.
+
+    Keys are written at the top level, which ``ReportConfig.metadata`` resolves
+    through its alias map, so the existing ``metadata:`` block is untouched.
+    The APE identification fields and the libre ``format_spec:`` are filled
+    with placeholder-free defaults unless ``metadata`` overrides them.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    report = folder / "report.yml"
+    lines = [f"format: {chosen}"]
+    body: dict[str, object] = dict(_APE_METADATA_DEFAULTS) if chosen == "ape" else {}
+    if chosen == "libre":
+        body["format_spec"] = "Ensayo libre de 5 secciones con portada simple"
+    body.update(metadata)
+    lines.extend(f"{key}: {value}" for key, value in body.items())
+    report.write_text(
+        report.read_text(encoding="utf-8") + "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    return report
 
 
 def _mtime(path: Path, value: float) -> Path:

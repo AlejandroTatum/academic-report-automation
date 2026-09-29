@@ -1,4 +1,4 @@
-"""Unit and CLI tests for ``tools/content_check.py`` (new-report-flow T3).
+"""Unit and CLI tests for ``tools/content_check.py`` (new-report-flow T3/T5).
 
 The verify phase: after the user approves the draft, the AI agent judges every
 rubric criterion (``cumple|flojo|falta`` + ``where``) in a judgments file, and
@@ -8,11 +8,15 @@ can never declare a pass by itself. These tests pin the mechanical checks
 (citations resolve, >= MIN_ACADEMIC_SOURCES eligible sources cited, judgments
 cover every criterion exactly once), the derived ``result``, the CLI exit codes
 (0 pass / 1 fail / 2 usage or input error), the ``content_check_state``
-predicate (``absent|malformed|stale|fail|pass``), and the guarantee that the
-check never touches ``body.md``. Artifact shapes come from ``tools/conftest.py``.
+predicate (``absent|malformed|stale|fail|pass``), the T5 bindings (the marker
+records ``rubric_sha256``/``bib_sha256``, goes stale when either changes, and
+re-derives the verdict instead of trusting the recorded ``result``), the atomic
+marker write, and the guarantee that the check never touches ``body.md``.
+Artifact shapes come from ``tools/conftest.py``.
 """
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -95,6 +99,39 @@ def test_pass_case_writes_marker_and_exits_zero(tmp_path: Path) -> None:
     assert all(c["status"] == "cumple" for c in marker["criteria"])
     assert all(entry["ok"] for entry in marker["mechanical"])
     assert marker["findings"] == []
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def test_pass_case_binds_the_current_rubric_and_bib(tmp_path: Path) -> None:
+    """new-report-flow T5: the marker records rubric_sha256 and bib_sha256."""
+    folder = _verify_folder(tmp_path / "wf")
+
+    assert _run(folder) == 0
+
+    marker = _marker(folder)
+    assert marker["rubric_sha256"] == _sha(folder / "rubric.yml")
+    assert marker["bib_sha256"] == _sha(folder / "sources.bib")
+    assert not (folder / "content-check.yml.tmp").exists(), "the write must leave no temp file"
+
+
+def test_marker_write_is_atomic_and_cleans_up_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed replace never leaves a half-written marker or a stray temp file."""
+    folder = _verify_folder(tmp_path / "wf")
+
+    def _boom(src: object, dst: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(content_check.os, "replace", _boom)
+    with pytest.raises(OSError):
+        content_check.run_check(folder, _judgments(folder))
+
+    assert not (folder / "content-check.yml").exists()
+    assert not (folder / "content-check.yml.tmp").exists()
 
 
 def test_fail_case_exits_one_and_records_result(tmp_path: Path) -> None:
@@ -391,7 +428,15 @@ def test_content_check_state_pass_and_fail(tmp_path: Path) -> None:
 
     assert content_check.content_check_state(folder) == "pass"
 
-    _content_check(folder, result="fail")
+    # An honest fail shape: a recorded criterion below ``cumple``.
+    _content_check(
+        folder,
+        result="fail",
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "metodologia", "status": "flojo", "where": "Metodologia", "note": "vago"},
+        ],
+    )
 
     assert content_check.content_check_state(folder) == "fail"
 
@@ -405,10 +450,112 @@ def test_content_check_state_stale_after_body_edit(tmp_path: Path) -> None:
     assert content_check.content_check_state(folder) == "stale"
 
 
+def test_content_check_state_stale_after_rubric_edit(tmp_path: Path) -> None:
+    """new-report-flow T5: the check binds rubric.yml too."""
+    folder = tmp_path / "wf"
+    _body(folder)
+    _rubric(folder)
+    _content_check(folder, result="pass")
+    _rubric(folder, source="rubrica editada por la catedra")
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_content_check_state_stale_after_rubric_deleted(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _body(folder)
+    _rubric(folder)
+    _content_check(folder, result="pass")
+    (folder / "rubric.yml").unlink()
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_content_check_state_stale_after_bib_edit(tmp_path: Path) -> None:
+    """new-report-flow T5: the check binds the document bib too."""
+    folder = tmp_path / "wf"
+    _body(folder)
+    _sources_bib(folder)
+    _content_check(folder, result="pass")
+    _sources_bib(folder, count=6)
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+def test_content_check_state_ignores_recorded_pass_with_failing_criteria(
+    tmp_path: Path,
+) -> None:
+    """T5: a forged ``result: pass`` is re-derived; a flojo criterion fails it."""
+    folder = tmp_path / "wf"
+    _body(folder)
+    _content_check(
+        folder,
+        result="pass",
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "metodologia", "status": "flojo", "where": "Metodologia", "note": "vago"},
+        ],
+    )
+
+    assert content_check.content_check_state(folder) == "fail"
+
+
+def test_content_check_state_ignores_recorded_pass_with_failing_mechanical(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "wf"
+    _body(folder)
+    _content_check(
+        folder,
+        result="pass",
+        mechanical=[{"check": "citations_resolve", "ok": False, "detail": "fantasma"}],
+    )
+
+    assert content_check.content_check_state(folder) == "fail"
+
+
+def test_content_check_state_ignores_recorded_pass_with_unknown_criterion_ids(
+    tmp_path: Path,
+) -> None:
+    """T5: recorded criterion ids must equal the current rubric ids."""
+    folder = tmp_path / "wf"
+    _body(folder)
+    _rubric(folder)
+    _content_check(
+        folder,
+        result="pass",
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "inventado", "status": "cumple", "where": "X", "note": "ok"},
+        ],
+    )
+
+    assert content_check.content_check_state(folder) == "fail"
+
+
+def test_content_check_state_dedupes_id_comparison_not_sets(tmp_path: Path) -> None:
+    """TRIANGULATE: duplicated recorded ids are not equal to the rubric ids."""
+    folder = tmp_path / "wf"
+    _body(folder)
+    _rubric(folder)
+    _content_check(
+        folder,
+        result="pass",
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "objetivo", "status": "cumple", "where": "Otro", "note": "ok"},
+        ],
+    )
+
+    assert content_check.content_check_state(folder) == "fail"
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"drop": ("body_sha256",)},
+        {"drop": ("rubric_sha256",)},
+        {"drop": ("bib_sha256",)},
         {"drop": ("result",)},
         {"drop": ("criteria",)},
         {"result": "tal vez"},

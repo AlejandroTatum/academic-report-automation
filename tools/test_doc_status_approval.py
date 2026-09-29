@@ -18,8 +18,8 @@ from conftest import (
     _body,
     _config,
     _marker_text,
-    _preview,
     _report,
+    _sources_bib,
 )
 
 
@@ -27,7 +27,6 @@ def test_approval_absent_is_pending_not_blocked(tmp_path: Path) -> None:
     """A missing marker is ordinary progress, so later phases wait, not abort."""
     folder = tmp_path / "wf"
     _report(folder)
-    _preview(folder)
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
@@ -69,13 +68,13 @@ def test_approval_body_hash_mismatch_is_pending_for_reapproval(tmp_path: Path) -
     assert phase.state != doc_status.DONE
 
 
-def test_approval_preview_edited_after_approval_stays_done(tmp_path: Path) -> None:
-    """TRIANGULATE: the marker binds only body.md; editing preview.md is not an
-    approval event, so the phase stays done."""
+def test_approval_unrelated_edit_after_approval_stays_done(tmp_path: Path) -> None:
+    """TRIANGULATE: the marker binds only body.md; editing an unrelated artifact
+    (sources.bib) is not an approval event, so the phase stays done."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
-    _preview(folder, "# Content Preview: Informe\n\nOtro cuerpo.\n")
+    _sources_bib(folder, count=6)
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
@@ -137,8 +136,7 @@ def test_approval_unparsable_marker_is_malformed_not_absent(tmp_path: Path) -> N
     """TRIANGULATE: a bad marker is named, never silently treated as absent."""
     folder = tmp_path / "wf"
     _report(folder)
-    _preview(folder)
-    _marker_text(folder, "preview_sha256: [unclosed\n")
+    _marker_text(folder, "body_sha256: [unclosed\n")
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 

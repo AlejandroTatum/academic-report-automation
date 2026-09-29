@@ -2,8 +2,8 @@
 """Derive the document-workflow phases from on-disk artifacts (read-only).
 
 Slice 2c-i of the status layer: the phase vocabulary, the two value dataclasses,
-the eight per-phase derivations, and the ``derive``/``main`` composition on top of
-them. Each ``_phase_*`` function answers for exactly one phase and returns a raw
+the eleven per-phase derivations, and the ``derive``/``main`` composition on top
+of them. Each ``_phase_*`` function answers for exactly one phase and returns a raw
 ``done|pending|blocked`` token; ``derive`` runs them in order, wraps an unexpected
 exception as ``blocked``, locks every phase after the first incomplete one to
 ``pending``, and projects the route (``current``/``next``/``gate``). ``render_human``
@@ -12,7 +12,9 @@ and ``render_machine`` project that value: the portable human block and the
 
 Approval delegates to ``approval_marker.approval_state`` -- the same predicate
 ``publish_validated_pdf`` enforces -- so routing and the irreversible publisher
-cannot disagree about which marker is current.
+cannot disagree about which marker is current. The plan, verify and review
+phases delegate to ``rubric_plan.rubric_state``, ``content_check.content_check_state``
+and ``final_review_marker.final_review_state`` for the same reason.
 
 The module is pure and read-only. ``_phase_intake`` builds ``ReportConfig``
 directly instead of calling ``load_report_config``, which raises ``SystemExit``
@@ -28,13 +30,31 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import content_check
+import final_review_marker
+import rubric_plan
 from approval_marker import approval_state, bound_file_names, sha256_file
-from report_config import ROOT, ReportConfig, read_yaml
+from report_config import ROOT, ReportConfig, is_placeholder_value, read_yaml
 from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
 from source_count import source_gate
 from structure_contract import structure_confirmation_state, structure_gate_engaged
 
-PHASES = ("intake", "research", "preview", "draft", "approval", "generate", "validate", "deliver")
+# new-report-flow T5: the content-first route. The preview phase is gone (the
+# draft is the only thing the user reviews); plan, verify, format and review
+# sit between the phases that existed before.
+PHASES = (
+    "intake",
+    "research",
+    "plan",
+    "draft",
+    "approval",
+    "verify",
+    "format",
+    "generate",
+    "validate",
+    "review",
+    "deliver",
+)
 DONE, CURRENT, PENDING, BLOCKED = "done", "current", "pending", "blocked"
 STATE_TOKENS = (DONE, CURRENT, PENDING, BLOCKED)
 SCHEMA_NAME = "academic.doc-status"
@@ -52,11 +72,23 @@ _GUIDANCE = {
         "write at least 5 book or paper sources to {sources}, "
         "then re-run doc_status"
     ),
-    "preview": "draft {preview}, then re-run doc_status",
+    "plan": "record the teacher's rubric in {rubric}, then re-run doc_status",
     "draft": "draft {body}, then re-run doc_status",
     "approval": "generation runs only after you approve {body}",
+    "verify": (
+        "judge the draft against {rubric}: run {check_command} --judgments "
+        "<judgments-file>, then re-run doc_status"
+    ),
+    "format": (
+        "ask the user the single question: APE, AA or libre, record the answer "
+        "and its required metadata in {report_yml}, then re-run doc_status"
+    ),
     "generate": "build with {build_command}, then re-run doc_status",
     "validate": "record {validation} for the final PDF, then re-run doc_status",
+    "review": (
+        "ask the user to review {pdf}, then record {final_review}, "
+        "then re-run doc_status"
+    ),
     "deliver": "publish with {deliver_command}, then re-run doc_status",
 }
 
@@ -91,13 +123,31 @@ def _read_text(path: Path) -> str | None:
 
 
 def _phase_intake(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Intake is identity, not the whole route metadata (new-report-flow T5).
+
+    ``report.yml`` must exist, the route must be known, a declared ``format:``
+    must be one the format table recognises, and the report must be identified:
+    ``title`` and ``student`` present and real (not bracket templates or X/0
+    fill-in marks). Subject/teacher and the format-specific fields belong to
+    the format phase. A report that engaged the structure flow still needs it
+    confirmed here, exactly as before.
+    """
     if not (folder / "report.yml").is_file():
         return PhaseState("intake", PENDING, "report.yml missing")
     if not config.route_is_known:
         return PhaseState("intake", BLOCKED, f"route={config.route} not recognized", "unknown_route")
-    missing = [key for key in config.required_metadata if not config.metadata.get(key)]
+    if config.format is not None and not config.format_is_known:
+        return PhaseState(
+            "intake", BLOCKED, f"format={config.format} not recognized", "unknown_format"
+        )
+    missing = [key for key in ("title", "student") if not config.metadata.get(key)]
     if missing:
         return PhaseState("intake", PENDING, f"missing metadata: {', '.join(missing)}")
+    placeholders = [
+        key for key in ("title", "student") if is_placeholder_value(config.metadata.get(key))
+    ]
+    if placeholders:
+        return PhaseState("intake", PENDING, f"placeholder metadata: {', '.join(placeholders)}")
     # #12: once a report engages the structure flow (declares `structure:`
     # at all), intake stays incomplete until that contract reports
     # confirmed. A report that never engaged the flow is untouched -- the
@@ -106,7 +156,7 @@ def _phase_intake(folder: Path, config: ReportConfig, _documents_root: Path | No
         state, detail = structure_confirmation_state(config)
         if state != "confirmed":
             return PhaseState("intake", PENDING, f"structure {state}: {detail}")
-    return PhaseState("intake", DONE, f"route={config.route}, metadata complete")
+    return PhaseState("intake", DONE, f"route={config.route}, title and student recorded")
 
 
 def _phase_research(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -137,16 +187,22 @@ def _phase_research(folder: Path, config: ReportConfig, _documents_root: Path | 
     return PhaseState("research", DONE, sources.reason)
 
 
-def _phase_preview(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
-    preview = folder / "preview.md"
-    if not preview.is_file():
-        return PhaseState("preview", PENDING, "preview.md missing")
-    text = _read_text(preview)
-    if text is None:
-        return PhaseState("preview", BLOCKED, "preview.md unreadable", "preview_unreadable")
-    if not text.strip():
-        return PhaseState("preview", PENDING, "preview.md empty")
-    return PhaseState("preview", DONE, "preview.md present")
+def _phase_plan(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Map the rubric-plan predicate onto one phase state (new-report-flow T3).
+
+    A valid ``rubric.yml`` is the plan artifact; an absent one is ordinary
+    progress and a malformed one -- unparsable or schema-invalid -- is
+    ``blocked`` data the plan phase must fix. The rubric is never written or
+    repaired here.
+    """
+    state = rubric_plan.rubric_state(folder)
+    if state == "valid":
+        count = len(rubric_plan.load_rubric(folder))
+        noun = "criterion" if count == 1 else "criteria"
+        return PhaseState("plan", DONE, f"rubric.yml valid ({count} {noun})")
+    if state == "absent":
+        return PhaseState("plan", PENDING, "rubric.yml missing")
+    return PhaseState("plan", BLOCKED, "rubric.yml malformed", "rubric_malformed")
 
 
 def _phase_draft(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -185,21 +241,87 @@ def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path |
     return PhaseState("approval", BLOCKED, state.detail, state.reason)
 
 
-def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
-    """Report whether the final PDF is the one the approval marker authorized.
+def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Map the content-check predicate onto one phase state (new-report-flow T3/T5).
 
-    Bounded to the mtime comparison the design specifies: the artifact is ``done``
-    when ``config.pdf_path`` exists and is not older than ``approval.yml``. A missing
-    PDF, a missing marker, or a PDF that predates the marker is ordinary progress --
-    generate is never ``blocked``; a stale build simply has to be redone. Only the
+    ``pass`` is ``done``; absent and stale (the draft, the rubric or the bib
+    changed since the check) are ordinary progress -- the check simply reruns.
+    A recorded fail is ``blocked`` with ``content_check_failed``: the findings
+    must be fixed through the user's edit orders, never silently polished. A
+    malformed marker is ``blocked`` too. The check is never run or repaired
+    here; ``content_check_state`` already re-derives the verdict, so a forged
+    pass cannot clear this phase.
+    """
+    state = content_check.content_check_state(folder)
+    if state == "pass":
+        return PhaseState("verify", DONE, "content-check.yml passes for the current draft")
+    if state == "absent":
+        return PhaseState("verify", PENDING, "content-check.yml missing")
+    if state == "stale":
+        return PhaseState(
+            "verify",
+            PENDING,
+            "content-check.yml is stale: the draft, rubric or bib changed since the check",
+        )
+    if state == "fail":
+        return PhaseState(
+            "verify",
+            BLOCKED,
+            "content check failed: findings must be fixed through the user's edit orders",
+            "content_check_failed",
+        )
+    return PhaseState("verify", BLOCKED, "content-check.yml malformed", "content_check_malformed")
+
+
+def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Map the chosen format and its metadata onto one phase state (T4/T5).
+
+    An absent ``format:`` is ordinary progress: the phase's guidance is to ask
+    the user the single question (APE, AA or libre). A chosen format needs its
+    required metadata present and placeholder-free -- and ``libre`` a
+    ``format_spec:`` -- so an incomplete choice simply stays ``pending`` with
+    the missing keys named. An unrecognised format is ``blocked`` (intake
+    already blocks it; this handler stays defensive).
+    """
+    chosen = config.format
+    if chosen is None:
+        return PhaseState("format", PENDING, "format not chosen: ask the user APE, AA or libre")
+    if not config.format_is_known:
+        return PhaseState("format", BLOCKED, f"format={chosen} not recognized", "unknown_format")
+    missing = [
+        key
+        for key in config.format_required_metadata
+        if not config.metadata.get(key) or is_placeholder_value(config.metadata.get(key))
+    ]
+    if chosen == "libre" and not config.format_spec:
+        missing.append("format_spec")
+    if missing:
+        return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
+    return PhaseState("format", DONE, f"format={chosen}, metadata complete")
+
+
+def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Report whether the final PDF is the one the markers authorized.
+
+    Bounded to the mtime comparisons the design specifies (new-report-flow T5):
+    the artifact is ``done`` when ``config.pdf_path`` exists and is not older
+    than ``approval.yml`` AND not older than ``report.yml`` -- changing the
+    format after a build requires a rebuild. A missing PDF, a missing marker,
+    or a PDF that predates either file is ordinary progress -- generate is
+    never ``blocked``; a stale build simply has to be redone. Only the
     timestamps are read: nothing is written, hashed or repaired here.
     """
     pdf = config.pdf_path
     if not pdf.is_file():
         return PhaseState("generate", PENDING, "final PDF missing")
     marker = folder / "approval.yml"
+    report_yml = folder / "report.yml"
     if not marker.is_file():
         return PhaseState("generate", PENDING, "approval.yml missing")
+    if not report_yml.is_file():
+        return PhaseState("generate", PENDING, "report.yml missing")
+    if pdf.stat().st_mtime < report_yml.stat().st_mtime:
+        return PhaseState("generate", PENDING, f"final PDF {pdf.name} older than report.yml")
     if pdf.stat().st_mtime >= marker.stat().st_mtime:
         return PhaseState("generate", DONE, f"final PDF {pdf.name} is not older than approval.yml")
     return PhaseState("generate", PENDING, f"final PDF {pdf.name} older than approval.yml")
@@ -241,6 +363,23 @@ def _phase_validate(folder: Path, config: ReportConfig, _documents_root: Path | 
     if result != "pass":
         return PhaseState("validate", PENDING, "validation.yml result is not pass")
     return PhaseState("validate", DONE, f"validation.yml passes for {pdf.name}")
+
+
+def _phase_review(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+    """Map the final-review predicate onto one phase state (new-report-flow T1/T5).
+
+    Only ``current`` is ``done``: an absent marker stays ``pending`` so the
+    route waits at review, and a stale one -- the PDF changed since the human
+    looked at it -- also returns to ``pending``, because reviewing the current
+    build is the normal loop. Only a malformed marker is ``blocked``, with the
+    predicate's own bounded reason. The marker is never written here.
+    """
+    state = final_review_marker.final_review_state(folder, config.pdf_path)
+    if state.state == "current":
+        return PhaseState("review", DONE, f"final-review.yml matches {config.pdf_path.name}")
+    if state.state in ("absent", "stale"):
+        return PhaseState("review", PENDING, state.detail)
+    return PhaseState("review", BLOCKED, state.detail, state.reason)
 
 
 def _phase_deliver(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
@@ -299,11 +438,14 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
     handlers = (
         _phase_intake,
         _phase_research,
-        _phase_preview,
+        _phase_plan,
         _phase_draft,
         _phase_approval,
+        _phase_verify,
+        _phase_format,
         _phase_generate,
         _phase_validate,
+        _phase_review,
         _phase_deliver,
     )
     phases: list[PhaseState] = []
@@ -327,7 +469,7 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
         # The one authoritative gate: the actual focus phase, its pre-projection
         # token, and that phase's own readiness guidance. The human renderer and
         # the JSON payload both project this value verbatim.
-        gate = f"{focus.name} {focus.state} - {_guidance(focus.name, folder)}"
+        gate = f"{focus.name} {focus.state} - {_guidance(focus.name, folder, config)}"
         if focus.state == PENDING:
             phases[PHASES.index(focus.name)] = replace(focus, state=CURRENT)
     blocked_reasons = tuple(
@@ -347,25 +489,32 @@ def _tool_command(script: str, work_folder: Path) -> str:
     return shlex.join([sys.executable, str(ROOT / "tools" / script), str(work_folder)])
 
 
-def _guidance(phase_name: str, work_folder: Path) -> str:
+def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None) -> str:
     """Action sentence for ``phase_name``, bound to the real work-folder path.
 
     Every path is absolute and every command is complete: the work folder exactly as
-    the caller passed it (``derive`` resolves it once), and for ``generate``/
-    ``deliver`` an interpreter + entrypoint + folder command that runs from any
-    working directory. Nothing is left to resolve against an assumed cwd.
+    the caller passed it (``derive`` resolves it once), and for the tool phases an
+    interpreter + entrypoint + folder command that runs from any working directory.
+    Nothing is left to resolve against an assumed cwd. ``config`` may be passed by
+    callers that already hold one (``derive``); otherwise it is rebuilt read-only,
+    because the review guidance names the configured final PDF.
     """
     template = _GUIDANCE.get(phase_name)
     if template is None:
         return ""
     folder = Path(work_folder)
+    if config is None:
+        config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     return template.format(
         folder=folder,
         report_yml=folder / "report.yml",
         sources=folder / "sources.bib",
-        preview=folder / "preview.md",
+        rubric=folder / "rubric.yml",
         body=folder / "body.md",
         validation=folder / "validation.yml",
+        pdf=config.pdf_path,
+        final_review=folder / "final-review.yml",
+        check_command=_tool_command("content_check.py", folder),
         build_command=_tool_command("build_report_auto.py", folder),
         deliver_command=_tool_command("deliver_report.py", folder),
     )
