@@ -8,25 +8,34 @@ import unicodedata
 from pathlib import Path
 
 
-def extract_guide_facts(text: str) -> dict[str, str]:
+def extract_guide_facts(text: str) -> dict:
     """Return explicit guide facts without interpreting missing information."""
     try:
         normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
-        facts: dict[str, str] = {}
-        if re.search(r"\bape\b|\bpractico[\s-]+experimental\b", normalized):
-            facts["family"] = "ape"
-        elif re.search(r"\baprendizaje\s+autonomo\b", normalized):
-            facts["family"] = "aa"
-        number = re.search(r"\b(?:semana|practica)\s+(?:nro\.?\s*)?(\d+)\b", normalized)
-        if number:
-            facts["practice_number"] = number.group(1)
-        if re.search(r"\bindividual\b", normalized):
-            facts["practice_type"] = "Individual"
-        elif re.search(r"\bgrupal\b|\ben\s+grupo\b", normalized):
-            facts["practice_type"] = "Grupal"
-        time = re.search(r"\b(\d+)\s+horas\b", normalized)
-        if time:
-            facts["planned_time"] = f"{time.group(1)} horas"
+        facts: dict = {}
+        conflicts: dict[str, list[str]] = {}
+
+        def record(key: str, values: list[str]) -> None:
+            unique = list(dict.fromkeys(values))
+            if len(unique) > 1:
+                conflicts[key] = unique
+            elif unique:
+                facts[key] = unique[0]
+
+        record("family", [value for pattern, value in (
+            (r"\bape\b|\bpractico[\s-]+experimental\b", "ape"),
+            (r"\baprendizaje\s+autonomo\b", "aa"),
+        ) if re.search(pattern, normalized)])
+        record("practice_number", re.findall(
+            r"\b(?:semana|practica)\s+(?:nro\.?\s*)?(\d+)\b", normalized))
+        record("practice_type", [value for pattern, value in (
+            (r"\bindividual\b", "Individual"),
+            (r"\bgrupal\b|\ben\s+grupo\b", "Grupal"),
+        ) if re.search(pattern, normalized)])
+        record("planned_time", [f"{value} horas" for value in re.findall(
+            r"\b(\d+)\s+horas\b", normalized)])
+        if conflicts:
+            facts["conflicts"] = conflicts
         return facts
     except (TypeError, ValueError, UnicodeError):
         return {}

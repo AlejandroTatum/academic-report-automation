@@ -28,5 +28,22 @@ def test_pdf_handoff_is_short_home_relative(tmp_path: Path):
     config = ReportConfig(folder, {"pdf": str(folder / "report-final.pdf")})
     for phase in ("generate", "review"):
         guidance = _guidance(phase, folder, config)
-        assert "set d ~/reports/sample\nbrave $d/report-final*.pdf" in guidance
+        assert "set d ~/reports/sample\nset f 'report-final.pdf'\nbrave $d/$f" in guidance
         assert all(len(line) < 90 for line in guidance.splitlines()[1:])
+
+
+def test_pdf_handoff_quotes_fish_metacharacters_and_apostrophes():
+    folder = Path.home() / 'reports' / 'my folder'
+    config = ReportConfig(folder, {'pdf': str(folder / "author's [final] $copy.pdf")})
+    guidance = _guidance('review', folder, config)
+    assert "set d ~/reports/my\\ folder" in guidance
+    assert "set f 'author\\'s [final] $copy.pdf'" in guidance
+    assert 'brave $d/$f' in guidance
+    assert all(len(line) < 90 for line in guidance.splitlines()[1:])
+
+
+def test_pdf_handoff_outside_home_uses_quoted_absolute_path(tmp_path):
+    folder = tmp_path / 'report'
+    config = ReportConfig(folder, {'pdf': str(folder / "final's.pdf")})
+    guidance = _guidance('review', folder, config)
+    assert "brave '" + str(folder) + "/final\\'s.pdf'" in guidance

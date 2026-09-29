@@ -47,7 +47,7 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
       autolinks become clickable `\url`; figure paths resolve from the report folder
       (build-relative still accepted); long monospace URLs break; deliver grants
       `HUMAN_REVIEW` from a current `final-review.yml`.
-- [ ] T5a Content-check hardening: vacuous pass, re-derivation trusts the recorded
+- [x] T5a Content-check hardening: vacuous pass, re-derivation trusts the recorded
       mechanical list, unguarded `load_rubric`/rubric hash, pre-T2 markers report
       "re-run the judge", misleading errors after a parse failure, guide path
       confined and judge inputs resolved one way, rubric section parser (code
@@ -93,3 +93,9 @@ rendering bugs. Decided with the user on 2026-09-28 after the hard audit.
   Commit `1d72243`. RDD lineage `review-0c61912d7bd664c7`: approved, acknowledged/
   burned. Advisory, taken into T5b: URLs inside headings/captions (moving
   arguments), loose lists with blank lines, silent figure-path precedence.
+- T5a: RED verified by the parent (implementation stashed: mechanical-set, boolean,
+  no-criteria, legacy-marker, parse-cascade, invalid-rubric, guide-escape and
+  verify-guidance tests fail); GREEN `pytest tools/ tests/ -q` 1481 passed.
+  Commit `f0803f2`. RDD lineage `review-027442804a898217`: approved, acknowledged/
+  burned. Advisory, taken into T5b: setext `---` vs thematic break, stale-marker
+  guidance untested, narrow except in `run_check`, mechanical round-trip.

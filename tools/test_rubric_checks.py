@@ -28,6 +28,15 @@ other
     assert [r.ok for r in run_checks(tmp_path, [{"id": "x", "checks": checks}], body)] == [True, False, False, True]
 
 
+def test_thematic_break_after_blank_does_not_end_section(tmp_path: Path) -> None:
+    body = '# First\nneedle\n\n---\nmore text\n# Second\nother'
+    checks = [{'type': 'contains', 'section': 'First', 'text': 'more text'},
+              {'type': 'heading_present', 'section': 'more text'}]
+    assert [r.ok for r in run_checks(tmp_path, [{'id': 'x', 'checks': checks}], body)] == [True, False]
+    assert run_checks(tmp_path, [{'id': 'x', 'checks': [
+        {'type': 'heading_present', 'section': 'Actual'}]}], 'Actual\n---\nbody')[0].ok
+
+
 def test_unknown_runtime_check_fails_with_detail(tmp_path: Path) -> None:
     result, = run_checks(tmp_path, [{"id": "x", "checks": [{"type": "unknown", "section": "Missing"}]}], "")
     assert not result.ok and "unknown check type" in result.detail

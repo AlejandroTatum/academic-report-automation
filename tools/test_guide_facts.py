@@ -18,6 +18,15 @@ def test_spanish_variants_and_accents():
     }
 
 
+def test_conflicting_explicit_facts_are_not_guessed():
+    facts = extract_guide_facts('APE y aprendizaje autónomo. Semana 1; Semana 2. Individual y grupal. 2 horas; 3 horas')
+    assert facts == {'conflicts': {
+        'family': ['ape', 'aa'], 'practice_number': ['1', '2'],
+        'practice_type': ['Individual', 'Grupal'],
+        'planned_time': ['2 horas', '3 horas'],
+    }}
+
+
 def test_absent_and_invalid_facts():
     assert extract_guide_facts("No hay datos") == {}
     assert extract_guide_facts(None) == {}

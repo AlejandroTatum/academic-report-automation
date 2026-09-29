@@ -3,6 +3,18 @@ from pathlib import Path
 from build_latex_report import convert_inline, markdown_to_latex
 
 
+def test_urls_in_moving_arguments_are_protected():
+    rendered = markdown_to_latex('# See <https://example.org/a_b>\n\n![See <https://example.org/a_b>](x.png)')
+    assert r'\section{See \texorpdfstring{\url{https://example.org/a_b}}{https://example.org/a_b}}' in rendered
+    assert r'\caption{See \protect\url{https://example.org/a_b}}' in rendered
+
+
+def test_loose_ordered_and_bullet_lists_remain_single_lists():
+    rendered = markdown_to_latex('1. first\n\n2. second\n\n- third\n\n- fourth')
+    assert rendered.count(r'\begin{enumerate}') == 1
+    assert rendered.count(r'\begin{itemize}') == 1
+
+
 def test_autolink_and_named_link_are_clickable():
     rendered = convert_inline('<https://github.com/a_b/repo%20x#top~end> [repo](https://github.com/a_b/repo%20x#top~end)')
     assert r'\url{https://github.com/a_b/repo%20x#top~end}' in rendered

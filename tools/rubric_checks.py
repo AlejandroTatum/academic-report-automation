@@ -39,7 +39,7 @@ def _section(body: str, title: str) -> str | None:
             continue
         match = re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", line)
         setext = re.match(r"^\s*(?:={3,}|-{3,})\s*$", line)
-        heading = match.group(1).strip().rstrip("# ").strip() if match else lines[index - 1].strip() if setext and index else None
+        heading = match.group(1).strip().rstrip("# ").strip() if match else lines[index - 1].strip() if setext and index and lines[index - 1].strip() else None
         if heading:
             boundary = index - 1 if setext else index
             if start is not None:

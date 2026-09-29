@@ -628,6 +628,7 @@ def markdown_to_latex(
         if image:
             flush_paragraph(); close_list()
             caption = convert_inline(image.group("caption"))
+            caption = re.sub(r"\\url\{([^}]+)\}", r"\\protect\\url{\1}", caption)
             raw_src = image.group("src")
             resolved = resolve_figure(raw_src, build_dir) if build_dir is not None else None
             src = latex_escape(os.path.relpath(resolved, build_dir) if resolved is not None and build_dir is not None else raw_src)
@@ -661,6 +662,8 @@ def markdown_to_latex(
                 i += 1
                 continue
             title = convert_inline(raw_title)
+            title = re.sub(r"\\url\{([^}]+)\}",
+                           r"\\texorpdfstring{\\url{\1}}{\1}", title)
             command = {1: "section", 2: "subsection", 3: "subsubsection"}.get(level, "paragraph")
             if raw_title.casefold() in {"conclusiones", "conclusión", "conclusion"}:
                 needspace_lines = 18
@@ -1049,16 +1052,20 @@ def resolve_figure(reference: str, build_dir: Path) -> Path | None:
     """
     candidate = Path(reference)
     bases = [candidate] if candidate.is_absolute() else [build_dir.parent / candidate, build_dir / candidate]
+    matches = []
     for base in bases:
         if base.suffix:
             if base.exists():
-                return base
+                matches.append(base)
         else:
             for suffix in FIGURE_SUFFIXES:
                 with_suffix = base.with_suffix(suffix)
                 if with_suffix.exists():
-                    return with_suffix
-    return None
+                    matches.append(with_suffix)
+                    break
+    if len(matches) > 1 and matches[0] != matches[1]:
+        print(f"Ambiguous figure: using {matches[0]} instead of {matches[1]}", file=sys.stderr)
+    return matches[0] if matches else None
 
 
 # Historical default width, unchanged by this fix (#31): a figure earns a
