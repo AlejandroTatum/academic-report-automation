@@ -120,6 +120,45 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
   `document-intake.md` keeps a "post-preview confirmation" sentence pinned by
   `test_report_builder_routing.py`.
 
+## Pending follow-ups (from E2E test)
+- [ ] Ask the format question (APE, AA or libre) through a structured single-choice
+      prompt (`ask_user_choice` / ask-a-question tool), not free text. User request
+      2026-09-28; implement at the end of the E2E run.
+- [ ] Format metadata the guide does not provide (subject, teacher, cycle, unit,
+      learning outcome, practice number, schedule, place, date) is also asked through
+      structured choice prompts with suggested options, never as free text.
+- [ ] Markdown -> LaTeX: an ordered list with a nested bullet list restarts its
+      numbering after the sublist (E2E APE PDF page 2: steps 5 and 6 render as 1, 2).
+- [ ] Share drafts with the user as the real document (open the PDF / give its
+      path), never as rendered PNG page screenshots. Applies to generate and review.
+      Always present it as a copy-paste fish command whose lines all stay short
+      (the chat wraps long lines and copied newlines break the command):
+      `set d ~/<folder>` then `xdg-open $d/<prefix>*.pdf`.
+- [ ] Figure paths in body.md resolve from `build/`, not the report folder, so
+      `figures/x.png` fails and `../figures/x.png` works. Resolve relative to the
+      report folder (or document it in draft.md); E2E build failed on it.
+- [ ] Markdown autolinks `<https://...>` in body.md render as plain text, not
+      clickable `\url{}` links (E2E: 4 PR links + commits link had no URI annots;
+      only bibliography DOIs were clickable).
+- [ ] Citation links are correct in the PDF (GoTo to `cite.0@key`), but `hidelinks`
+      gives no visual cue and the user's viewer (zathura) did not follow them on
+      click. CONFIRMED 2026-09-28: links work in Brave; zathura is the limitation, not
+      the PDF. Optional: visible `colorlinks` for citations.
+- [ ] deliver_report.py reports "sin HUMAN_REVIEW" even when final-review.yml is
+      current for the PDF; grant HUMAN_REVIEW from that marker.
+- [ ] Content-check judgments are written by the same agent that drafted the body
+      (self-grading). Delegate judgments to an independent read-only subagent.
+- [ ] Every body edit re-runs verify + generate + validate + RDD. Batch the user's
+      edit orders into one round before re-approval; skip RDD re-runs when only
+      markers changed.
+- [ ] Source verification (CrossRef/Open Library) as a deterministic script, not an
+      ad-hoc subagent prompt.
+- [ ] Long `\texttt` URLs overflow (13 pt on page 2): render repo URLs with `\url`.
+- [ ] Blocked `verify` Gate line repeats "run the check" instead of "fix through the
+      user's edit orders".
+- [ ] `plan` maps criteria to sections before the format is known; record the
+      document family at intake when the guide makes it obvious (APE).
+
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow
   has no percentage gate for any course (user clarification 2026-09-28).
