@@ -26,6 +26,17 @@ DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
 FINAL_REVIEW_SCHEMA = "academic.doc-final-review/v1"
 VALIDATION_SCHEMA = "academic.doc-validation/v1"
+RUBRIC_SCHEMA = "academic.rubric/v1"
+CONTENT_CHECK_SCHEMA = "academic.content-check/v1"
+
+# new-report-flow T3: the default plan shape (two criteria mapped to body.md
+# headings) and a body that cites the five eligible keys ``_sources_bib``
+# writes, so a content check can pass with its minimum source count met.
+DEFAULT_RUBRIC_CRITERIA = (
+    {"id": "objetivo", "title": "Objetivo claro", "section": "Objetivos"},
+    {"id": "metodologia", "title": "Metodologia descrita", "section": "Metodologia"},
+)
+DEFAULT_CITED_BODY = "# Informe\n\nCuerpo con fuentes [@key1] y [@key2], mas [@key3], [@key4] y [@key5].\n"
 
 # Route-mandatory metadata for the default (academic) route the builders use.
 _DEFAULT_METADATA = {
@@ -111,6 +122,98 @@ def _body(folder: Path, text: str = DEFAULT_BODY) -> Path:
     path = folder / "body.md"
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def _cited_body(folder: Path, text: str = DEFAULT_CITED_BODY) -> Path:
+    """Write a ``body.md`` that cites the five keys ``_sources_bib`` writes."""
+    return _body(folder, text)
+
+
+def _rubric(
+    folder: Path,
+    *,
+    criteria: tuple[dict[str, object], ...] | None = None,
+    source: str = "guia de la catedra",
+    schema: str = RUBRIC_SCHEMA,
+) -> Path:
+    """Write a valid ``rubric.yml`` under ``folder`` and return its path.
+
+    ``criteria`` replaces the default two-criterion plan; an empty tuple drops
+    the key, which is how a test builds an invalid plan.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    body: dict[str, object] = {"schema": schema, "source": source}
+    if criteria is None:
+        body["criteria"] = [dict(c) for c in DEFAULT_RUBRIC_CRITERIA]
+    elif criteria:
+        body["criteria"] = [dict(c) for c in criteria]
+    path = folder / "rubric.yml"
+    path.write_text(_yaml(body), encoding="utf-8")
+    return path
+
+
+def _judgments(
+    folder: Path,
+    *,
+    name: str = "judgments.yml",
+    criteria: list[dict[str, object]] | None = None,
+    findings: list[str] | None = None,
+) -> Path:
+    """Write an agent judgments file (content-check input) and return its path.
+
+    Defaults judge every ``DEFAULT_RUBRIC_CRITERIA`` id ``cumple``; ``criteria``
+    replaces the records verbatim and ``findings`` adds the free-text list.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    if criteria is None:
+        criteria = [
+            {"id": c["id"], "status": "cumple", "where": str(c["section"]), "note": "ok"}
+            for c in DEFAULT_RUBRIC_CRITERIA
+        ]
+    body: dict[str, object] = {"criteria": criteria}
+    if findings is not None:
+        body["findings"] = findings
+    path = folder / name
+    path.write_text(_yaml(body), encoding="utf-8")
+    return path
+
+
+def _content_check(
+    folder: Path,
+    *,
+    body_sha256: str | None = None,
+    result: str = "pass",
+    drop: tuple[str, ...] = (),
+    **fields: object,
+) -> Path:
+    """Write a well-formed ``content-check.yml`` bound to the current body.md.
+
+    Defaults produce a ``pass`` marker over whatever ``body.md`` holds (it must
+    exist first); ``body_sha256`` overrides the recorded hash (stale), ``drop``
+    removes required keys and ``result`` flips the verdict (malformed shapes).
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    body_path = folder / "body.md"
+    if not body_path.is_file():
+        body_path.write_text(DEFAULT_BODY, encoding="utf-8")
+    marker_body: dict[str, object] = {
+        "schema": CONTENT_CHECK_SCHEMA,
+        "body_sha256": body_sha256 or _sha256(body_path),
+        "checked_at": "2026-09-28T10:00:00+00:00",
+        "criteria": [
+            {"id": c["id"], "status": "cumple", "where": str(c["section"]), "note": "ok"}
+            for c in DEFAULT_RUBRIC_CRITERIA
+        ],
+        "findings": [],
+        "mechanical": [{"check": "citations_resolve", "ok": True, "detail": "ok"}],
+        "result": result,
+    }
+    marker_body.update(fields)
+    for key in drop:
+        marker_body.pop(key, None)
+    marker = folder / "content-check.yml"
+    marker.write_text(_yaml(marker_body), encoding="utf-8")
+    return marker
 
 
 def _evidence_matrix(folder: Path, text: str = DEFAULT_MATRIX) -> Path:

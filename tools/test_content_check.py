@@ -1,0 +1,451 @@
+"""Unit and CLI tests for ``tools/content_check.py`` (new-report-flow T3).
+
+The verify phase: after the user approves the draft, the AI agent judges every
+rubric criterion (``cumple|flojo|falta`` + ``where``) in a judgments file, and
+the tool records those judgments, adds the deterministic mechanical checks over
+``body.md`` and the document bib, and derives the pass/fail verdict -- the agent
+can never declare a pass by itself. These tests pin the mechanical checks
+(citations resolve, >= MIN_ACADEMIC_SOURCES eligible sources cited, judgments
+cover every criterion exactly once), the derived ``result``, the CLI exit codes
+(0 pass / 1 fail / 2 usage or input error), the ``content_check_state``
+predicate (``absent|malformed|stale|fail|pass``), and the guarantee that the
+check never touches ``body.md``. Artifact shapes come from ``tools/conftest.py``.
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+import content_check
+import source_count
+from conftest import (
+    CONTENT_CHECK_SCHEMA,
+    DEFAULT_CITED_BODY,
+    DEFAULT_RUBRIC_CRITERIA,
+    _body,
+    _cited_body,
+    _content_check,
+    _judgments,
+    _report,
+    _rubric,
+    _sources_bib,
+)
+
+# ---------------------------------------------------------------------------
+# Working folder: reaches the mechanical checks (report, bib, rubric, body).
+# ---------------------------------------------------------------------------
+
+
+def _verify_folder(folder: Path) -> Path:
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    return folder
+
+
+def _run(folder: Path, judgments: Path | None = None) -> int:
+    """Run the check the way the CLI does and return its exit code."""
+    path = judgments if judgments is not None else _judgments(folder)
+    return content_check.main([str(folder), "--judgments", str(path)])
+
+
+def _marker(folder: Path) -> dict:
+    import yaml
+
+    return yaml.safe_load((folder / "content-check.yml").read_text(encoding="utf-8"))
+
+
+def _mechanical(marker: dict, check: str) -> dict:
+    return next(entry for entry in marker["mechanical"] if entry["check"] == check)
+
+
+# ---------------------------------------------------------------------------
+# Contract constants
+# ---------------------------------------------------------------------------
+
+
+def test_contract_constants_are_pinned() -> None:
+    assert content_check.CONTENT_CHECK_NAME == "content-check.yml"
+    assert content_check.CONTENT_CHECK_SCHEMA == "academic.content-check/v1"
+    assert CONTENT_CHECK_SCHEMA == content_check.CONTENT_CHECK_SCHEMA
+    assert content_check.JUDGMENT_STATUSES == ("cumple", "flojo", "falta")
+    assert content_check.MIN_ACADEMIC_SOURCES == source_count.MIN_ACADEMIC_SOURCES == 5
+
+
+# ---------------------------------------------------------------------------
+# End-to-end runs through main(): exit codes and the written marker
+# ---------------------------------------------------------------------------
+
+
+def test_pass_case_writes_marker_and_exits_zero(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+
+    assert _run(folder) == 0
+
+    marker = _marker(folder)
+    assert marker["schema"] == CONTENT_CHECK_SCHEMA
+    assert marker["result"] == "pass"
+    assert marker["body_sha256"]
+    assert marker["checked_at"]
+    assert [c["id"] for c in marker["criteria"]] == ["objetivo", "metodologia"]
+    assert all(c["status"] == "cumple" for c in marker["criteria"])
+    assert all(entry["ok"] for entry in marker["mechanical"])
+    assert marker["findings"] == []
+
+
+def test_fail_case_exits_one_and_records_result(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(folder, criteria=[dict(DEFAULT_RUBRIC_CRITERIA[0], status="cumple")])
+
+    assert _run(folder, judgments) == 1
+
+    marker = _marker(folder)
+    assert marker["result"] == "fail"
+
+
+def test_flojo_judgment_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(
+        folder,
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "metodologia", "status": "flojo", "where": "Metodologia", "note": "vago"},
+        ],
+    )
+
+    assert _run(folder, judgments) == 1
+    assert _marker(folder)["result"] == "fail"
+
+
+def test_falta_judgment_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(
+        folder,
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "metodologia", "status": "falta", "where": "", "note": "no existe la seccion"},
+        ],
+    )
+
+    assert _run(folder, judgments) == 1
+    assert _marker(folder)["result"] == "fail"
+
+
+def test_unresolved_citation_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, DEFAULT_CITED_BODY + "\nReclamo sin fuente [@fantasma].\n")
+
+    assert _run(folder) == 1
+
+    marker = _marker(folder)
+    assert _mechanical(marker, "citations_resolve")["ok"] is False
+    assert "fantasma" in _mechanical(marker, "citations_resolve")["detail"]
+    assert marker["result"] == "fail"
+
+
+def test_only_four_eligible_cited_sources_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, "# Informe\n\nCuerpo con [@key1], [@key2], [@key3] y [@key4].\n")
+
+    assert _run(folder) == 1
+
+    marker = _marker(folder)
+    eligible = _mechanical(marker, "eligible_sources_cited")
+    assert eligible["ok"] is False
+    assert "4/5" in eligible["detail"]
+    assert marker["result"] == "fail"
+
+
+def test_web_only_cited_sources_do_not_count(tmp_path: Path) -> None:
+    """Five cited keys that are all @misc still fail the eligible-source gate."""
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "sources.bib").write_text(
+        "\n".join(f"@misc{{web{i}, howpublished={{url}}}}" for i in range(1, 6)) + "\n",
+        encoding="utf-8",
+    )
+    _body(folder, "# Informe\n\n" + " ".join(f"[@web{i}]" for i in range(1, 6)) + "\n")
+
+    assert _run(folder) == 1
+    assert _mechanical(_marker(folder), "eligible_sources_cited")["ok"] is False
+
+
+def test_unknown_criterion_id_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(
+        folder,
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "inventado", "status": "cumple", "where": "X", "note": "ok"},
+        ],
+    )
+
+    assert _run(folder, judgments) == 1
+
+    marker = _marker(folder)
+    judgment_check = _mechanical(marker, "judgments_match_rubric")
+    assert judgment_check["ok"] is False
+    assert "inventado" in judgment_check["detail"]
+    assert marker["result"] == "fail"
+
+
+def test_missing_criterion_judgment_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(
+        folder,
+        criteria=[{"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"}],
+    )
+
+    assert _run(folder, judgments) == 1
+    assert _mechanical(_marker(folder), "judgments_match_rubric")["ok"] is False
+
+
+def test_duplicate_judgment_for_same_id_fails(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(
+        folder,
+        criteria=[
+            {"id": "objetivo", "status": "cumple", "where": "Objetivos", "note": "ok"},
+            {"id": "objetivo", "status": "flojo", "where": "Otro", "note": "?"}
+        ]
+        + [
+            {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+        ],
+    )
+
+    assert _run(folder, judgments) == 1
+    assert _mechanical(_marker(folder), "judgments_match_rubric")["ok"] is False
+
+
+def test_agent_findings_are_recorded_verbatim(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(folder, findings=["El parrafo 2 es confuso"])
+
+    assert _run(folder, judgments) == 0
+
+    marker = _marker(folder)
+    assert "El parrafo 2 es confuso" in marker["findings"]
+    assert marker["result"] == "pass"
+
+
+def test_mechanical_failures_become_findings(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, "# Informe\n\nCuerpo con [@key1] y una cita rota [@fantasma].\n")
+
+    assert _run(folder) == 1
+
+    findings = "\n".join(_marker(folder)["findings"])
+    assert "citations_resolve" in findings or "fantasma" in findings
+
+
+def test_body_md_bytes_are_never_modified(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    before = (folder / "body.md").read_bytes()
+
+    assert _run(folder) == 0
+
+    assert (folder / "body.md").read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# Usage / input errors: exit 2, nothing written
+# ---------------------------------------------------------------------------
+
+
+def test_missing_folder_is_usage_error(tmp_path: Path) -> None:
+    folder = tmp_path / "nope"
+    judgments = tmp_path / "judgments.yml"
+
+    assert content_check.main([str(folder), "--judgments", str(judgments)]) == 2
+    assert not folder.exists()
+
+
+def test_missing_body_is_usage_error(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+
+    assert _run(folder) == 2
+    assert not (folder / "content-check.yml").exists()
+
+
+def test_missing_or_malformed_rubric_is_usage_error(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _cited_body(folder)
+
+    assert _run(folder) == 2
+
+    _rubric(folder, criteria=())
+    assert _run(folder) == 2
+    assert not (folder / "content-check.yml").exists()
+
+
+def test_missing_judgments_file_is_usage_error(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+
+    assert content_check.main([str(folder), "--judgments", str(folder / "nope.yml")]) == 2
+
+
+def test_judgments_not_a_mapping_is_usage_error(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = folder / "judgments.yml"
+    judgments.write_text("- just\n- a\n- list\n", encoding="utf-8")
+
+    assert _run(folder, judgments) == 2
+
+
+def test_invalid_status_is_usage_error(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(
+        folder,
+        criteria=[
+            {"id": "objetivo", "status": "maso", "where": "Objetivos", "note": ""},
+            {"id": "metodologia", "status": "cumple", "where": "Metodologia", "note": "ok"},
+        ],
+    )
+
+    assert _run(folder, judgments) == 2
+
+
+@pytest.mark.parametrize(
+    "criteria",
+    [
+        [{"id": "objetivo"}],
+        [{"id": "objetivo", "where": "Objetivos", "note": "sin status"}],
+        [{"status": "cumple", "where": "Objetivos", "note": "sin id"}],
+    ],
+)
+def test_judgment_missing_id_or_status_is_usage_error(
+    tmp_path: Path, criteria: list[dict]
+) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = _judgments(folder, criteria=criteria)
+
+    assert _run(folder, judgments) == 2
+
+
+def test_non_utf8_judgments_is_usage_error(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = folder / "judgments.yml"
+    judgments.write_bytes(b"criteria: \xff\xfe\n")
+
+    assert _run(folder, judgments) == 2
+
+
+def test_broken_yaml_judgments_is_usage_error(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    judgments = folder / "judgments.yml"
+    judgments.write_text("criteria: [unclosed\n", encoding="utf-8")
+
+    assert _run(folder, judgments) == 2
+
+
+def test_real_cli_subprocess_exit_codes(tmp_path: Path) -> None:
+    """The module entry point maps pass->0, fail->1, usage->2 for real."""
+    folder = _verify_folder(tmp_path / "wf")
+    runner = sys.executable
+    script = Path(content_check.__file__)
+
+    passed = subprocess.run(
+        [runner, str(script), str(folder), "--judgments", str(_judgments(folder))],
+        capture_output=True,
+        text=True,
+    )
+    assert passed.returncode == 0, passed.stderr
+
+    broken = _judgments(folder, name="bad.yml", criteria=[{"id": "inventado", "status": "cumple"}])
+    failed = subprocess.run(
+        [runner, str(script), str(folder), "--judgments", str(broken)],
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode == 1, failed.stderr
+
+    missing = subprocess.run(
+        [runner, str(script), str(tmp_path / "nope"), "--judgments", str(broken)],
+        capture_output=True,
+        text=True,
+    )
+    assert missing.returncode == 2
+
+
+# ---------------------------------------------------------------------------
+# content_check_state: the folder-level predicate
+# ---------------------------------------------------------------------------
+
+
+def test_content_check_state_absent(tmp_path: Path) -> None:
+    assert content_check.content_check_state(tmp_path / "wf") == "absent"
+
+
+def test_content_check_state_pass_and_fail(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _body(folder)
+    _content_check(folder, result="pass")
+
+    assert content_check.content_check_state(folder) == "pass"
+
+    _content_check(folder, result="fail")
+
+    assert content_check.content_check_state(folder) == "fail"
+
+
+def test_content_check_state_stale_after_body_edit(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _body(folder)
+    _content_check(folder, result="pass")
+    _body(folder, "# Informe\n\nCuerpo editado despues del chequeo.\n")
+
+    assert content_check.content_check_state(folder) == "stale"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"drop": ("body_sha256",)},
+        {"drop": ("result",)},
+        {"drop": ("criteria",)},
+        {"result": "tal vez"},
+        {"schema": "academic.content-check/v2"},
+    ],
+)
+def test_content_check_state_malformed_for_bad_marker_shapes(
+    tmp_path: Path, kwargs: dict
+) -> None:
+    folder = tmp_path / "wf"
+    _body(folder)
+    _content_check(folder, **kwargs)
+
+    assert content_check.content_check_state(folder) == "malformed"
+
+
+def test_content_check_state_malformed_for_bad_files(tmp_path: Path) -> None:
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "content-check.yml").write_text("schema: [unclosed\n", encoding="utf-8")
+    assert content_check.content_check_state(broken) == "malformed"
+
+    flat = tmp_path / "flat"
+    flat.mkdir()
+    (flat / "content-check.yml").write_text("just a string\n", encoding="utf-8")
+    assert content_check.content_check_state(flat) == "malformed"
+
+    binary = tmp_path / "binary"
+    binary.mkdir()
+    (binary / "content-check.yml").write_bytes(b"\xff\xfe")
+    assert content_check.content_check_state(binary) == "malformed"
+
+
+def test_content_check_state_malformed_when_body_md_is_gone(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _body(folder)
+    _content_check(folder)
+    (folder / "body.md").unlink()
+
+    assert content_check.content_check_state(folder) == "malformed"

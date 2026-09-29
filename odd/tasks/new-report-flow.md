@@ -61,7 +61,7 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
       new `final-review.yml` marker bound to the PDF; deliver/publish require it.
 - [x] T2 Research gate: >= 5 eligible book/paper entries in `sources.bib`;
       remove `research: skipped`.
-- [ ] T3 Rubric plan + content check: `rubric.yml` schema/validator and
+- [x] T3 Rubric plan + content check: `rubric.yml` schema/validator and
       `content-check.yml` validator (per-criterion cumple/flojo/falta + where,
       mechanical checks: citations resolve, >= 5 eligible sources cited).
 - [ ] T4 Format choice + APE template: `format: ape|aa|libre` in `report.yml`,
@@ -82,6 +82,14 @@ human-sounding prose. Decided with the user on 2026-09-28 (flow v3 diagram).
 - T2: RED `source_count` missing + 27 focused failures; GREEN `pytest tools/ tests/ -q`
   1236 passed. `research: skipped` and matrix-only no longer complete research.
   Residual skip prose in `intake.md`, `draft.md`, `preview.md` left for T6.
+  Commits `3744470` + correction `ccae95b` (non-UTF-8 `.bib` crashed doc_status;
+  now reported as pending). RDD lineage `review-be9fa277b00c6f49`: correction
+  validated, approved, acknowledged/burned. Advisory follow-ups: bib regex may count
+  nested `@` entries inside field values; `research.md` wording; guidance at
+  `doc_status.py:365`.
+- T3: RED collection errors (`rubric_plan`, `content_check` missing); GREEN
+  `pytest tools/ tests/ -q` 1316 passed (+77). `content_check.py` derives pass/fail
+  itself (all criteria `cumple` + mechanical checks) and never writes `body.md`.
 
 ## Scope notes
 - The AI-detector limit (<= 20 %) applies only to the course "Simulación"; the flow
