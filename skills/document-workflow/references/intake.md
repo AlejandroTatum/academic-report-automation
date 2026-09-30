@@ -36,7 +36,11 @@ The content-first route asks for the minimum only:
 - `metadata.date` and the optional record
   keys `metadata.audience`, `metadata.purpose`, `metadata.visual_direction`,
   top-level `template:`, `cover:`, and `output:` - fill them from supplied material
-  when it names them, and never interrogate the user for them here.
+  when it names them, and never interrogate the user for them here;
+- when the supplied requirement names the `.bib` as a submitted artifact, record
+  `deliver_bibliography: true` (plus `bibliography:` when the file is not
+  `sources.bib`) in `report.yml`: intake records the request, it never asks for
+  it and never adds an approval gate for it.
 
 Group work (`metadata.practice_type: Grupal` and `metadata.members`) is decided
 at format, not intake. Intake never asks formatting questions: template, identity tables, cover, output

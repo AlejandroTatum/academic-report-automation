@@ -84,6 +84,15 @@ REFERENCE_ARTIFACT = {
     "deliver": "~/Documents/<category>/<slug>/<slug>-vNNN.pdf",
 }
 
+# course-deliverables-hierarchy T1: the deliver artifact gains the optional
+# academic subject level; the flat form stays for every other route.
+# T2 adds the declared-bibliography pair: the same-version .bib ships only
+# when `deliver_bibliography: true`.
+REFERENCE_ARTIFACT["deliver"] = (
+    "~/Documents/<category>/[<subject-slug>/]<slug>/<slug>-vNNN.pdf"
+    " (+ the same-version <slug>-vNNN.bib only when deliver_bibliography: true)"
+)
+
 
 def read(path: Path) -> str:
     assert path.is_file(), f"missing required contract file: {path}"
@@ -459,6 +468,66 @@ def test_deliver_reference_names_the_executable_and_the_receipt_precondition() -
     assert "validation.yml" in flat
     assert "approval.yml" in flat
     assert "never publishes" in flat
+
+
+def test_deliver_reference_declares_the_subject_scoped_academic_layout() -> None:
+    """T1: the academic route scopes delivery by the confirmed subject slug."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "deliver.md"))
+
+    assert "~/Documents/Academicos/<subject-slug>/<slug>/" in flat
+    assert "`output_router`" in flat, "the subject slug names the shared vocabulary"
+    assert "stable ASCII slug" in flat, "a newly named course gets its own level"
+    assert "only a missing subject has no level" in flat, "no generic fallback bucket"
+
+
+def test_deliver_reference_never_touches_git_or_non_pdf_files() -> None:
+    """T1: delivery writes only the versioned PDF and never runs Git itself."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "deliver.md"))
+
+    assert "Do not write any file other than the versioned PDF" in flat
+    assert "Do not run any Git command" in flat
+    assert "`git push`" in flat
+    assert "Git metadata stays at the course root" in flat
+
+
+def test_deliver_reference_treats_the_bib_as_a_declared_opt_in() -> None:
+    """T2: the .bib ships only when declared, bound to evidence, never auto-copied."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "deliver.md"))
+
+    assert "deliver_bibliography: true" in flat
+    assert "<slug>-vNNN.bib" in flat, "the pair is versioned like the PDF"
+    assert "bibliography_sha256" in flat, "both evidence markers bind the declared bytes"
+    assert "a partial pair is never a delivery" in flat
+    assert "never travels" in flat, "an undeclared sources.bib is never copied"
+
+
+def test_validate_reference_binds_the_declared_bibliography_bytes() -> None:
+    """T2: validate records the exact declared .bib hash after applicable checks."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "validate.md"))
+
+    assert "bibliography_sha256" in flat
+    assert "deliver_bibliography: true" in flat
+    assert "written only" in flat and "after the applicable checks pass" in flat
+    assert "no" in flat and "production writer" in flat
+
+
+def test_review_reference_shows_the_declared_bibliography_before_the_ok() -> None:
+    """T2: the human reviews the declared .bib alongside the PDF; never auto-granted."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "review.md"))
+
+    assert "alongside the PDF" in flat
+    assert "bibliography_sha256" in flat
+    assert "only after that explicit OK" in flat
+    assert "never granted automatically" in flat
+
+
+def test_intake_reference_records_the_bib_request_without_asking() -> None:
+    """T2: a supplied .bib requirement is recorded, never asked or gated."""
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "intake.md"))
+
+    assert "deliver_bibliography: true" in flat
+    assert "never asks" in flat, "intake records the supplied request without a new question"
+    assert "never adds an approval gate" in flat
 
 
 # --------------------------------------------------------------------------

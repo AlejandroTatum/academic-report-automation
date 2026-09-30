@@ -161,6 +161,39 @@ PUBLICATION_CATEGORIES = {
 }
 
 
+def resolve_documents_root(documents_root: Path | str | None = None) -> Path:
+    """Return the delivery root: ``~/Documents``, or the given test override.
+
+    The delivery tree is neither code (``ROOT``) nor production content
+    (``CONTENT_ROOT``): it is the clean, user-owned Documents library whose
+    course folders the user may turn into Git repositories. The publisher and
+    the status derivation resolve it through this one function so they can
+    never disagree about where a delivery lives.
+    """
+    if documents_root is None:
+        return Path.home() / "Documents"
+    return Path(documents_root)
+
+
+def versioned_artifact_pattern(slug: str, suffix: str) -> re.Pattern[str]:
+    """Match one document's ``<slug>-vNNN<suffix>`` delivery versions (3+ digits).
+
+    Publisher and status derivation must scan for the same version names, so
+    the pattern is built here instead of being rebuilt by each caller.
+    """
+    return re.compile(rf"^{re.escape(slug)}-v(\d{{3,}})\{suffix}$")
+
+
+def versioned_pdf_pattern(slug: str) -> re.Pattern[str]:
+    """Match one document's ``<slug>-vNNN.pdf`` delivery versions."""
+    return versioned_artifact_pattern(slug, ".pdf")
+
+
+def versioned_bib_pattern(slug: str) -> re.Pattern[str]:
+    """Match one document's paired ``<slug>-vNNN.bib`` delivery versions."""
+    return versioned_artifact_pattern(slug, ".bib")
+
+
 def ascii_slug(value: object) -> str:
     """Return a stable filesystem-safe ASCII slug for a confirmed identity."""
     normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
@@ -445,6 +478,53 @@ class ReportConfig:
         return ascii_slug(self.metadata.get("title") or self.folder.name)
 
     @property
+    def delivery_subject_slug(self) -> str | None:
+        """Subject slug that scopes academic delivery, or ``None``.
+
+        Only the academic route carries a delivery subject level, and a
+        confirmed subject always yields one: the canonical alias when
+        ``output_router.subject_slug`` knows it, otherwise the subject's own
+        stable ASCII slug (``ascii_slug``), so a newly named course gets its
+        own delivery folder without being registered anywhere. ``None`` only
+        when there is no confirmed subject at all — the academic route's own
+        validation refuses that before delivery, and no generic fallback
+        bucket is invented. Imported lazily to avoid the ``output_router``
+        import cycle.
+        """
+        if self.route != DEFAULT_ROUTE:
+            return None
+        subject = self.metadata.get("subject")
+        if not subject:
+            return None
+        from output_router import subject_slug
+
+        return subject_slug(subject) or ascii_slug(subject)
+
+    def delivery_relative_folder(self) -> Path:
+        """This report's delivery folder, relative to the Documents root.
+
+        Academic route with a confirmed subject:
+        ``<Academicos>/<subject-slug>/<document-slug>/`` — canonical alias
+        when the shared vocabulary knows the subject, otherwise the subject's
+        stable ASCII slug. Every other case -- non-academic categories, or an
+        academic report without a confirmed subject -- keeps the flat
+        ``<category>/<document-slug>/`` layout that legacy deliveries use.
+
+        Publisher and status derivation must both ask this method instead of
+        rebuilding the path, or the deliver phase could look somewhere other
+        than where publication actually wrote.
+        """
+        slug = self.document_slug
+        subject = self.delivery_subject_slug
+        if subject:
+            return Path(self.publication_category) / subject / slug
+        return Path(self.publication_category) / slug
+
+    def delivery_folder(self, documents_root: Path | str | None = None) -> Path:
+        """Absolute delivery folder for this report's final PDF."""
+        return resolve_documents_root(documents_root) / self.delivery_relative_folder()
+
+    @property
     def body_path(self) -> Path:
         value = self.raw.get("body") or "body.md"
         return resolve_in_folder(self.folder, value)
@@ -454,6 +534,68 @@ class ReportConfig:
         value = self.raw.get("bibliography") or self.raw.get("bib") or "sources.bib"
         path = resolve_in_folder(self.folder, value)
         return path if path.exists() else None
+
+    @property
+    def deliver_bibliography(self) -> bool:
+        """Whether the user explicitly declared the bibliography a deliverable.
+
+        Strict boolean in report.yml (``deliver_bibliography: true``), default
+        ``False``: a ``sources.bib`` existing for citations never travels on
+        its own. Any other YAML type is a configuration error, exactly like
+        the other strict booleans.
+        """
+        return strict_bool(self.raw.get("deliver_bibliography", False), "deliver_bibliography")
+
+    def delivery_bibliography(self) -> Path | None:
+        """The declared `.bib` to deliver, validated; ``None`` when not opted in.
+
+        The refusal rule is fail-closed: when the option is enabled, the source
+        must exist as a regular ``.bib`` file inside the report work folder
+        (traversal, absolute paths and symlink escapes refuse), be non-empty,
+        and parse as BibTeX with the project's own minimal parser. Anything
+        else raises ``ValueError`` naming the refusal — before any delivery
+        gate or destination is touched. No DOI or citation-style policy is
+        imposed here: exporting the declared bytes is not a re-review.
+        """
+        if not self.deliver_bibliography:
+            return None
+        declared = self.raw.get("bibliography") or self.raw.get("bib") or "sources.bib"
+        path = resolve_in_folder(self.folder, declared)
+        folder = self.folder.resolve()
+        if not path.is_file():
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada no existe o no es un "
+                f"archivo regular: {path}"
+            )
+        if path.suffix.lower() != ".bib":
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada debe ser un "
+                f"archivo .bib: {path}"
+            )
+        if not path.resolve().is_relative_to(folder):
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada debe vivir dentro "
+                f"de la carpeta del reporte: {path}"
+            )
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada no se pudo leer: {path}: {exc}"
+            ) from exc
+        if not text.strip():
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada está vacía: {path}"
+            )
+        # The same minimal parser the DOCX renderer uses; no new dependency.
+        from build_docx_report import parse_bib
+
+        if not parse_bib(text):
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada no tiene entradas "
+                f"BibTeX válidas: {path}"
+            )
+        return path
 
     @property
     def tex_path(self) -> Path:
@@ -772,6 +914,7 @@ def load_report_config(folder: Path) -> ReportConfig:
     try:
         _ = config.publish_global
         _ = config.validators
+        _ = config.deliver_bibliography
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

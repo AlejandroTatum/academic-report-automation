@@ -189,3 +189,92 @@ def test_state_is_read_only_and_never_raises(tmp_path: Path) -> None:
     missing.mkdir()
     assert final_review_marker.final_review_state(missing, pdf).state == "absent"
     assert sorted(path.name for path in missing.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# course-deliverables-hierarchy T2: bibliography binding for declared .bib
+# ---------------------------------------------------------------------------
+
+
+def _write_bib(folder: Path, text: str = "@book{a, title = \"T\"}\n") -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    bib = folder / "sources.bib"
+    bib.write_text(text, encoding="utf-8")
+    return bib
+
+
+def _marker_with_bibliography(pdf: Path, bib: Path, *, bib_sha: str | None = None) -> str:
+    import yaml
+
+    body = {
+        "schema": final_review_marker.MARKER_SCHEMA,
+        "pdf_sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+        "bibliography_sha256": bib_sha or hashlib.sha256(bib.read_bytes()).hexdigest(),
+        "reviewed_at": "2026-09-10T16:30:00Z",
+        "reviewed_by": "Alejandro",
+    }
+    return yaml.safe_dump(body, sort_keys=False)
+
+
+def test_marker_without_bibliography_request_keeps_the_pdf_only_contract(tmp_path: Path) -> None:
+    """A pdf-only review (no bibliography argument) ignores any marker extra keys."""
+    pdf = _write_pdf(tmp_path / "wf")
+    _write_marker(tmp_path / "wf", _marker_body(pdf))
+
+    state = final_review_marker.final_review_state(tmp_path / "wf", pdf)
+
+    assert state.state == "current"
+
+
+def test_marker_binds_declared_bibliography_bytes(tmp_path: Path) -> None:
+    """With a declared bibliography the marker must bind its exact bytes too."""
+    folder = tmp_path / "wf"
+    pdf = _write_pdf(folder)
+    bib = _write_bib(folder)
+    _write_marker(folder, _marker_with_bibliography(pdf, bib))
+
+    state = final_review_marker.final_review_state(folder, pdf, bibliography=bib)
+
+    assert state.state == "current"
+    assert state.reason == ""
+
+
+def test_marker_without_bibliography_hash_is_malformed_when_declared(tmp_path: Path) -> None:
+    """A declared bibliography makes a pdf-only marker invalid, never current."""
+    folder = tmp_path / "wf"
+    pdf = _write_pdf(folder)
+    bib = _write_bib(folder)
+    _write_marker(folder, _marker_body(pdf))
+
+    state = final_review_marker.final_review_state(folder, pdf, bibliography=bib)
+
+    assert state.state == "malformed"
+    assert "bibliography_sha256" in state.detail
+
+
+def test_marker_stale_when_bibliography_bytes_change(tmp_path: Path) -> None:
+    """Editing the bibliography after the human OK stales the review."""
+    folder = tmp_path / "wf"
+    pdf = _write_pdf(folder)
+    bib = _write_bib(folder)
+    _write_marker(folder, _marker_with_bibliography(pdf, bib))
+    bib.write_text("@book{a, title = \"CHANGED\"}\n", encoding="utf-8")
+
+    state = final_review_marker.final_review_state(folder, pdf, bibliography=bib)
+
+    assert state.state == "stale"
+    assert "bibliography_sha256" in state.detail
+
+
+def test_marker_stale_when_declared_bibliography_disappears(tmp_path: Path) -> None:
+    """A declared bibliography that vanished is unreadable evidence, not a pass."""
+    folder = tmp_path / "wf"
+    pdf = _write_pdf(folder)
+    bib = _write_bib(folder)
+    _write_marker(folder, _marker_with_bibliography(pdf, bib))
+    bib.unlink()
+
+    state = final_review_marker.final_review_state(folder, pdf, bibliography=bib)
+
+    assert state.state == "stale"
+    assert "bibliography_sha256" in state.detail

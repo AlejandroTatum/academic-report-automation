@@ -156,3 +156,25 @@ def test_directory_expected_final_is_not_readable(tmp_path) -> None:
 
     assert result.ok is False
     assert any("read" in error.lower() for error in result.errors)
+
+
+# ---------------------------------------------------------------------------
+# course-deliverables-hierarchy T2: a declared .bib is a final artifact
+# ---------------------------------------------------------------------------
+
+
+def test_declared_bibliography_is_a_supported_final(tmp_path: Path) -> None:
+    """A versioned .bib is a clean final: verified, never a stray, never unsupported."""
+    folder = delivery_folder(tmp_path)
+    pdf = folder / "informe-v001.pdf"
+    _write_pdf(pdf, pages=1)
+    bib = folder / "informe-v001.bib"
+    bib.write_text('@book{bib1, title = "T"}\n', encoding="utf-8")
+
+    result = verify_delivery(folder, [pdf, bib])
+
+    assert result.ok, result.errors
+    assert result.stray == []
+    bib_evidence = next(e for e in result.files if e.path == bib)
+    assert bib_evidence.sha256 == hashlib.sha256(bib.read_bytes()).hexdigest()
+    assert bib_evidence.size_bytes == len(bib.read_bytes())

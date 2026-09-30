@@ -333,6 +333,7 @@ def _final_review(
     *,
     pdf: Path | None = None,
     pdf_sha256: str | None = None,
+    bibliography: Path | None = None,
     drop: tuple[str, ...] = (),
     **fields: object,
 ) -> Path:
@@ -342,7 +343,9 @@ def _final_review(
     ``pdf_sha256`` is recomputed from that PDF unless a test overrides it (the
     mismatched-hash shape) or drops the key. The PDF itself is never written
     here; a test that wants a missing-PDF stale shape passes an explicit
-    ``pdf_sha256`` and removes the file itself.
+    ``pdf_sha256`` and removes the file itself. ``bibliography`` binds the
+    declared .bib bytes through ``bibliography_sha256`` (course-deliverables
+    T2): the hash is recorded only when a test asks for the binding.
     """
     folder.mkdir(parents=True, exist_ok=True)
     target = pdf if pdf is not None else folder / "final" / "report.pdf"
@@ -352,6 +355,8 @@ def _final_review(
         "reviewed_at": "2026-09-10T16:30:00Z",
         "reviewed_by": "Alejandro",
     }
+    if bibliography is not None:
+        body["bibliography_sha256"] = _sha256(bibliography)
     body.update(fields)
     for key in drop:
         body.pop(key, None)
@@ -507,3 +512,43 @@ def _published(
     else:
         target.write_bytes(b"%PDF-1.4\n%%EOF\n")
     return target
+
+
+# ---------------------------------------------------------------------------
+# course-deliverables-hierarchy T2: declared bibliography delivery
+# ---------------------------------------------------------------------------
+
+
+def _bib_text(count: int = 2) -> str:
+    """A small valid BibTeX document with ``count`` book entries."""
+    return "\n".join(
+        f'@book{{bib{i + 1}, title = "Bib Title {i + 1}", author = "Autor {i + 1}"}}'
+        for i in range(count)
+    ) + "\n"
+
+
+def _bibliography(
+    folder: Path,
+    *,
+    name: str = "sources.bib",
+    text: str | None = None,
+) -> Path:
+    """Write a declared `.bib` source under ``folder`` and return its path.
+
+    Defaults to two valid entries; ``text`` replaces the content verbatim, which
+    is how a test builds the empty or malformed shapes.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
+    path.write_text(text if text is not None else _bib_text(), encoding="utf-8")
+    return path
+
+
+def _declare_bibliography_delivery(folder: Path, *, name: str = "sources.bib") -> None:
+    """Append the opt-in `deliver_bibliography: true` and its source to report.yml."""
+    report = folder / "report.yml"
+    report.write_text(
+        report.read_text(encoding="utf-8")
+        + f"deliver_bibliography: true\nbibliography: {name}\n",
+        encoding="utf-8",
+    )

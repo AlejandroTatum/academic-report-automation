@@ -96,8 +96,11 @@ def _verify_file(path: Path) -> FileEvidence:
     if evidence.size_bytes == 0:
         evidence.errors.append(f"empty final: {path.name}")
     evidence.sha256 = hashlib.sha256(data).hexdigest()
-    if path.suffix.lower() not in (".pdf", ".docx"):
-        evidence.errors.append(f"unsupported final type: {path.name} — only PDF/DOCX allowed")
+    if path.suffix.lower() not in (".pdf", ".docx", ".bib"):
+        evidence.errors.append(f"unsupported final type: {path.name} — only PDF/DOCX/BIB allowed")
+        return evidence
+    if path.suffix.lower() == ".bib":
+        # A declared bibliography is a text final: it has no page count.
         return evidence
     evidence.page_count = _page_count(path)
     if evidence.page_count is None:

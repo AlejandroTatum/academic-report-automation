@@ -459,8 +459,61 @@ def test_clean_delivery_destination_is_automatic_and_versioned() -> None:
     text = read(DELIVERY_MD)
     assert "no `delivery_pdf:`" in text.lower()
     assert "~/documents/<automatic-category>/<document-slug>/" in text.lower()
+    assert "~/documents/academicos/<subject-slug>/<document-slug>/" in text.lower()
     assert "v001" in text.lower()
     assert "sha-256" in text.lower()
+
+
+def test_clean_delivery_scopes_academic_delivery_by_canonical_subject() -> None:
+    """T1: every confirmed academic subject scopes delivery; no route falls back."""
+    text = read(DELIVERY_MD)
+    lowered = re.sub(r"\s+", " ", text.lower())
+    assert "`output_router`" in text, (
+        "the subject slug must name the shared output_router vocabulary"
+    )
+    assert "stable ascii slug" in lowered, (
+        "a newly named course must get its own level without registration"
+    )
+    assert "never invent a fallback bucket" in lowered, (
+        "a missing subject must not create a generic folder"
+    )
+    assert "Non-academic routes are unchanged" in text, (
+        "the flat category layout must be stated as unchanged for other routes"
+    )
+
+
+def test_course_folder_git_ownership_is_documented() -> None:
+    """T1: the delivery tree explains Git ownership and the PDF-only rule."""
+    text = read(DELIVERY_MD)
+    lowered = re.sub(r"\s+", " ", text.lower())
+    assert "never run `git init`" in lowered
+    assert "`git push`" in lowered
+    assert "the user owns every git operation" in lowered
+    assert "at the course root" in lowered, "git metadata stays above per-document folders"
+    assert "per-document folder stays pdfs-only" in lowered
+
+
+def test_clean_delivery_bibliography_is_a_declared_opt_in() -> None:
+    """T2: the .bib is opt-in, evidence-bound, set-exact, and never auto-copied."""
+    text = read(DELIVERY_MD)
+    lowered = re.sub(r"\s+", " ", text.lower())
+
+    assert "deliver_bibliography: true" in lowered
+    assert "never travels merely because it exists" in lowered, (
+        "a sources.bib for citations alone never becomes a deliverable"
+    )
+    assert "bibliography_sha256" in text, "validation and final-review bind the declared bytes"
+    assert "a partial pair is never a delivery" in lowered
+    assert "<slug>-vnnn.bib" in lowered, "the pair is versioned like the PDF"
+    assert "symlink escapes refuse" in lowered, "unsafe declared sources fail closed"
+
+
+def test_automation_contract_names_the_bibliography_opt_in() -> None:
+    """T2: the automation contract states the opt-in key and its evidence field."""
+    automation = re.sub(r"\s+", " ", read(REFERENCES / "automation-contract.md"))
+    assert "deliver_bibliography: true" in automation
+    assert "bibliography_sha256" in automation
+    assert "never copies a `sources.bib` merely because it exists" in automation
 
 
 def test_skill_references_clean_delivery_contract(skill: str) -> None:

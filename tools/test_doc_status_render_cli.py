@@ -25,9 +25,11 @@ import doc_status
 from conftest import (
     _approval,
     _body,
+    _bibliography,
     _cited_body,
     _choose_format,
     _content_check,
+    _declare_bibliography_delivery,
     _final_review,
     _marker_text,
     _mtime,
@@ -35,6 +37,7 @@ from conftest import (
     _published,
     _report,
     _rubric,
+    _sha256,
     _sources_bib,
     _validation,
 )
@@ -106,7 +109,8 @@ def _all_done(tmp_path: Path) -> tuple[Path, Path]:
     folder = _reviewed_build(tmp_path / "wf")
     pdf = folder / "final" / "report.pdf"
     root = tmp_path / "Documents"
-    _published(root, category=CATEGORY, slug=SLUG, source=pdf)
+    # The default confirmed subject "Fisica" scopes its own ASCII course level.
+    _published(root, category=f"{CATEGORY}/fisica", slug=SLUG, source=pdf)
     return folder, root
 
 
@@ -572,3 +576,88 @@ def test_printed_commands_round_trip_through_a_shell_parse(tmp_path: Path) -> No
         assert match.group("command") == shlex.join(argv), (
             f"{phase} command must be shell-quoted, not raw-concatenated"
         )
+
+
+def test_all_done_route_reads_the_subject_scoped_delivery_folder(tmp_path: Path, capsys) -> None:
+    """Full sandbox route: a canonical-subject academic report is all done via the course level.
+
+    Same chain as ``_reviewed_build`` but with the confirmed subject overridden,
+    so the deliver phase must find the published copy at
+    ``Academicos/<subject-slug>/<slug>/`` -- the exact folder the publisher
+    writes -- for the whole route to report done, on ``derive`` and the CLI.
+    """
+    folder = tmp_path / "wf"
+    _report(folder, subject="Sistemas Operativos")
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    marker = _approval(folder)
+    _content_check(folder)
+    _choose_format(folder, "aa")
+    pdf = _pdf(folder)
+    _mtime(folder / "report.yml", 1_000_000)
+    _mtime(marker, 1_000_000)
+    _mtime(pdf, 2_000_000)
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    root = tmp_path / "Documents"
+    published = _published(
+        root, category="Academicos/sistemas-operativos", slug=SLUG, source=pdf
+    )
+
+    status = doc_status.derive(folder, documents_root=root)
+
+    assert status.current == "done"
+    deliver = status.phases[-1]
+    assert deliver.state == doc_status.DONE
+    assert published.name in deliver.detail
+
+    # The machine JSON projection main() writes carries the same route;
+    # doc_status's CLI has no root override, so the sandbox check projects directly.
+    payload = doc_status._payload(status)
+    assert payload["current"] == "done"
+    assert payload["phases"][-1] == {
+        "name": "deliver",
+        "state": "done",
+        "detail": f"{published.name} published and hash-matched",
+        "blockedReason": "",
+    }
+
+
+def test_all_done_route_with_requested_bibliography(tmp_path: Path) -> None:
+    """Full sandbox route with `deliver_bibliography: true` ends done on the pair.
+
+    Same chain as ``_reviewed_build`` plus the opt-in: validation and final
+    review must bind the declared .bib bytes, and the deliver phase must find
+    the complete versioned pair before the route reports done.
+    """
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    marker = _approval(folder)
+    _content_check(folder)
+    _choose_format(folder, "aa")
+    pdf = _pdf(folder)
+    _mtime(folder / "report.yml", 1_000_000)
+    _mtime(marker, 1_000_000)
+    _mtime(pdf, 2_000_000)
+    bib = folder / "sources.bib"
+    _declare_bibliography_delivery(folder)
+    _validation(folder, pdf=pdf, bibliography_sha256=_sha256(bib))
+    _final_review(folder, pdf=pdf, bibliography=bib)
+    _mtime(folder / "report.yml", 1_500_000)  # the append must stay older than the PDF
+    root = tmp_path / "Documents"
+    published = _published(
+        root, category="Academicos/fisica", slug=SLUG, source=pdf,
+    )
+    (root / "Academicos" / "fisica" / SLUG / f"{SLUG}-v001.bib").write_bytes(
+        bib.read_bytes()
+    )
+
+    status = doc_status.derive(folder, documents_root=root)
+
+    assert status.current == "done"
+    assert status.phases[-1].state == doc_status.DONE
+    assert published.name in status.phases[-1].detail

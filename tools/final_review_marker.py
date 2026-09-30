@@ -56,8 +56,17 @@ def _is_missing_or_blank(value: object) -> bool:
     return value is None or not str(value).strip()
 
 
-def final_review_state(report_dir: Path, pdf_path: Path) -> FinalReviewState:
-    """Derive the final review state of ``pdf_path`` without touching disk."""
+def final_review_state(
+    report_dir: Path, pdf_path: Path, *, bibliography: Path | None = None
+) -> FinalReviewState:
+    """Derive the final review state of ``pdf_path`` without touching disk.
+
+    When ``bibliography`` is given (the report declared its `.bib` a final
+    deliverable), the marker must also bind those exact bytes through
+    ``bibliography_sha256``: a pdf-only marker is ``malformed`` and a marker
+    bound to other bibliography bytes is ``stale``. Without the argument the
+    predicate is exactly the PDF-only contract it always was.
+    """
     folder = Path(report_dir)
     pdf = Path(pdf_path)
     marker_path = folder / MARKER_NAME
@@ -79,6 +88,30 @@ def final_review_state(report_dir: Path, pdf_path: Path) -> FinalReviewState:
     for key in REQUIRED_KEYS:
         if _is_missing_or_blank(data.get(key)):
             return _malformed(f"{MARKER_NAME} missing or blank {key}")
+
+    if bibliography is not None:
+        if _is_missing_or_blank(data.get("bibliography_sha256")):
+            return _malformed(f"{MARKER_NAME} missing or blank bibliography_sha256")
+        if not bibliography.is_file():
+            return FinalReviewState(
+                state="stale",
+                reason="final_review_marker_stale",
+                detail=f"{MARKER_NAME} bibliography_sha256 does not match {bibliography.name}",
+            )
+        try:
+            bib_hash = sha256_file(bibliography)
+        except OSError:
+            return FinalReviewState(
+                state="stale",
+                reason="final_review_marker_stale",
+                detail=f"{MARKER_NAME} bibliography_sha256 does not match {bibliography.name}",
+            )
+        if str(data["bibliography_sha256"]).strip().lower() != bib_hash:
+            return FinalReviewState(
+                state="stale",
+                reason="final_review_marker_stale",
+                detail=f"{MARKER_NAME} bibliography_sha256 does not match {bibliography.name}",
+            )
 
     if not pdf.is_file():
         return FinalReviewState(

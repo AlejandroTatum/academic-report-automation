@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 import sys
 from dataclasses import dataclass, replace
@@ -35,7 +34,15 @@ import final_review_marker
 import rubric_plan
 from guide_facts import load_guide_facts
 from approval_marker import approval_state, bound_file_names, sha256_file
-from report_config import ROOT, DEFAULT_STUDENT, ReportConfig, is_placeholder_value, read_yaml
+from publish_pdf import PublicationError, matching_delivered_version
+from report_config import (
+    ROOT,
+    DEFAULT_STUDENT,
+    ReportConfig,
+    is_placeholder_value,
+    read_yaml,
+    versioned_pdf_pattern,
+)
 from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
 from source_count import source_gate
 from structure_contract import structure_confirmation_state, structure_gate_engaged
@@ -369,6 +376,29 @@ def _phase_validate(folder: Path, config: ReportConfig, _documents_root: Path | 
         return PhaseState("validate", BLOCKED, "validation.yml recorded result: fail", "validation_failed")
     if result != "pass":
         return PhaseState("validate", PENDING, "validation.yml result is not pass")
+    # course-deliverables T2: when the bibliography is a declared deliverable,
+    # the receipt must bind its exact bytes, exactly like the PDF hash. The
+    # declared source itself is refused here as pending evidence, never invented.
+    if config.deliver_bibliography:
+        try:
+            bib = config.delivery_bibliography()
+        except ValueError as exc:
+            return PhaseState("validate", PENDING, str(exc))
+        recorded_bib = str(data.get("bibliography_sha256") or "").strip().lower()
+        if not recorded_bib:
+            return PhaseState(
+                "validate", PENDING,
+                "validation.yml missing bibliography_sha256 for the declared bibliography",
+            )
+        try:
+            bib_hash = sha256_file(bib)
+        except OSError:
+            return PhaseState("validate", PENDING, "declared bibliography unreadable")
+        if recorded_bib != bib_hash:
+            return PhaseState(
+                "validate", PENDING,
+                f"validation.yml bibliography_sha256 does not match {bib.name}",
+            )
     return PhaseState("validate", DONE, f"validation.yml passes for {pdf.name}")
 
 
@@ -379,9 +409,15 @@ def _phase_review(folder: Path, config: ReportConfig, _documents_root: Path | No
     route waits at review, and a stale one -- the PDF changed since the human
     looked at it -- also returns to ``pending``, because reviewing the current
     build is the normal loop. Only a malformed marker is ``blocked``, with the
-    predicate's own bounded reason. The marker is never written here.
+    predicate's own bounded reason. The marker is never written here. When the
+    bibliography is a declared deliverable, the predicate binds its bytes too,
+    exactly like the publisher's gate.
     """
-    state = final_review_marker.final_review_state(folder, config.pdf_path)
+    try:
+        bibliography = config.delivery_bibliography()
+    except ValueError as exc:
+        return PhaseState("review", PENDING, str(exc))
+    state = final_review_marker.final_review_state(folder, config.pdf_path, bibliography=bibliography)
     if state.state == "current":
         return PhaseState("review", DONE, f"final-review.yml matches {config.pdf_path.name}")
     if state.state in ("absent", "stale"):
@@ -390,39 +426,40 @@ def _phase_review(folder: Path, config: ReportConfig, _documents_root: Path | No
 
 
 def _phase_deliver(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
-    """Report whether the final PDF is the one already delivered to Documents.
+    """Report whether the final set is already delivered to Documents.
 
-    ``done`` when a ``<slug>-vNNN.pdf`` under
-    ``<documents_root>/<category>/<slug>/`` hashes equal to the final PDF
-    (published or a hash-matched reuse); ``pending`` otherwise. Delivery is never
-    ``blocked``: the design gives it no failure state, so an absent copy -- or one
-    made from other bytes -- is ordinary progress, not an abort.
+    ``done`` when the report's shared delivery folder (``config.delivery_folder``
+    -- the exact folder the publisher writes, with the academic route scoped by
+    the confirmed subject slug) holds a version whose complete artifact set
+    matches the request through the publisher's own matcher: PDF bytes, plus
+    the declared bibliography's bytes when ``deliver_bibliography`` is set, or
+    the absence of a sibling ``.bib`` for a PDF-only request. ``pending``
+    otherwise. Delivery is never ``blocked``: the design gives it no failure
+    state, so an absent copy -- or one made from other bytes -- is ordinary
+    progress, not an abort.
     """
     pdf = config.pdf_path
     if not pdf.is_file():
         return PhaseState("deliver", PENDING, "final PDF missing")
     try:
-        category = config.publication_category
+        delivery = config.delivery_folder(documents_root)
         slug = config.document_slug
+        bibliography = config.delivery_bibliography()
     except (KeyError, ValueError):
         return PhaseState("deliver", PENDING, "publication identity unavailable")
-    root = Path.home() / "Documents" if documents_root is None else Path(documents_root)
-    delivery = root / category / slug
     if not delivery.is_dir():
         return PhaseState("deliver", PENDING, f"no published {slug}-vNNN.pdf")
     try:
         source_hash = sha256_file(pdf)
+        bib_hash = sha256_file(bibliography) if bibliography is not None else None
     except OSError:
-        return PhaseState("deliver", PENDING, "final PDF unreadable")
-    pattern = re.compile(rf"^{re.escape(slug)}-v(\d{{3,}})\.pdf$")
-    for candidate in sorted(delivery.iterdir()):
-        if not candidate.is_file() or not pattern.match(candidate.name):
-            continue
-        try:
-            if sha256_file(candidate) == source_hash:
-                return PhaseState("deliver", DONE, f"{candidate.name} published and hash-matched")
-        except OSError:
-            continue
+        return PhaseState("deliver", PENDING, "final PDF or declared bibliography unreadable")
+    try:
+        matched = matching_delivered_version(delivery, slug, source_hash, bib_hash)
+    except PublicationError as exc:
+        return PhaseState("deliver", PENDING, f"delivery folder unusable: {exc}")
+    if matched is not None:
+        return PhaseState("deliver", DONE, f"{matched.name} published and hash-matched")
     return PhaseState("deliver", PENDING, f"no published {slug}-vNNN.pdf matches the final PDF")
 
 

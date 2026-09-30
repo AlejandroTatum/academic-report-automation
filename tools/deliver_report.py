@@ -14,6 +14,11 @@ the atomic, versioned, hash-verified copy.
 
 No new states, gates or approvals are introduced: a refusal is a non-zero exit
 with the named missing evidence, and a rerun after fixing it is the only exit.
+The destination is the report's shared delivery folder (``config.delivery_folder``):
+the academic route is scoped by the confirmed subject's canonical slug
+(``Academicos/<subject-slug>/<document-slug>/``); every other route keeps the flat
+``<category>/<document-slug>/`` layout. The publisher and ``doc_status`` both ask
+``ReportConfig``, so they cannot disagree about the location.
 """
 from __future__ import annotations
 
@@ -71,6 +76,13 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
     if not pdf.is_file():
         return _refuse(f"falta el PDF final: {pdf}. Ejecutá primero la fase generate.")
 
+    # The declared bibliography is resolved and refused before any gate that
+    # must bind it, and long before a destination can exist.
+    try:
+        bibliography = config.delivery_bibliography()
+    except ValueError as exc:
+        return _refuse(str(exc))
+
     receipt_path = folder / VALIDATION_RECEIPT
     if not receipt_path.is_file():
         return _refuse(
@@ -95,7 +107,20 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
             f"{pdf.name}; la evidencia está obsoleta. Volvé a validar."
         )
 
-    review = final_review_state(folder, pdf)
+    if bibliography is not None:
+        recorded_bib = str(receipt.get("bibliography_sha256") or "").strip().lower()
+        if not recorded_bib:
+            return _refuse(
+                f"deliver_bibliography está activo pero {VALIDATION_RECEIPT} no registra "
+                "bibliography_sha256; volvé a validar para vincular los bytes declarados."
+            )
+        if recorded_bib != sha256_file(bibliography):
+            return _refuse(
+                f"{VALIDATION_RECEIPT} bibliography_sha256 no coincide con los bytes actuales "
+                f"de {bibliography.name}; la evidencia está obsoleta. Volvé a validar."
+            )
+
+    review = final_review_state(folder, pdf, bibliography=bibliography)
     if review.state == "absent":
         return _refuse(
             f"falta {FINAL_REVIEW_MARKER} en {folder}: falta la revisión humana final "
@@ -116,6 +141,7 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
     try:
         category = config.publication_category
         slug = config.document_slug
+        subject = config.delivery_subject_slug
     except (KeyError, ValueError):
         return _refuse("identidad de publicación (categoría/slug) no disponible en report.yml.")
 
@@ -127,6 +153,8 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
             documents_root=documents_root,
             work_folder=folder,
             expected_sha256=pdf_hash,
+            subject=subject,
+            bibliography=bibliography,
         )
     except PublicationError as exc:
         return _refuse(str(exc))

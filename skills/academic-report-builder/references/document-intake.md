@@ -176,6 +176,9 @@ cover:                        # top-level and optional: explicit values win over
   required: true
   logo_required: true
   body_starts_on_page: 2
+
+deliver_bibliography: true    # only when the course requires the .bib as a submitted artifact
+bibliography: sources.bib     # the declared .bib to deliver (existing key; default sources.bib)
 ```
 
 - `pdf:` (and `docx:`) is optional and top-level. Leaving it unset derives the
@@ -195,6 +198,13 @@ cover:                        # top-level and optional: explicit values win over
 - Route-derived rendering defaults (template, cover, section numbering, list of
   figures) resolve from the confirmed `route:` at build and validation time; an
   explicitly written value always wins. See `document-routing.md`.
+- `deliver_bibliography: true` is recorded only when the supplied requirement
+  names the bibliography as a submitted artifact: intake records it from the
+  material it is given and never adds a question or an approval gate for it.
+  The declared `.bib` (existing `bibliography:`/`bib:` selection, default
+  `sources.bib`) then ships as a final deliverable whose exact bytes are bound
+  by validation and final review. The default is `false`: a `sources.bib` that
+  exists only for citations never travels.
 - No other key is added for these meanings: there is no top-level `audience:`, no
   `document_type:`, and no `visual_direction:` outside `metadata:`.
 

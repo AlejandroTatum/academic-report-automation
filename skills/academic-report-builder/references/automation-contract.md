@@ -54,7 +54,19 @@ exact final PDF bytes, run:
 ```
 
 `deliver_report.py` publishes only the confirmed PDF output at
-`~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`.
+`~/Documents/<automatic-category>/<document-slug>/<document-slug>-vNNN.pdf`;
+on the academic route the confirmed subject scopes it one level deeper,
+`~/Documents/Academicos/<subject-slug>/<document-slug>/<document-slug>-vNNN.pdf`
+-- the canonical alias when the shared `output_router` vocabulary knows the
+subject (as for `outputs/<materia-slug>/`), otherwise the subject's own stable
+ASCII slug, so a newly named course gets its own folder; only a missing subject
+has no level.
+When `report.yml` sets `deliver_bibliography: true`, the declared `.bib`
+(`bibliography:`/`bib:`, default `sources.bib`) ships as the same-version pair
+`<slug>-vNNN.bib`; reuse compares the complete requested set, so the same PDF
+with a changed bibliography claims a new version and a partial pair is never a
+delivery. The PDF-only default never copies a `sources.bib` merely because it
+exists.
 No `delivery_pdf:` configuration or user-selected path is needed. Category derives
 from confirmed route (`technical -> Tecnicos`, `academic -> Academicos`, with
 project/professional/other equivalents); slug is stable ASCII from confirmed title
@@ -65,10 +77,17 @@ PDF hash before validation must match the hash immediately before publication:
 `deliver_report.py` re-checks the receipt hash against the current bytes and hands
 the pre-publication hash to the guarded publisher, which verifies the copy
 byte-for-byte. A missing or stale approval, or a receipt not bound to the current
-bytes, refuses delivery before anything is created. The
+bytes, refuses delivery before anything is created. When the bibliography is
+declared, `validation.yml` must also record `bibliography_sha256` for the exact
+declared bytes and `final-review.yml` must bind them too; missing, stale, or
+malformed bibliography evidence refuses before the destination exists. The
 delivery folder contains PDFs only: no
-manifests, sources, audits, or intermediates. Publication is technical-copy status,
-not `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`. See `clean-delivery.md`.
+manifests, sources, audits, or intermediates (the declared, versioned `.bib`
+pair is the single opt-in exception). Publication is technical-copy status,
+not `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`. A course folder
+(`~/Documents/Academicos/<subject-slug>/`) may be a Git repository the user owns:
+the tools never run `git init`, `add`, `commit` or `push`, and Git metadata stays
+at the course root, outside the per-document PDF-only folders. See `clean-delivery.md`.
 
 `visual_pdf_auditor.py` is manual unless `report.yml` contains `validators: {visual_pdf: true}`. It produces `visual_qa.md` and `contact_sheet.png`; both are precheck evidence, not approval. Automatic execution inside `validate_report.py` does not change this authority boundary.
 

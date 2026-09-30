@@ -22,11 +22,21 @@ generate phase produced. The phase produces exactly one artifact:
     recorded_at: <ISO-8601 UTC>
     evidence: backups/quality_report.md | <opaque acknowledged review identifier>
     reason: <optional; why the RDD branch fell through to fallback, when it did>
+    bibliography_sha256: <hash of the declared .bib; only when report.yml sets deliver_bibliography: true>
 
 Done means `result: pass` and `artifact_sha256` matches the current final PDF. `result:
 fail` is `blocked` (`validation_failed`); a missing receipt or a mismatched hash stays
 `pending`. Validation is tied to one immutable artifact hash, so a receipt for stale
 bytes never counts as a pass.
+
+When the report declares its bibliography a deliverable (`deliver_bibliography: true`,
+source selected by the existing `bibliography:`/`bib:` key), the receipt must also
+record `bibliography_sha256`: the exact SHA-256 of the declared `.bib`, written only
+after the applicable checks pass, exactly like `artifact_sha256` — there is no
+production writer for this receipt, so the executor records both hashes the same way.
+A missing, malformed, or stale bibliography hash keeps `validate` pending, and the
+deliver gate refuses. Exporting the declared bytes imposes no extra DOI or
+citation-style policy.
 
 ## Branch selection
 

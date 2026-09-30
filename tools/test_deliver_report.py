@@ -20,8 +20,20 @@ TOOLS_DIR = str(Path(__file__).resolve().parent)
 if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
-from conftest import _approval, _final_review, _pdf, _report, _sha256, _validation  # noqa: E402
+from conftest import (  # noqa: E402
+    _approval,
+    _bibliography,
+    _declare_bibliography_delivery,
+    _final_review,
+    _pdf,
+    _report,
+    _sha256,
+    _validation,
+)
 from deliver_report import main  # noqa: E402
+
+import doc_status  # noqa: E402
+from report_config import ReportConfig, read_yaml  # noqa: E402
 
 CATEGORY = "Academicos"
 SLUG = "informe-de-laboratorio"
@@ -52,7 +64,8 @@ def test_delivery_publishes_the_validated_bytes_once(tmp_path: Path) -> None:
 
     assert _run(folder, documents_root) == 0
 
-    published = documents_root / CATEGORY / SLUG / f"{SLUG}-v001.pdf"
+    # The default confirmed subject "Fisica" scopes its own ASCII course level.
+    published = documents_root / CATEGORY / "fisica" / SLUG / f"{SLUG}-v001.pdf"
     assert published.is_file()
     assert _sha256(published) == _sha256(pdf)
 
@@ -125,7 +138,7 @@ def test_delivery_is_idempotent_for_identical_bytes(tmp_path: Path, capsys) -> N
     assert _run(folder, documents_root) == 0
     assert _run(folder, documents_root) == 0
 
-    published = documents_root / CATEGORY / SLUG
+    published = documents_root / CATEGORY / "fisica" / SLUG
     assert len(list(published.iterdir())) == 1
     assert "REUTILIZADO" in capsys.readouterr().out
 
@@ -272,3 +285,210 @@ def test_delivery_refuses_missing_final_pdf(tmp_path: Path) -> None:
 
     assert _run(folder, documents_root) == 1
     assert not (documents_root / CATEGORY).exists()
+
+
+# -- Subject-scoped academic delivery (course-deliverables-hierarchy T1) --------
+
+
+def test_delivery_publishes_under_the_canonical_subject_folder(tmp_path: Path) -> None:
+    """An academic report with a canonical subject delivers into the course level."""
+    folder = tmp_path / "wf"
+    _report(folder, subject="Sistemas Operativos")
+    _approval(folder)
+    pdf = _pdf(folder)
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    published = (
+        documents_root / "Academicos" / "sistemas-operativos" / SLUG / f"{SLUG}-v001.pdf"
+    )
+    assert published.is_file()
+    assert _sha256(published) == _sha256(pdf)
+
+
+def test_delivery_publishes_under_a_newly_named_course_folder(tmp_path: Path) -> None:
+    """A confirmed subject without a registered alias gets its own course level."""
+    folder = tmp_path / "wf"
+    _report(folder, subject="Fisica")
+    _approval(folder)
+    pdf = _pdf(folder)
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    published = documents_root / "Academicos" / "fisica" / SLUG / f"{SLUG}-v001.pdf"
+    assert published.is_file()
+    assert _sha256(published) == _sha256(pdf)
+
+
+def test_nonacademic_delivery_keeps_the_category_folder(tmp_path: Path) -> None:
+    """A project route never gains a subject level: Proyectos/<slug>/ stays."""
+    folder = tmp_path / "wf"
+    _report(folder, route="project")
+    _approval(folder)
+    pdf = _pdf(folder)
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    published = documents_root / "Proyectos" / SLUG / f"{SLUG}-v001.pdf"
+    assert published.is_file()
+    assert not (documents_root / "Proyectos" / "fisica").exists()
+
+
+def test_canonical_alias_spelling_delivers_to_the_same_versioned_folder(tmp_path: Path, capsys) -> None:
+    """Two alias spellings of one course land together; the second is a reuse."""
+    documents_root = tmp_path / "docs"
+    for subject in ("Sistema operativo", "Sistemas Operativos"):
+        folder = tmp_path / f"wf-{subject.split()[0].lower()}-{len(subject)}"
+        _report(folder, subject=subject)
+        _approval(folder)
+        pdf = _pdf(folder)
+        _validation(folder, pdf=pdf)
+        _final_review(folder, pdf=pdf)
+        assert _run(folder, documents_root) == 0
+
+    published = sorted(
+        (documents_root / "Academicos" / "sistemas-operativos" / SLUG).iterdir()
+    )
+    assert [path.name for path in published] == [f"{SLUG}-v001.pdf"]
+    assert "REUTILIZADO" in capsys.readouterr().out
+
+
+def test_refused_delivery_never_creates_the_subject_folder(tmp_path: Path, capsys) -> None:
+    """A missing receipt refuses before the course level exists on disk."""
+    folder = tmp_path / "wf"
+    _report(folder, subject="Sistemas Operativos")
+    _approval(folder)
+    _pdf(folder)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+
+    assert "validation.yml" in capsys.readouterr().err
+    assert not (documents_root / "Academicos").exists()
+
+
+def test_doc_status_agrees_with_the_delivered_subject_folder(tmp_path: Path) -> None:
+    """After a real delivery, the status derivation reads the same folder."""
+    folder = tmp_path / "wf"
+    _report(folder, subject="Sistemas Operativos")
+    _approval(folder)
+    pdf = _pdf(folder)
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    phase = doc_status._phase_deliver(folder, config, documents_root)
+
+    assert phase.state == doc_status.DONE
+    assert f"{SLUG}-v001.pdf" in phase.detail
+
+
+# -- Declared bibliography delivery (course-deliverables-hierarchy T2) ----------
+
+
+def _ready_pair_folder(tmp_path: Path, *, name: str = "sources.bib") -> tuple[Path, Path, Path]:
+    """A work folder gated for pair delivery: PDF + declared bibliography."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _approval(folder)
+    pdf = _pdf(folder)
+    bib = _bibliography(folder, name=name)
+    _declare_bibliography_delivery(folder, name=name)
+    _validation(folder, pdf=pdf, bibliography_sha256=_sha256(bib))
+    _final_review(folder, pdf=pdf, bibliography=bib)
+    return folder, pdf, bib
+
+
+def test_delivery_with_requested_bibliography_publishes_the_exact_pair(tmp_path: Path) -> None:
+    """An opted-in report delivers <slug>-v001.pdf and the same-version .bib."""
+    folder, pdf, bib = _ready_pair_folder(tmp_path)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    pair = documents_root / "Academicos" / "fisica" / SLUG
+    assert (pair / f"{SLUG}-v001.pdf").is_file()
+    assert (pair / f"{SLUG}-v001.bib").read_bytes() == bib.read_bytes()
+    assert _sha256(pair / f"{SLUG}-v001.pdf") == _sha256(pdf)
+
+
+def test_delivery_without_opt_in_never_copies_sources_bib(tmp_path: Path) -> None:
+    """sources.bib existing alone never travels: PDF-only stays the default."""
+    folder, _ = _ready_folder(tmp_path)
+    _bibliography(folder)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    delivered = documents_root / "Academicos" / "fisica" / SLUG
+    assert [path.name for path in delivered.iterdir()] == [f"{SLUG}-v001.pdf"]
+
+
+def test_delivery_refuses_receipt_without_bibliography_hash(tmp_path: Path, capsys) -> None:
+    """An opted-in delivery requires validation.yml to bind the bibliography bytes."""
+    folder, _, _ = _ready_pair_folder(tmp_path)
+    _validation(folder, drop=("bibliography_sha256",))
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+
+    assert "bibliography_sha256" in capsys.readouterr().err
+    assert not (documents_root / "Academicos").exists()
+
+
+def test_delivery_refuses_stale_bibliography_receipt_hash(tmp_path: Path) -> None:
+    """Editing the bibliography after validation stales the receipt: refusal."""
+    folder, _, bib = _ready_pair_folder(tmp_path)
+    bib.write_text('@book{bib1, title = "EDITED"}\n', encoding="utf-8")
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+    assert not (documents_root / "Academicos").exists()
+
+
+def test_delivery_refuses_final_review_without_bibliography_binding(tmp_path: Path, capsys) -> None:
+    """The human final review must have covered the declared bibliography too."""
+    folder, pdf, _ = _ready_pair_folder(tmp_path)
+    _final_review(folder, pdf=pdf)  # pdf-only marker: no bibliography_sha256
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+
+    assert "bibliography_sha256" in capsys.readouterr().err
+    assert not (documents_root / "Academicos").exists()
+
+
+def test_delivery_refuses_missing_declared_source_before_any_destination(tmp_path: Path) -> None:
+    """A declared source that vanished refuses before the tree is created."""
+    folder, _, bib = _ready_pair_folder(tmp_path)
+    bib.unlink()
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 1
+    assert not documents_root.exists()
+
+
+def test_doc_status_agrees_with_the_delivered_pair(tmp_path: Path) -> None:
+    """After a pair delivery the status derivation reads the same complete set."""
+    folder, _, _ = _ready_pair_folder(tmp_path)
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+
+    config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    phase = doc_status._phase_deliver(folder, config, documents_root)
+
+    assert phase.state == doc_status.DONE
+    assert f"{SLUG}-v001.pdf" in phase.detail
