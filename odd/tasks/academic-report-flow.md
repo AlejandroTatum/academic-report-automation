@@ -115,3 +115,6 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   format-check, `--body-check`, deliver gate and contract tests); GREEN `tests/skills tools` 1705 passed, 0 failed.
   Format defects ride on the existing `rubric_checks` mechanical entry (marker shape unchanged); deliver_report
   derives READY_TO_SUBMIT from receipt gates + current final-review. Commit: see git log.
+- Task 8 group 1 commit 26a3b78; review-8c144dcb511274f9 approved, burned. Advisory for the simplification pass:
+  `--body-check` slices mechanical_checks()[:-1] (positional, brittle); format defects ride on the `rubric_checks`
+  entry name (misleading); deliver READY_TO_SUBMIT test coverage thin; body-format check reports only missing H1.
