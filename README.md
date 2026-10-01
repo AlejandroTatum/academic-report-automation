@@ -220,7 +220,7 @@ One skill, `skills/academic-report-flow/`, owns the whole document flow: intake,
 research, plan, draft, approval, verify, format, generate, validate, review, deliver.
 `research-workflow` and `academic-visual-builder` stay separate.
 
-- **Entry:** with a work folder, `doc_status` runs first and its `next` token selects the one phase reference to load; without one, the standalone full route runs.
+- **Entry:** a new request first creates its work folder `reports/<slug>/`; then `doc_status` runs and its `next` token selects the one phase reference to load (an empty folder yields `intake`). The standalone full route runs only when the work-folder flow is unavailable.
 - **Route:** an academic assignment (subject, teacher, APE, AA, exercise, homework) records `route: academic` without asking; the route is asked only when signals are absent or conflicting.
 - **Identity:** a student name the user saved as permanent counts as confirmed; otherwise it is a single-choice suggestion, never auto-filled. A title holding commentary gets a one-line confirmation.
 - **Guide:** the teacher's guide, rubric and explanation are always requested, in one compact question batch, then the run stops.
