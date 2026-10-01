@@ -291,12 +291,12 @@ LISTING_PREAMBLE = r"""\usepackage{listings}
 \definecolor{codecomment}{gray}{0.45}
 \definecolor{codestring}{RGB}{135,40,40}
 \lstdefinestyle{reportcode}{
-  basicstyle=\small\ttfamily,
+  basicstyle=\linespread{1}\small\ttfamily,
   backgroundcolor=\color{codebg},
   frame=leftline,
   rulecolor=\color{coderule},
   framerule=1.4pt,
-  xleftmargin=2.6em,
+  xleftmargin=3.0em,
   framexleftmargin=2.4em,
   xrightmargin=0pt,
   framexrightmargin=0pt,

@@ -150,6 +150,24 @@ def test_listing_style_is_defined_once_with_utf8_and_colors() -> None:
         assert needle in preamble
 
 
+def test_listing_is_single_spaced_inside_one_and_a_half_spaced_body() -> None:
+    # The body runs at 1.5 spacing; code inherits it unless the listing resets
+    # the stretch, which wastes vertical space and pushes later floats away.
+    assert r"\linespread{1}" in build_latex_report.LISTING_PREAMBLE
+
+
+def _em(preamble: str, key: str) -> float:
+    import re
+    return float(re.search(rf"\b{key}=([0-9.]+)em", preamble).group(1))
+
+
+def test_listing_frame_stays_inside_the_text_block() -> None:
+    # The rule sits framexleftmargin + framesep left of the code, so the code's
+    # own indent must cover both or the rule pokes into the page margin.
+    preamble = build_latex_report.LISTING_PREAMBLE
+    assert _em(preamble, "xleftmargin") >= _em(preamble, "framexleftmargin") + _em(preamble, "framesep")
+
+
 @pytest.mark.parametrize("template", ["unl", "ape", "plain", "chamba_overleaf"])
 def test_every_template_loads_the_listing_style(template: str) -> None:
     path = build_latex_report.resolve_template(template)
