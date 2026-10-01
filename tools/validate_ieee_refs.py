@@ -149,12 +149,18 @@ def claim_support_and_reciprocity(
     keys = bib_keys(bib_text)
     cited = cited_keys(source_text)
 
-    seen_citation_keys: dict[str, str] = {}
+    # One source may support many claims (e.g. a single base book under
+    # min_sources: 1); only the same claim recorded twice is an error.
+    seen_claim_ids: set[str] = set()
     for claim in claims:
         if not isinstance(claim, dict):
             result.errors.append("cada claim debe ser un mapeo")
             continue
         claim_id = str(claim.get("claim_id") or "<sin id>")
+        if claim.get("claim_id"):
+            if claim_id in seen_claim_ids:
+                result.errors.append(f"claim_id duplicado: '{claim_id}'")
+            seen_claim_ids.add(claim_id)
         use_type = str(claim.get("use_type") or "").strip().lower()
         justified_common_knowledge = use_type == "common_knowledge" and str(
             claim.get("justification") or ""
@@ -165,12 +171,6 @@ def claim_support_and_reciprocity(
                 continue
             result.errors.append(f"Claim {claim_id}: sin citation_key (unsupported)")
             continue
-        if citation_key in seen_citation_keys:
-            result.errors.append(
-                f"citation_key duplicado entre claims: '{citation_key}' "
-                f"({seen_citation_keys[citation_key]} y {claim_id})"
-            )
-        seen_citation_keys[citation_key] = claim_id
         if citation_key not in cited:
             result.errors.append(
                 f"Claim {claim_id}: citation_key '{citation_key}' no aparece citado en el cuerpo"

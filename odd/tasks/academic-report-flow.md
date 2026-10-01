@@ -90,3 +90,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 - Task 7 review: review-0364c75be9645648 (1561238 + README 2f1057e) approved, burned. Advisory R3-same-document-criterion
   fixed next commit (test-first, RED 1 -> GREEN): same-document criterion defined; a delivered match asks one
   single-choice question (new suffixed version or resume) and never overwrites.
+- Live test (exercise 1.5, folder metodos-numericos-ejercicio-1-5-flow) blocked at validate: validate_ieee_refs rejected
+  distinct claims sharing one citation_key, impossible under min_sources: 1. Fix (test-first, RED 1 -> GREEN):
+  only a repeated claim_id is an error; distinct claims may cite the same source. The existing "Duplicate mapping"
+  test case was narrowed from shared citation_key to repeated claim_id.

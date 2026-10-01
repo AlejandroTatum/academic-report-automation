@@ -66,11 +66,11 @@ def test_claim_support_or_reciprocity_failure_blocks_build() -> None:
     )
     assert not any("unused2020" in e for e in justified.errors)
 
-    # Duplicate mapping: two claims share the same citation_key.
+    # Duplicate mapping: the same claim_id recorded twice.
     duplicate = claim_support_and_reciprocity(
-        [claim(claim_id="C-020"), claim(claim_id="C-021")], BIB_OK, BODY_OK
+        [claim(claim_id="C-020"), claim(claim_id="C-020")], BIB_OK, BODY_OK
     )
-    assert any("duplicado" in e and "C-020" in e and "C-021" in e for e in duplicate.errors)
+    assert any("duplicado" in e and "C-020" in e for e in duplicate.errors)
 
     # Malformed rendered entry: BibTeX entry missing author/title.
     malformed_bib = BIB_OK + """
@@ -85,6 +85,16 @@ def test_claim_support_or_reciprocity_failure_blocks_build() -> None:
         body_with_broken,
     )
     assert any("broken2022" in e and "mal formad" in e for e in malformed.errors)
+
+
+def test_distinct_claims_may_share_one_source() -> None:
+    """A single base book (min_sources: 1) legitimately supports several claims."""
+    result = claim_support_and_reciprocity(
+        [claim(claim_id="C-001"), claim(claim_id="C-002"), claim(claim_id="C-003")],
+        BIB_OK,
+        BODY_OK,
+    )
+    assert result.errors == []
 
 
 def test_claim_support_and_reciprocity_rejects_nondict_claim() -> None:
