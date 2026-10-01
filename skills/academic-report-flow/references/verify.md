@@ -45,6 +45,16 @@ check reruns on the edited draft. A recorded `fail` blocks the route
 (`content_check_failed`) until the findings are fixed and the check passes; an
 edited draft, rubric, bib, or guide simply stales the marker and the check reruns.
 
+## Handoff when the executor cannot launch subagents
+
+If the executor running the phase loop cannot launch subagents, it stops at verify
+and reports that the judges are pending. The orchestrator runs the two judges
+exactly as above: it runs `content_check.py <folder> --judge-brief`, gives the
+brief verbatim to two independent read-only subagents, has their YAML saved
+unchanged as `judgments-a.yml` and `judgments-b.yml`, and runs `content_check.py`
+with both `--judgments` arguments. The drafting agent never writes judgments, and
+the executor never stands in for a judge.
+
 ## Steps
 
 1. Run `content_check.py <folder> --judge-brief` using the same Python and folder

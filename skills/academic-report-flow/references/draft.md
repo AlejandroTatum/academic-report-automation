@@ -22,6 +22,15 @@ the session are the reference. Avoid stock AI phrasing. The draft is a starting
 point for the user's own review, not the final voice; it is offered for literal edit
 orders, not admiration.
 
+Body format rules (the PDF template and font depend on them, and a defect found
+after approval forces a re-approval cycle):
+
+- Sections start at `# `: the template numbers sections from level-1 headings, so a
+  body that uses only `##`/`###` numbers them 0.1., 0.1.1. Use `##` only for
+  subsections under a `#`.
+- Write subscripts and superscripts as math, never as Unicode characters (the
+  PDF font renders them blank): `$c_1$`, `$10^{-5}$`, `m/s$^2$`.
+
 Route presentation defaults (numbering, cover, template) come from `report.yml` and
 the `format` phase, never from the draft.
 
@@ -39,8 +48,10 @@ the body changes only through the user's literal edit orders (see
 3. Build any figure with `academic-visual-builder` and reference it as
    `![caption](relative/path.png)`.
 4. Write `reports/<wf>/body.md`. Turn every rubric check green; run the
-   mechanical part of `content_check.py` against the draft before presenting it.
-   Fix failed checks in the draft, without writing semantic judgments or an
+   mechanical part of `content_check.py` against the draft before presenting it:
+   `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --body-check`
+   (format rules above, citations resolve, rubric checks; no judgments, writes
+   nothing, exits 1 on any FAIL). Fix failed checks in the draft, without writing semantic judgments or an
    approval marker.
 5. Re-run `doc_status` and report the new current phase.
 

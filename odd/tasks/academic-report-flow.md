@@ -52,7 +52,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       create `reports/<slug>/` under the content root, then `doc_status` (empty folder -> `next: intake`).
       Full route only when the work-folder flow is unavailable. Test-first; update to-be diagram.
 
-- [ ] 8. Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
+- [ ] 8. (a), (b), (e) done; (c)(d)(f)(g)(h)(i)(j) open. Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
       level-1 `#` section headings and math for sub/superscripts, with a mechanical pre-approval check (Unicode
       sub/superscripts are missing from TeX Gyre Termes; `##`-only bodies number sections 0.1.); (b) verify.md:
       define the handoff when the executor cannot launch judge subagents (orchestrator runs the judges);
@@ -111,3 +111,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   (citation-key tool bug fixed in c0f31a6; missing glyphs + 0.1. headings fixed by an approved body edit), delivered
   ~/Documents/Academicos/analisis-numerico/solucion-analitica-y-numerica-del-ejercicio-1-5/...-v002.pdf
   (sha256 d67dd7e4...), v001 untouched. Same numbers as v001.
+- Task 8 (a)(b)(e) (h partly: draft.md now names the real `--body-check` mode): RED 17 failed / 1688 passed (new
+  format-check, `--body-check`, deliver gate and contract tests); GREEN `tests/skills tools` 1705 passed, 0 failed.
+  Format defects ride on the existing `rubric_checks` mechanical entry (marker shape unchanged); deliver_report
+  derives READY_TO_SUBMIT from receipt gates + current final-review. Commit: see git log.

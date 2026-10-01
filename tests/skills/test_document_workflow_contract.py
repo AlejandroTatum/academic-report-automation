@@ -902,3 +902,49 @@ def test_existing_slug_folder_match_is_defined_and_asked_once() -> None:
 def test_skill_body_stays_within_the_token_budget() -> None:
     body = read(SKILL_MD).split("---", 2)[2]
     assert len(body.split()) <= 1000
+
+
+def test_draft_requires_h1_sections_math_scripts_and_names_a_real_cli_mode() -> None:
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "draft.md"))
+    for phrase in ("start at `# `", "`$c_1$`", "`$10^{-5}$`", "m/s$^2$", "content_check.py", "--body-check"):
+        assert phrase in flat, f"draft.md must say `{phrase}`"
+    assert "--body-check" in content_check_cli_help()
+
+
+def content_check_cli_help() -> str:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "content_check.py"), "--help"],
+        capture_output=True, text=True, check=False,
+    )
+    return result.stdout
+
+
+def test_verify_defines_the_orchestrator_judge_handoff() -> None:
+    flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "verify.md"))
+    for phrase in (
+        "cannot launch subagents",
+        "stops at verify",
+        "orchestrator runs the two judges",
+        "brief verbatim",
+        "two independent read-only subagents",
+        "saved unchanged",
+        "drafting agent never writes judgments",
+    ):
+        assert phrase in flat, f"verify.md must say `{phrase}`"
+
+
+def test_visual_pass_ownership_is_explicit_across_references() -> None:
+    validate = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "validate.md"))
+    for phrase in (
+        "executor that performed the direct page-by-page inspection",
+        "records `VISUAL_PASS` in `validation.yml`",
+        "without an inspection never records `VISUAL_PASS`",
+        "`READY_TO_SUBMIT` follows once `HUMAN_REVIEW`",
+    ):
+        assert phrase in validate, f"validate.md must say `{phrase}`"
+    for name in ("quality-gates.md", "clean-delivery.md"):
+        flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / name))
+        assert "validate phase executor" in flat and "`VISUAL_PASS`" in flat, name

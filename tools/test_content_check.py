@@ -1221,3 +1221,64 @@ def test_invalid_min_sources_is_input_error(
 
     assert "min_sources" in capsys.readouterr().err
     assert not (folder / "content-check.yml").exists()
+
+
+# ---------------------------------------------------------------------------
+# Body format check (task 8a): level-1 headings and math sub/superscripts
+# ---------------------------------------------------------------------------
+
+
+def _body_problems(text: str) -> list[str]:
+    return content_check.body_format_problems(text)
+
+
+def test_body_without_level_one_heading_fails() -> None:
+    problems = _body_problems("## Seccion\n\nTexto.\n\n### Sub\n")
+    assert any("level-1" in problem and "# " in problem for problem in problems)
+
+
+def test_body_with_level_one_heading_passes() -> None:
+    assert _body_problems("# Seccion\n\n## Sub\n\nTexto.\n") == []
+
+
+def test_level_one_heading_inside_a_fence_does_not_count() -> None:
+    problems = _body_problems("## Seccion\n\n```\n# comentario\n```\n")
+    assert any("level-1" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("text", ["c\u2081", "v\u2080", "10\u207b\u2075", "m/s\u00b2", "x\u00b3", "a\u2090"])
+def test_unicode_sub_and_superscripts_fail_with_line_numbers(text: str) -> None:
+    problems = _body_problems(f"# T\n\nlinea ok\nvalor {text} aqui\n")
+    joined = " ".join(problems)
+    assert "line 4" in joined
+    assert "$c_1$" in joined and "$10^{-5}$" in joined and "m/s$^2$" in joined
+
+
+def test_unicode_scripts_in_code_are_allowed() -> None:
+    body = "# T\n\n```\nc\u2081 = 1\n```\n\nUsa `v\u2080` como nombre.\n"
+    assert _body_problems(body) == []
+
+
+def test_run_check_fails_on_format_defects_and_state_is_fail(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text(
+        "## Informe\n\nc\u2081 con [@key1] y [@key2], [@key3], [@key4], [@key5].\n", encoding="utf-8"
+    )
+    assert _run(folder) == 1
+    findings = " ".join(_marker(folder)["findings"])
+    assert "level-1" in findings and "line 3" in findings
+
+
+def test_body_check_mode_reports_without_writing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+    assert content_check.main([str(folder), "--body-check"]) == 1
+    out = capsys.readouterr().out
+    assert "level-1" in out
+    assert not (folder / "content-check.yml").exists()
+
+
+def test_body_check_mode_passes_a_clean_draft(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    assert content_check.main([str(folder), "--body-check"]) == 0
+    assert not (folder / "content-check.yml").exists()

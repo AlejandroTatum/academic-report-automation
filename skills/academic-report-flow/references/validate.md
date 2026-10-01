@@ -81,8 +81,15 @@ The receipt records `mode: fallback` and `evidence: backups/quality_report.md`.
 Both branches enforce the identical gate set: `BUILD_PASS`, `VALIDATION_PASS`,
 `VISUAL_PASS`, `HUMAN_REVIEW`, `READY_TO_SUBMIT`. The fallback never lowers or skips a
 gate reachable under RDD, and neither branch grants a gate it did not verify on the same
-immutable artifact. Validation is not approval: a passing receipt does not by itself
+immutable artifact. Validation is not approval: an automatic receipt (build and validators alone) does not
 grant `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`.
+
+`VISUAL_PASS` ownership: the validate phase executor that performed the direct
+page-by-page inspection (every page rendered and read back, no blocking defect)
+records `VISUAL_PASS` in `validation.yml` `gates:`, and notes the inspection in the
+evidence report. A receipt without an inspection never records `VISUAL_PASS`.
+`READY_TO_SUBMIT` follows once `HUMAN_REVIEW` (`final-review.yml`) exists for the
+same bytes; `deliver_report.py` reports it from the receipt plus that marker.
 
 ## Steps
 
@@ -99,5 +106,5 @@ grant `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT`.
 - Do not lower, skip, or rename a gate in either branch; the gate set is identical.
 - Do not record a pass for an artifact hash that no longer matches the final PDF.
 - Do not claim `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT` from an automatic
-  receipt alone.
+  receipt alone; a receipt without an inspection never records `VISUAL_PASS`.
 - Do not write `approval.yml`, `body.md`, or `report.yml`.

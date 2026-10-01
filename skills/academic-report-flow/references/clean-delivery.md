@@ -83,7 +83,10 @@ figures, audits, logs, receipts or intermediates.
   `report.yml`, `body.md`, `sources.bib`, specs, figures, audits, contact sheets,
   logs, temporary files, or intermediates into it.
 - Automatic publication never grants `VISUAL_PASS`, `HUMAN_REVIEW`, or
-  `READY_TO_SUBMIT`; semantic and human review remain distinct evidence.
+  `READY_TO_SUBMIT`; semantic and human review remain distinct evidence. The
+  validate phase executor's direct inspection records `VISUAL_PASS` in
+  `validation.yml`; delivery only reports it, together with `READY_TO_SUBMIT` once
+  `final-review.yml` is current.
 
 ## The course folder is the user's Git repository, not ours
 

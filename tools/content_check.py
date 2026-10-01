@@ -288,6 +288,45 @@ def _missing_quote_warnings(judgments_file: str, judgments: list[dict], body_tex
     return warnings
 
 
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_SCRIPT_CHARS_RE = re.compile("[\u2070-\u209f\u00b9\u00b2\u00b3]")
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def body_format_problems(body_text: str) -> list[str]:
+    """Deterministic body.md format defects that only show up in the rendered PDF.
+
+    Fenced code blocks and inline code are skipped. The PDF template numbers
+    sections from level-1 headings (a ``##``-only body numbers them 0.1.) and
+    its font lacks Unicode sub/superscripts (they render blank), so a body
+    without a ``# `` heading, or carrying such characters, fails before approval.
+    """
+    has_h1 = False
+    bad_lines: list[int] = []
+    in_fence = False
+    for number, line in enumerate(body_text.splitlines(), start=1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if re.match(r"# \S", line):
+            has_h1 = True
+        if _SCRIPT_CHARS_RE.search(_INLINE_CODE_RE.sub("", line)):
+            bad_lines.append(number)
+    problems = []
+    if not has_h1:
+        problems.append("no level-1 heading: sections must start at `# ` (not `##`)")
+    if bad_lines:
+        problems.append(
+            "Unicode superscript/subscript characters at "
+            + ", ".join(f"line {n}" for n in bad_lines)
+            + ": the PDF font renders them blank; write math instead, e.g. "
+            "`$c_1$`, `$10^{-5}$`, `m/s$^2$`"
+        )
+    return problems
+
+
 def mechanical_checks(
     body_text: str,
     bib_text: str,
@@ -497,13 +536,18 @@ def run_check(
                       "detail": "; ".join(check["detail"] for check in individual_checks if not check["ok"])}
     rubric_results = [vars(item) for item in rubric_checks.run_checks(folder, criteria, body_text)]
     failed = [item for item in rubric_results if not item["ok"]]
+    format_problems = body_format_problems(body_text)
     statuses = {item["id"]: item["status"] for item in judgments}
     detail = "; ".join(
         f"{item['criterion_id']} check {item['check_index']} ({item['type']}): {item['detail']}"
         + (" (judged cumple despite failing check)" if statuses.get(item["criterion_id"]) == "cumple" else "")
         for item in failed
     ) or f"all {len(rubric_results)} rubric checks pass"
-    checks.append({"check": "rubric_checks", "ok": not failed, "detail": detail})
+    # The format defects ride on the deterministic body check so the marker
+    # keeps its fixed set of mechanical entries.
+    if format_problems:
+        detail = "; ".join([*([detail] if failed else []), *(f"body format: {p}" for p in format_problems)])
+    checks.append({"check": "rubric_checks", "ok": not failed and not format_problems, "detail": detail})
     mechanical_ok = all(check["ok"] for check in checks)
     criteria_ok = all(judgment["status"] == "cumple" for judgment in judgments)
     guide = _guide_input(folder, config)
@@ -652,6 +696,29 @@ def content_check_state(report_dir: Path) -> str:
     return "pass" if criteria_ok and mechanical_ok and ids_match else "fail"
 
 
+def run_body_check(folder: Path) -> int:
+    """Run the judgment-free mechanical checks on a draft; print, never write."""
+    folder = Path(folder)
+    try:
+        body_text = (folder / BODY_NAME).read_text(encoding="utf-8")
+        criteria = rubric_plan.load_rubric(folder)
+        config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+        min_sources = effective_min_sources(config)
+        bib_text = _read_bib(config)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"content check input error: {exc}", file=sys.stderr)
+        return 2
+    lines = []
+    for check in mechanical_checks(body_text, bib_text, criteria, [], min_sources)[:-1]:
+        lines.append((check["ok"], f"{check['check']}: {check['detail']}"))
+    lines.extend((False, f"body_format: {problem}") for problem in body_format_problems(body_text))
+    failed_rubric = [i for i in rubric_checks.run_checks(folder, criteria, body_text) if not i.ok]
+    lines.extend((False, f"rubric_checks: {i.criterion_id} ({i.type}): {i.detail}") for i in failed_rubric)
+    for ok, text in lines:
+        print(f"  [{'ok' if ok else 'FAIL'}] {text}")
+    return 0 if all(ok for ok, _ in lines) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the hard content check for a report folder (never edits body.md)."
@@ -660,6 +727,11 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--judgments", type=Path, action="append")
     mode.add_argument("--judge-brief", action="store_true")
+    mode.add_argument(
+        "--body-check",
+        action="store_true",
+        help="draft-time mechanical checks (format, citations, rubric checks); no judgments, writes nothing",
+    )
     args = parser.parse_args(argv)
     if args.judge_brief:
         try:
@@ -668,6 +740,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"content check input error: {exc}", file=sys.stderr)
             return 2
         return 0
+
+    if args.body_check:
+        return run_body_check(args.folder)
 
     outcome = run_check(args.folder, args.judgments)
     if outcome.errors:
