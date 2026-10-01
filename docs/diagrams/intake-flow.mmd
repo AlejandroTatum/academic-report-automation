@@ -1,9 +1,11 @@
 %% To-be intake flow, 2026-10-01. Reflects skills/academic-report-flow (replaces intake-flow-current.mmd).
 flowchart TD
     REQ["User request<br/>e.g. 'solve exercise 1.5'"] --> ENTRY["Single entry: academic-report-flow<br/>(triggers include exercise, homework, APE, AA)"]
-    ENTRY --> WF{"Work folder exists?"}
-    WF -->|yes| STATUS["doc_status.py on reports/&lt;folder&gt;/<br/>load only the phase reference named by 'next'"]
-    WF -->|no: standalone| FULL
+    ENTRY --> WF{"Work-folder flow available?<br/>Folder for this document exists?"}
+    WF -->|"new request"| MK["Create reports/&lt;slug&gt;/<br/>(slug derived, never asked;<br/>numeric suffix if taken by another document)"]
+    MK --> STATUS
+    WF -->|"existing folder (resume)"| STATUS["doc_status.py on reports/&lt;slug&gt;/<br/>empty folder = next: intake<br/>load only the phase reference named by 'next'"]
+    WF -->|"unavailable: no content root or<br/>user asks for a one-off document"| FULL
     STATUS -->|"next = intake"| LOADI["Load references/intake.md<br/>prompt / memory = proposal, never confirmation"]
 
     LOADI --> CF0["Content-first intake<br/>(default under doc_status)"]

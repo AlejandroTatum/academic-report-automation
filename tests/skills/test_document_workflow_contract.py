@@ -845,6 +845,50 @@ def test_type_prohibition_names_the_content_first_route_exception() -> None:
     assert "content-first" in section and "references/intake.md" in section
 
 
+def _flat(path: Path) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[*`]", "", read(path))).lower()
+
+
+def test_new_request_creates_the_work_folder_before_doc_status() -> None:
+    """Task 7: a fresh request has no folder yet; the entry rule creates it first."""
+    skill = _flat(SKILL_MD)
+    entry = skill[skill.index("entry rule:") :].split(" loop:")[0]
+    assert re.search(r"new request[^;]*creates? the work folder[^;]*before[^;]*doc_status", entry), (
+        "SKILL.md entry rule must create the work folder for a new request before doc_status"
+    )
+    assert "reports/<slug>/" in entry
+    assert "existing" in entry and "resum" in entry, "an existing folder is resumed"
+    assert "without a work folder" not in skill, (
+        "SKILL.md must not route a missing work folder to the standalone full route"
+    )
+
+
+def test_standalone_full_route_is_limited_to_an_unavailable_work_folder_flow() -> None:
+    skill = _flat(SKILL_MD)
+    entry = skill[skill.index("entry rule:") :].split(" loop:")[0]
+    assert re.search(r"standalone full route.{0,60}applies only when the work-folder flow is (unavailable|not available)", entry), (
+        "the standalone full route applies only when the work-folder flow is unavailable"
+    )
+
+
+def test_routing_loop_and_intake_agree_on_the_new_request_entry() -> None:
+    routing = _flat(SKILL_ROOT / "references" / "routing-loop.md")
+    intake = _flat(SKILL_ROOT / "references" / "intake.md")
+    for name, text in (("routing-loop.md", routing), ("intake.md", intake)):
+        assert re.search(r"new request[^.]*creates? [^.]*reports/<slug>/", text), (
+            f"{name} must state that a new request creates reports/<slug>/ first"
+        )
+        assert "without a work folder" not in text and "no work folder" not in text, (
+            f"{name} must not route a missing work folder to the standalone full route"
+        )
+        assert re.search(r"unavailable|not available", text), (
+            f"{name} must limit the standalone route to an unavailable work-folder flow"
+        )
+    assert "never ask" in routing and "slug" in routing, "the slug is derived, never asked"
+    assert re.search(r"numeric suffix", routing + intake)
+    assert "folder in the intake summary" in intake
+
+
 def test_skill_body_stays_within_the_token_budget() -> None:
     body = read(SKILL_MD).split("---", 2)[2]
     assert len(body.split()) <= 1000

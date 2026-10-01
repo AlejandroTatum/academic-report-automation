@@ -2,6 +2,16 @@
 
 Loop: `doc_status -> next -> reference -> delegate -> re-run`.
 
+A new request for a document creates the work folder `$REPORT_CONTENT_ROOT/reports/<slug>/`
+first, so `doc_status` sees an empty folder (`next: intake`) and content-first intake
+applies. The slug is lowercase ASCII kebab-case derived from the subject and assignment
+named in the request (e.g. `metodos-numericos-ejercicio-1-5`); if that folder already
+exists and belongs to a different document, append a numeric suffix. Never ask the user
+for the slug; state the folder in the intake summary. An existing folder for the same
+document is resumed, never recreated. The standalone full route applies only when the
+work-folder flow is unavailable (no content root, or the user explicitly asks for a
+one-off document outside the reports flow).
+
 Run `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/doc_status.py"
 "$REPORT_CONTENT_ROOT/reports/<work-folder>/"` first; the returned `next` token owns
 the route. The selected interpreter (`REPORT_PYTHON`) and the roots are defined in

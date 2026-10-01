@@ -12,11 +12,11 @@ metadata:
 
 Use for creating, adapting, reviewing, exporting, resuming, or advancing a structured academic, project, professional, business, technical, PDF, or DOCX document. PDF or DOCX is a format signal only. The user chooses the document type; never infer it from format, prompt, files, or history.
 
-Entry rule: when a work folder exists, run `doc_status.py` first on `$REPORT_CONTENT_ROOT/reports/<work-folder>/` and load only the current phase reference; without a work folder, run the standalone full route (`references/intake.md`), then the `next` token. Loop: `doc_status -> next -> reference -> delegate -> re-run`. See `references/routing-loop.md`.
+Entry rule: a new request creates the work folder `$REPORT_CONTENT_ROOT/reports/<slug>/` before `doc_status.py` (empty folder -> `next: intake`); an existing folder for the same document is resumed. Run `doc_status.py` first and load only the current phase reference. The standalone full route (`references/intake.md`) applies only when the work-folder flow is unavailable. Loop: `doc_status -> next -> reference -> delegate -> re-run`. See `references/routing-loop.md`.
 
 ### Mandatory Intake
 
-Load `references/intake.md` for the `intake` phase and on every standalone run. It owns the `report.yml` record (`route:`, `output:`, `template:`, top-level `cover:`, `metadata:` fields) and the content-first minimum. The Document Contract is a data record and does not authorize generation. The single confirmation gate is post-preview and lives in `academic-report-flow/references/approval.md`; intake never asks for approval.
+Load `references/intake.md` for the `intake` phase and on every standalone run (work-folder flow unavailable). It owns the `report.yml` record (`route:`, `output:`, `template:`, top-level `cover:`, `metadata:` fields) and the content-first minimum. The Document Contract is a data record and does not authorize generation. The single confirmation gate is post-preview and lives in `academic-report-flow/references/approval.md`; intake never asks for approval.
 
 ### Prohibition On Inferring Document Type
 

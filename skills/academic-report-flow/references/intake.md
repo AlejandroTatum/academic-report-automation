@@ -3,8 +3,9 @@
 Executor: academic-report-flow
 Artifact: `reports/<wf>/report.yml`
 
-Load this reference when `doc_status` returns `next: intake`, and on every execution of
-the standalone full route (no work folder), before designing, structuring, drafting, or generating anything.
+Load this reference when `doc_status` returns `next: intake` (a new request creates
+`reports/<slug>/` first, so it starts here), and on every execution of the standalone
+full route (only when the work-folder flow is unavailable), before designing, structuring, drafting, or generating anything.
 This skill executes the phase itself. Intake turns a request into the one
 machine-readable record the whole route derives from: `reports/<wf>/report.yml`.
 
@@ -14,7 +15,10 @@ and treat nothing from them as confirmed data.
 
 ## Content-first intake
 
-Default when a work folder is driven by `doc_status`. Ask only the content-first
+Default for every new request: the request creates the work folder
+`reports/<slug>/` first (lowercase ASCII kebab-case from the subject and assignment,
+numeric suffix if the folder belongs to a different document, never asked) and
+`doc_status` drives it; state the folder in the intake summary. Ask only the content-first
 minimum: route, title, student, the teacher's guide and rubric material, teacher
 explanation.
 
@@ -74,7 +78,7 @@ explanation.
 
 ## Full-route confirmations
 
-Standalone run with no work folder. Stop after asking: do not pre-build, do not
+Standalone run, only when the work-folder flow is unavailable. Stop after asking: do not pre-build, do not
 draft "while waiting", do not produce a provisional structure.
 
 ### Confirmation 1 — Document type

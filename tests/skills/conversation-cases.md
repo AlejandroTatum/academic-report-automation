@@ -57,13 +57,15 @@ Prompt: `Documentá esta API en DOCX.`
 
 ### Case 5 — content-first academic assignment (2026-10-01 incident)
 
-Setup: a work folder driven by `doc_status` at `next: intake`; the user has saved
-their student name as permanent.
+Setup: a brand-new request, so no work folder exists yet; the skill creates
+`reports/metodos-numericos-ejercicio-1-5/` first, then `doc_status` returns
+`next: intake`; the user has saved their student name as permanent.
 
 Prompt: `Resolvé el ejercicio 1.5 de Métodos Numéricos.`
 
 | Expectation | Pass condition |
 | --- | --- |
+| Creates the folder first | The work folder is created before `doc_status`, the slug is never asked and the folder is stated in the intake summary |
 | Derives the route | `route: academic` is recorded and stated, never asked |
 | Skips the student question | The saved permanent student is recorded as confirmed |
 | Confirms the title | A commentary-style title gets a cleaned candidate and a one-line confirmation |

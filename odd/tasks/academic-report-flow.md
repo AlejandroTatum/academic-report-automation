@@ -47,6 +47,11 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 - [x] 6. (User decision) Install the unified skill into Claude/Codex/OpenCode/Pi runtimes and
       remove the two old skill dirs there.
 
+- [x] 7. Fix fresh-request entry gap (found in live test 2026-10-01): a new request with no work folder fell
+      into the standalone full route (asks document type), so content-first never applied. New request ->
+      create `reports/<slug>/` under the content root, then `doc_status` (empty folder -> `next: intake`).
+      Full route only when the work-folder flow is unavailable. Test-first; update to-be diagram.
+
 ## Evidence
 
 (commit ids recorded per task)
@@ -81,3 +86,4 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   symlink moved to the trash (both were older than origin/main, no unique edits). Dotfiles untouched.
   `~/.pi/gentle-ai/skill-runtime/course-deliverables/academic-report-builder` left in place (no longer linked).
   Pi needs `/reload` to pick the change up.
+- Task 7: RED 3 failed / 1682 passed (new entry-rule contract tests); GREEN `tests/skills tools` 1685 passed, 0 failed. SKILL.md body 997 tokens. Commit: see git log (`fix(skills): create the work folder for new requests...`).
