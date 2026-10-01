@@ -66,3 +66,8 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   ~/.claude/skills and ~/.codex/skills verified identical to the repo, then moved to the trash (`trash-put`).
   Recurrence risk: any checkout/merge in another worktree whose `scripts/sync_skills.sh` still lists the old
   names re-syncs them until this branch is merged; sync never deletes dropped skills (task 6 follow-up).
+- Task 4 commit cdea392; native review review-80be9859f3850a32 approved, authority burned. Advisory follow-up
+  (next commit, test-first: RED 2 failed -> GREEN 1665 passed): restored "resume or approve report" trigger
+  (description 240 chars), SKILL.md type prohibition now names the content-first route exception, de-garbled the
+  doc_status.py student guidance sentence. Remaining suggestions (test substring strictness, duplicated scope note
+  intake.md:66-73) left as minor follow-ups.

@@ -833,8 +833,16 @@ def test_description_triggers_cover_assignment_requests() -> None:
     assert description.startswith("Trigger:") and len(description) <= 250
     lowered = description.lower()
     for word in ("academic report", "university report", "pdf", "docx", "doc status",
-                 "exercise", "ejercicio", "homework", "tarea", "ape", "aa"):
+                 "exercise", "ejercicio", "homework", "tarea", "ape", "aa",
+                 "resume", "approve"):
         assert re.search(rf"(?<![a-z]){re.escape(word)}(?![a-z])", lowered), f"description must mention {word}"
+
+
+def test_type_prohibition_names_the_content_first_route_exception() -> None:
+    """The SKILL.md prohibition must not contradict the content-first route derivation."""
+    text = read(SKILL_MD)
+    section = text.split("### Prohibition On Inferring Document Type", 1)[1].split("\n## ", 1)[0]
+    assert "content-first" in section and "references/intake.md" in section
 
 
 def test_skill_body_stays_within_the_token_budget() -> None:

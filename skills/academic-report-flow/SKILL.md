@@ -1,6 +1,6 @@
 ---
 name: academic-report-flow
-description: "Trigger: academic report, exercise/ejercicio, homework/tarea, APE, AA, university report, project documentation, professional or business report, technical document, PDF, DOCX, doc status. Routes source-backed documents from doc_status."
+description: "Trigger: academic report, exercise/ejercicio, homework/tarea, APE, AA, university report, project documentation, professional or business report, technical document, PDF, DOCX, doc status, resume or approve report. Drives doc_status phases."
 license: Apache-2.0
 metadata:
   author: "gentleman-programming"
@@ -20,7 +20,7 @@ Load `references/intake.md` for the `intake` phase and on every standalone run. 
 
 ### Prohibition On Inferring Document Type
 
-Recommend at most one type with a reason, but do not select it. Ambiguity stops the run; there is no default document type or academic fallback.
+Recommend at most one type with a reason, but do not select it. Ambiguity stops the run; there is no default document type or academic fallback. Sole exception: content-first intake records `route: academic` when the request names an academic assignment (see `references/intake.md`).
 
 ## Hard Rules
 
