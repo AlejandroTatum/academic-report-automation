@@ -379,3 +379,23 @@ def test_explicit_docx_path_keeps_resolving_relative_to_the_folder(tmp_path: Pat
     config = load_report_config(folder)
 
     assert config.docx_path == folder.resolve() / "build" / "informe.docx"
+
+
+def test_min_sources_property_absent_and_valid(tmp_path: Path) -> None:
+    assert ReportConfig(folder=tmp_path, raw={}).min_sources is None
+    assert ReportConfig(folder=tmp_path, raw={"min_sources": 1}).min_sources == 1
+
+
+@pytest.mark.parametrize("bad", [0, -1, "3", 2.5, True, None])
+def test_min_sources_rejects_invalid_values(tmp_path: Path, bad: object) -> None:
+    with pytest.raises(ValueError, match="min_sources"):
+        ReportConfig(folder=tmp_path, raw={"min_sources": bad}).min_sources
+
+
+def test_load_report_config_rejects_invalid_min_sources(tmp_path: Path) -> None:
+    folder = _write_report(tmp_path / "wf", "academic", "T")
+    with (folder / "report.yml").open("a", encoding="utf-8") as handle:
+        handle.write("min_sources: 0\n")
+
+    with pytest.raises(SystemExit, match="min_sources"):
+        load_report_config(folder)

@@ -179,6 +179,7 @@ cover:                        # top-level and optional: explicit values win over
 
 deliver_bibliography: true    # only when the course requires the .bib as a submitted artifact
 bibliography: sources.bib     # the declared .bib to deliver (existing key; default sources.bib)
+min_sources: 1                # only when the teacher/requirement limits sources; positive integer, default 5
 ```
 
 - `pdf:` (and `docx:`) is optional and top-level. Leaving it unset derives the

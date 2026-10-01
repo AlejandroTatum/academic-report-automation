@@ -38,6 +38,17 @@ ELIGIBLE_ENTRY_TYPES = (
 )
 MIN_ACADEMIC_SOURCES = 5
 
+
+def effective_min_sources(config: ReportConfig) -> int:
+    """Minimum eligible sources for a report: ``min_sources:`` or the default.
+
+    Shared by the research gate and ``content_check`` so both apply the same
+    number. Raises ValueError for an invalid ``min_sources:`` value.
+    """
+    override = config.min_sources
+    return MIN_ACADEMIC_SOURCES if override is None else override
+
+
 # The declared name mirrors ReportConfig.bib_path's own default, so a reason
 # can name the file the report actually points at.
 _DEFAULT_BIB = "sources.bib"
@@ -72,13 +83,18 @@ def eligible_entry_keys(bib_text: str) -> tuple[str, ...]:
 
 
 def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
-    """Evaluate the ``>= MIN_ACADEMIC_SOURCES`` gate for a report folder.
+    """Evaluate the ``>= effective_min_sources`` gate for a report folder.
 
     Reads the file ``ReportConfig.bib_path`` resolves (so ``bibliography:``/
     ``bib:`` overrides win over the ``sources.bib`` default) and returns the
     eligible count with a human-readable reason; ``ok`` is True only at or
-    above the minimum.
+    above the minimum. An invalid ``min_sources:`` fails closed with its
+    error as the reason.
     """
+    try:
+        minimum = effective_min_sources(config)
+    except ValueError as exc:
+        return SourceCount(0, (), False, str(exc))
     bib = config.bib_path
     declared = str(config.raw.get("bibliography") or config.raw.get("bib") or _DEFAULT_BIB)
     if bib is None:
@@ -86,7 +102,7 @@ def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
             0,
             (),
             False,
-            f"{declared} has 0/{MIN_ACADEMIC_SOURCES} book or paper sources",
+            f"{declared} has 0/{minimum} book or paper sources",
         )
     try:
         text = bib.read_text(encoding="utf-8")
@@ -97,16 +113,16 @@ def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
 
     keys = eligible_entry_keys(text)
     count = len(keys)
-    if count < MIN_ACADEMIC_SOURCES:
+    if count < minimum:
         return SourceCount(
             count,
             keys,
             False,
-            f"{declared} has {count}/{MIN_ACADEMIC_SOURCES} book or paper sources",
+            f"{declared} has {count}/{minimum} book or paper sources",
         )
     return SourceCount(
         count,
         keys,
         True,
-        f"{declared} has {count}/{MIN_ACADEMIC_SOURCES} book or paper sources",
+        f"{declared} has {count}/{minimum} book or paper sources",
     )

@@ -19,6 +19,13 @@ never count toward the gate, and a report can no longer record its way past
 research: `doc_status` keeps the phase `pending` until the file holds the five
 sources.
 
+The minimum is 5 unless `report.yml` carries a top-level positive integer
+`min_sources: N`, which replaces it for that report (for example `min_sources: 1`
+when the teacher or the requirement limits the sources to a single base book).
+Record it only when such a limit exists; an invalid value is rejected, never
+defaulted. `doc_status` and `content_check` both read it, so every "five"
+below means N when the override is present.
+
 Every entry must be real and verifiable: author, title, year, and
 publisher/venue are checkable facts, never invented, approximated, or borrowed
 from memory. The document's citations are IEEE (biblatex `style=ieee`), so write

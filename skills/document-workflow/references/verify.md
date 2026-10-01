@@ -24,7 +24,7 @@ reuse old judgments. Then run:
 ```
 
 The tool adds the mechanical checks (every `[@key]` citation resolves, at least five
-eligible book or paper sources are actually cited), derives the verdict itself, and
+(or the report's `min_sources:` override) eligible book or paper sources are actually cited), derives the verdict itself, and
 writes `content-check.yml` bound to `body.md`, `rubric.yml`, and the bib by hash
 (plus the guide by hash when the report declares one).
 The strictest verdict wins per criterion (`falta` > `flojo` > `cumple`).

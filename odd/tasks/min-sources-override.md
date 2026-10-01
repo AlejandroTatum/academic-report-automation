@@ -9,5 +9,5 @@ Motivation: reports/metodos-numericos-ejercicio-1-5 must cite only Chapra & Cana
 
 ## Tasks
 
-- [ ] 1. `min_sources` override honored by `source_count.source_gate` (doc_status research gate) and `content_check` cited-source check, with tests (RED → GREEN) and skill docs updated.
+- [x] 1. `min_sources` override honored by `source_count.source_gate` (doc_status research gate) and `content_check` cited-source check, with tests (RED → GREEN) and skill docs updated. (commit: feat(sources): allow per-report min_sources override)
 - [ ] 2. Apply to the ejercicio 1.5 report and continue verify.
