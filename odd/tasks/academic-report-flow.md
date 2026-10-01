@@ -64,6 +64,18 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       names a content_check mode the CLI lacks; (i) quality-gates.md duplicate step number and stale line ref;
       (j) existing folder without report.yml undefined; "delivered" definition untested.
 
+- [ ] 9. Simplify to three human decisions (agreed 2026-10-01; target diagram docs/diagrams/report-flow-target.mmd):
+      principle "text guides, tools enforce" - every quality rule is a tool gate before the next human decision.
+      9.1 doc_status: the format question (AA/APE/libre, PDF/DOCX, missing metadata) is asked in the same batch as
+          the draft approval; no separate format stop (test-first).
+      9.2 doc_status refuses to offer approval while `content_check --body-check` fails; fold task 8 (c)(d)(g)(h)(j)
+          into tool gates/fixes (min_sources text, title-keyed output path, verify_sources errors, CLI names,
+          missing report.yml) (test-first).
+      9.3 Consolidate references by stage (data, content, approval+format, production, delivery + one contract file),
+          from ~14.8k words to ~5k, removing duplicated rules (automation-contract/quality-gates/clean-delivery);
+          task 8 (f)(i) resolved here; contract tests updated, no rule silently dropped.
+      9.4 Target diagram becomes current; README; live re-test on a new exercise.
+
 ## Evidence
 
 (commit ids recorded per task)

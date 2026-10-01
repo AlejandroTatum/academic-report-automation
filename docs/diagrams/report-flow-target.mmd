@@ -1,0 +1,41 @@
+%% Target flow for academic-report-flow (agreed 2026-10-01): three human decisions,
+%% every quality rule enforced by a tool gate before the next human decision.
+flowchart TD
+    REQ["Request<br/>e.g. 'solve exercise 1.5'"] --> WF{"Work folder<br/>for this document?"}
+    WF -->|none| NEW["Create reports/&lt;slug&gt;/"]
+    WF -->|in progress| RES["Resume: doc_status next"]
+    WF -->|delivered| ASKV{{"Ask once: new version<br/>or resume (never overwrite)"}}
+    ASKV --> NEW
+    NEW --> D1
+    RES --> STATUS
+
+    D1[/"DECISION 1 - data (one batch)<br/>title + teacher guide, rubric, explanation<br/>route and saved student derived, asked only if missing"/]
+    D1 --> STATUS(("doc_status<br/>state machine"))
+
+    STATUS --> SRC["Sources<br/>min_sources honored, verify_sources"]
+    SRC --> PLAN["Plan<br/>teacher rubric, else guide demands"]
+    PLAN --> DRAFT["Draft body.md<br/>code executed, numbers cross-checked"]
+    DRAFT --> G1{"GATE body-check<br/>H1 sections, math scripts,<br/>citations, rubric checks"}
+    G1 -->|fail| DRAFT
+
+    G1 -->|pass| D2[/"DECISION 2 - one batch<br/>approve body.md + format AA/APE/libre<br/>+ PDF/DOCX + missing metadata"/]
+    D2 -->|edit orders| DRAFT
+
+    D2 -->|approved| G2{"GATE verify<br/>2 independent judges<br/>(run by orchestrator)"}
+    G2 -->|flojo/falta| DRAFT
+    G2 -->|cumple| GEN["Generate PDF/DOCX"]
+    GEN --> G3{"GATE validate<br/>validate_report + visual audit<br/>+ page-by-page inspection = VISUAL_PASS"}
+    G3 -->|body defect| DRAFT
+    G3 -->|tool defect| STOP(["Stop and report<br/>(fix the tool, never the approved body silently)"])
+
+    G3 -->|pass| D3[/"DECISION 3 - final OK on the exact PDF"/]
+    D3 -->|changes| DRAFT
+    D3 -->|OK| DEL["Deliver vNNN<br/>~/Documents/&lt;category&gt;/&lt;subject&gt;/&lt;slug&gt;/<br/>READY_TO_SUBMIT"]
+    DEL --> DONE([done])
+
+    classDef human fill:#fff4c2,stroke:#a80,color:#000
+    classDef gate fill:#e3f2ff,stroke:#2a6fb0,color:#000
+    classDef stop fill:#ffe0e0,stroke:#c00,color:#000
+    class D1,D2,D3,ASKV human
+    class G1,G2,G3 gate
+    class STOP stop
