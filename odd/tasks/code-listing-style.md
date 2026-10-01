@@ -9,5 +9,5 @@ and left half the page width empty.
 
 ## Tasks
 
-- [x] 1. Builder emits a styled `lstlisting` for fenced blocks (language mapped from the fence word), every LaTeX template loads the style, tests updated (RED → GREEN), real build checked. (commit: COMMITHASH)
+- [x] 1. Builder emits a styled `lstlisting` for fenced blocks (language mapped from the fence word), every LaTeX template loads the style, tests updated (RED → GREEN), real build checked. (commit: 5a5a2c2)
 - [ ] 2. Rebuild the ejercicio 1.5 PDF, re-validate, and present for final review.
