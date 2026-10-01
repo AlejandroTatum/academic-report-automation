@@ -1,10 +1,10 @@
 # Intake phase
 
-Executor: academic-report-builder
+Executor: academic-report-flow
 Artifact: `reports/<wf>/report.yml`
 
 Load this reference only when `doc_status` returns `next: intake`. The executor is
-`academic-report-builder`, using its own `references/document-intake.md` contract;
+`academic-report-flow`, using its own `references/document-intake.md` contract;
 this skill orchestrates and never re-implements intake.
 
 ## Contract
@@ -12,7 +12,7 @@ this skill orchestrates and never re-implements intake.
 Intake exists to turn a request into the one machine-readable record the whole route
 derives from: `reports/<wf>/report.yml`. The record uses the keys the pipeline
 actually reads; the full shape and its semantics live in
-`academic-report-builder/references/document-intake.md`.
+`academic-report-flow/references/document-intake.md`.
 
 The content-first route asks for the minimum only:
 

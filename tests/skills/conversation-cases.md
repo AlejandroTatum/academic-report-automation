@@ -1,4 +1,4 @@
-# Conversation cases — academic-report-builder
+# Conversation cases — academic-report-flow
 
 Behavioral cases for the routing contract. Static tests in
 `test_report_builder_routing.py` prove the rules are *written*; these cases prove

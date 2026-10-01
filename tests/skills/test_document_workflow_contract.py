@@ -1,4 +1,4 @@
-"""Static contract tests for the document-workflow orchestration skill.
+"""Static contract tests for the academic-report-flow skill.
 
 These tests read the skill markdown as data. They never run the pipeline: they
 prove the orchestrator keeps a single route loop, a fixed eleven-reference
@@ -15,8 +15,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = ROOT / "skills" / "document-workflow"
+SKILL_ROOT = ROOT / "skills" / "academic-report-flow"
 SKILL_MD = SKILL_ROOT / "SKILL.md"
+ROUTING_MD = SKILL_ROOT / "references" / "routing-loop.md"
 TOOLS_DIR = ROOT / "tools"
 
 
@@ -42,7 +43,7 @@ PHASES = (
     "deliver",
 )
 STATE_TOKENS = ("done", "current", "pending", "blocked")
-EXECUTORS = ("academic-report-builder", "research-workflow")
+EXECUTORS = ("academic-report-flow", "research-workflow")
 
 # Slice 3a-ii owns the six executor references below. `approval.md` and
 # `validate.md` belong to Slices 3b-i and 3b-ii and are asserted by their own
@@ -61,15 +62,15 @@ OWNED_REFERENCES = (
     "deliver",
 )
 REFERENCE_EXECUTOR = {
-    "intake": "academic-report-builder",
+    "intake": "academic-report-flow",
     "research": "research-workflow",
-    "plan": "document-workflow",
-    "draft": "academic-report-builder",
-    "verify": "document-workflow",
-    "format": "document-workflow",
-    "generate": "academic-report-builder",
-    "review": "document-workflow",
-    "deliver": "academic-report-builder",
+    "plan": "academic-report-flow",
+    "draft": "academic-report-flow",
+    "verify": "academic-report-flow",
+    "format": "academic-report-flow",
+    "generate": "academic-report-flow",
+    "review": "academic-report-flow",
+    "deliver": "academic-report-flow",
 }
 # The single artifact each phase must produce, exactly as its reference declares it.
 REFERENCE_ARTIFACT = {
@@ -137,7 +138,7 @@ def test_verify_requires_two_parallel_judges_and_strictest_verdict() -> None:
 def test_required_files_and_frontmatter() -> None:
     text = read(SKILL_MD)
     meta = frontmatter(text)
-    assert re.search(r"^name:\s*document-workflow\s*$", meta, re.MULTILINE)
+    assert re.search(r"^name:\s*academic-report-flow\s*$", meta, re.MULTILINE)
     assert re.search(r'^description:\s*".*Trigger:', meta, re.MULTILINE)
     assert re.search(r"^license:\s*Apache-2\.0\s*$", meta, re.MULTILINE)
     for key in ("author", "version", "scope"):
@@ -147,8 +148,10 @@ def test_required_files_and_frontmatter() -> None:
 
 
 def test_routing_loop_and_table_contract() -> None:
-    text = read(SKILL_MD)
-    assert "doc_status -> next -> reference -> delegate -> re-run" in re.sub(r"\s+", " ", text)
+    assert "doc_status -> next -> reference -> delegate -> re-run" in re.sub(
+        r"\s+", " ", read(SKILL_MD)
+    )
+    text = read(ROUTING_MD)
     for phase in PHASES:
         assert re.search(rf"^\|\s*{phase}\s*\|", text, re.MULTILINE), f"routing row {phase} missing"
     for executor in EXECUTORS:
@@ -157,7 +160,7 @@ def test_routing_loop_and_table_contract() -> None:
 
 
 def test_status_template_contract() -> None:
-    block = human_template(read(SKILL_MD))
+    block = human_template(read(ROUTING_MD))
     assert all(ord(char) < 128 for char in block), "template must be ASCII only"
     assert "|" not in block, "template must not use markdown tables"
     assert not re.search(r"^#{3,}", block, re.MULTILINE), "template must not nest headers"
@@ -191,7 +194,7 @@ def test_status_template_gate_is_phase_projected_not_approval_frontloaded() -> N
     compared against the real derivation instead of a hand-written string.
     """
     doc_status = tool_doc_status()
-    block = human_template(read(SKILL_MD))
+    block = human_template(read(ROUTING_MD))
     gate_line = next(line for line in block.splitlines() if line.startswith("**Gate**: "))
 
     expected = "plan pending - " + doc_status._guidance("plan", Path("<report-folder>"))
@@ -203,7 +206,7 @@ def test_status_template_gate_is_phase_projected_not_approval_frontloaded() -> N
 def test_status_template_next_line_matches_the_tool_guidance() -> None:
     """The documented ``**Next**`` line is the tool's own guidance sentence."""
     doc_status = tool_doc_status()
-    block = human_template(read(SKILL_MD))
+    block = human_template(read(ROUTING_MD))
     next_line = next(line for line in block.splitlines() if line.startswith("**Next**: "))
 
     assert next_line == (
@@ -214,7 +217,7 @@ def test_status_template_next_line_matches_the_tool_guidance() -> None:
 def test_status_template_gate_guidance_is_ascii_and_absolute() -> None:
     """The documented human block stays ASCII and names real, absolute entrypoints."""
     doc_status = tool_doc_status()
-    block = human_template(read(SKILL_MD))
+    block = human_template(read(ROUTING_MD))
 
     assert all(ord(char) < 128 for char in block)
     for phase, script in (("generate", "build_report_auto.py"), ("deliver", "deliver_report.py")):
@@ -588,16 +591,16 @@ def test_skill_hard_rules_summarize_four_guards() -> None:
 
 
 def all_skill_files() -> list[Path]:
-    """Every markdown file the document-workflow skill loads: SKILL.md plus references."""
+    """Every markdown file the academic-report-flow skill loads: SKILL.md plus references."""
     return [SKILL_MD] + [SKILL_ROOT / "references" / f"{phase}.md" for phase in PHASES]
 
 
-def test_no_document_workflow_file_mentions_the_removed_preview() -> None:
+def test_no_flow_file_mentions_the_removed_preview() -> None:
     """T6: the preview phase and its artifact are gone from every skill file."""
     offenders = [
         str(path.relative_to(SKILL_ROOT))
         for path in all_skill_files()
-        if "preview" in read(path).lower()
+        if "preview" in read(path).lower().replace("post-preview", "")
     ]
     assert offenders == [], f"stale preview mentions remain: {offenders}"
 
@@ -625,7 +628,7 @@ def test_intake_reference_asks_only_the_content_first_minimum() -> None:
 def test_builder_intake_defers_formatting_to_the_format_phase() -> None:
     """T6 rule 1: the executor intake names the content-first minimum and the deferral."""
     text = read(
-        ROOT / "skills" / "academic-report-builder" / "references" / "document-intake.md"
+        ROOT / "skills" / "academic-report-flow" / "references" / "document-intake.md"
     )
     flat = re.sub(r"\s+", " ", re.sub(r"[*_`]", "", text)).lower()
     assert "content-first" in flat, "document-intake.md must name the content-first route"

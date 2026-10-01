@@ -1,6 +1,6 @@
 # Verify - the hard content check
 
-Executor: document-workflow
+Executor: academic-report-flow
 Artifact: `reports/<wf>/content-check.yml`
 
 Load this reference only when `doc_status` returns `next: verify`. This skill executes

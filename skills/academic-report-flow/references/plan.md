@@ -1,6 +1,6 @@
 # Plan - the teacher's rubric as a machine-checkable plan
 
-Executor: document-workflow
+Executor: academic-report-flow
 Artifact: `reports/<wf>/rubric.yml`
 
 Load this reference only when `doc_status` returns `next: plan`. This skill executes

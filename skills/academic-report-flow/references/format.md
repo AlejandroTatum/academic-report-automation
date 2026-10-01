@@ -1,6 +1,6 @@
 # Format - APE, AA or libre
 
-Executor: document-workflow
+Executor: academic-report-flow
 Artifact: `reports/<wf>/report.yml`
 
 Load this reference only when `doc_status` returns `next: format`. This skill executes

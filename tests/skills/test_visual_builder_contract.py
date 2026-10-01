@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-REPORT_SKILL = ROOT / "skills" / "academic-report-builder" / "SKILL.md"
+REPORT_SKILL = ROOT / "skills" / "academic-report-flow" / "SKILL.md"
 VISUAL_ROOT = ROOT / "skills" / "academic-visual-builder"
 VISUAL_SKILL = VISUAL_ROOT / "SKILL.md"
 SCHEMA = VISUAL_ROOT / "references" / "figures-yml-schema.md"

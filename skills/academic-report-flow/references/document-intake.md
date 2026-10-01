@@ -4,9 +4,9 @@ Run this intake on **every** execution, before designing, structuring, drafting,
 
 Stop after asking. Do not pre-build, do not draft "while waiting", do not produce a provisional structure.
 
-## Content-first route (document-workflow)
+## Content-first route (academic-report-flow)
 
-When this intake runs under the document-workflow content-first route, ask only for
+When this intake runs under the academic-report-flow content-first route, ask only for
 the minimum: the title, the student, the teacher's guide and rubric material, and
 any teacher explanation. That route never asks formatting questions here: template,
 identity, delivery look, and the document format itself are decided at the `format`
@@ -209,4 +209,4 @@ min_sources: 1                # only when the teacher/requirement limits sources
 - No other key is added for these meanings: there is no top-level `audience:`, no
   `document_type:`, and no `visual_direction:` outside `metadata:`.
 
-The single confirmation gate does not live here. Intake records data only and never asks for approval to generate. Generation starts only after the one post-preview confirmation in `document-workflow/references/approval.md`.
+The single confirmation gate does not live here. Intake records data only and never asks for approval to generate. Generation starts only after the one post-preview confirmation in `academic-report-flow/references/approval.md`.

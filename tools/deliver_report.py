@@ -35,7 +35,7 @@ VALIDATION_RECEIPT = "validation.yml"
 FINAL_REVIEW_MARKER = "final-review.yml"
 
 # The full gate vocabulary the validate phase can grant, in the order
-# ``skills/document-workflow/references/validate.md`` names them. The
+# ``skills/academic-report-flow/references/validate.md`` names them. The
 # delivery message below reports exactly which of these the receipt
 # actually names, never a fixed phrase.
 KNOWN_GATES = ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW", "READY_TO_SUBMIT")

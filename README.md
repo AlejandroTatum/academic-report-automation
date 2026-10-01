@@ -34,7 +34,7 @@ There are two Markdown pipelines and they are not interchangeable.
 
 **`build_report_auto.py` is canonical for anything you intend to submit or
 ship.** It is the pipeline the agent skill mandates
-(`skills/academic-report-builder/references/automation-contract.md`), and it is
+(`skills/academic-report-flow/references/automation-contract.md`), and it is
 the only one that renders BibTeX citations, institutional covers and the
 validation gates.
 
@@ -218,7 +218,7 @@ routing contract never reaches a runtime.
 
 The agent document flow is content-first — intake, research, plan, draft, approval,
 verify, format, generate, validate, review, deliver — owned by
-`skills/document-workflow/` and drawn in
+`skills/academic-report-flow/` and drawn in
 [`docs/diagrams/new-report-flow.es.svg`](docs/diagrams/new-report-flow.es.svg)
 (rendered: [`new-report-flow.es.png`](docs/diagrams/new-report-flow.es.png)).
 

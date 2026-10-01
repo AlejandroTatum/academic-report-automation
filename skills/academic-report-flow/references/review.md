@@ -1,6 +1,6 @@
 # Review - the final human review
 
-Executor: document-workflow
+Executor: academic-report-flow
 Artifact: `reports/<wf>/final-review.yml`
 
 Load this reference only when `doc_status` returns `next: review`. This phase is the

@@ -1,10 +1,10 @@
 # Draft phase
 
-Executor: academic-report-builder
+Executor: academic-report-flow
 Artifact: `reports/<wf>/body.md`
 
 Load this reference only when `doc_status` returns `next: draft`. The executor is
-`academic-report-builder` in its composition role; this skill orchestrates the phase
+`academic-report-flow` in its composition role; this skill orchestrates the phase
 and never drafts the body itself.
 
 ## Contract

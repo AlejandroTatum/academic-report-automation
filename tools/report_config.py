@@ -122,7 +122,7 @@ OVERRIDABLE_SECTIONS = frozenset({"cover"})
 # ---------------------------------------------------------------------------
 #
 # `route:` in report.yml binds a report to one of the five routes defined in
-# skills/academic-report-builder/references/document-routing.md. It is a
+# skills/academic-report-flow/references/document-routing.md. It is a
 # CONTENT classification and is deliberately independent of `type:`/`backend:`
 # (LATEX_TYPES/VISUAL_TYPES/DOCX_TYPES above are BACKEND classifications: they
 # choose a renderer, they say nothing about whether the document is university

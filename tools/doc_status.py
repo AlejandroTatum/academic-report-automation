@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive the document-workflow phases from on-disk artifacts (read-only).
+"""Derive the academic-report-flow phases from on-disk artifacts (read-only).
 
 Slice 2c-i of the status layer: the phase vocabulary, the two value dataclasses,
 the eleven per-phase derivations, and the ``derive``/``main`` composition on top

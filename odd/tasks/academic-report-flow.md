@@ -29,8 +29,8 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 
 ## Tasks
 
-- [ ] 1. Record the as-is flow diagram and this plan. (docs)
-- [ ] 2. Mechanical merge: create `skills/academic-report-flow/` from both skills (git mv, no
+- [x] 1. Record the as-is flow diagram and this plan. (docs)
+- [x] 2. Mechanical merge: create `skills/academic-report-flow/` from both skills (git mv, no
       rule changes), repoint all contract tests, sibling skills (`research-workflow`,
       `academic-visual-builder`), `scripts/sync_skills.sh` SKILLS list, tool comments,
       README; delete the old dirs. Full `tests/skills` + `tools` tests green.
@@ -50,3 +50,6 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 ## Evidence
 
 (commit ids recorded per task)
+
+- Task 1: 9cccd7c
+- Task 2: mechanical merge into skills/academic-report-flow; `tests/skills tools` 1654 passed, 0 failed (RED before moves: 98 failed, 29 errors). SKILL.md body 906 tokens. Commit id: see git log subject `refactor(skills): merge document-workflow and academic-report-builder into academic-report-flow`.

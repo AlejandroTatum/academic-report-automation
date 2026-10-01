@@ -24,5 +24,5 @@ Source inventory (include eligibility/status for every entry):
 Bibliography-ready handoff (eligible entries only):
 Leads for follow-up (separate; not bibliography-eligible):
 Evidence gaps and unresolved questions:
-Handoff: Evidence package for academic-report-builder; not confirmed document intake or report prose.
+Handoff: Evidence package for academic-report-flow; not confirmed document intake or report prose.
 ```

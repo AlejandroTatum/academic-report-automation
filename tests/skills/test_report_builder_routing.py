@@ -1,4 +1,4 @@
-"""Static contract tests for the academic-report-builder skill.
+"""Static contract tests for the academic-report-flow skill.
 
 These tests read the skill markdown as data. They do not run the report
 pipeline. Their only job is to prove that the routing contract cannot
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SKILL_ROOT = Path(__file__).resolve().parents[2] / "skills" / "academic-report-builder"
+SKILL_ROOT = Path(__file__).resolve().parents[2] / "skills" / "academic-report-flow"
 REFERENCES = SKILL_ROOT / "references"
 
 SKILL_MD = SKILL_ROOT / "SKILL.md"
@@ -30,7 +30,7 @@ RESEARCH_ROOT = Path(__file__).resolve().parents[2] / "skills" / "research-workf
 RESEARCH_MD = RESEARCH_ROOT / "references" / "research-protocol.md"
 
 # The one human confirmation gate lives in the orchestrator skill, not in intake.
-APPROVAL_REFERENCE = "document-workflow/references/approval.md"
+APPROVAL_REFERENCE = "academic-report-flow/references/approval.md"
 
 ROUTE_SCOPED_FILES = (SKILL_MD, ROUTING_MD)
 
@@ -202,7 +202,7 @@ def test_single_confirmation_is_post_preview_and_traceable(intake: str) -> None:
     """Exactly one confirmation gate exists in the route, and intake defers to it.
 
     Intake records data only; the single gate is the post-preview approval
-    defined in document-workflow/references/approval.md.
+    defined in academic-report-flow/references/approval.md.
     """
     data = plain(intake)
     lowered = data.lower()
@@ -247,7 +247,7 @@ def test_skill_defers_single_confirmation_to_post_preview_approval(skill: str) -
     """SKILL.md must record intake data and never authorize generation at intake.
 
     The only confirmation gate is the post-preview approval owned by
-    `document-workflow/references/approval.md`.
+    `academic-report-flow/references/approval.md`.
     """
     assert APPROVAL_REFERENCE in skill, (
         "SKILL.md must forward-reference the single post-preview approval gate"
@@ -548,7 +548,7 @@ def test_generation_does_not_publish_and_delivery_is_explicit() -> None:
     )
     assert "Generation never publishes" in automation
 
-    workflow = Path(__file__).resolve().parents[2] / "skills" / "document-workflow" / "references"
+    workflow = Path(__file__).resolve().parents[2] / "skills" / "academic-report-flow" / "references"
     generate = read(workflow / "generate.md")
     assert "does not publish" in generate
     deliver = read(workflow / "deliver.md")
@@ -787,7 +787,7 @@ def test_workflow_intake_reference_names_the_record_keys() -> None:
     import yaml
 
     record = yaml.safe_load(intake_record_block())
-    workflow = read(REPO_ROOT / "skills" / "document-workflow" / "references" / "intake.md")
+    workflow = read(REPO_ROOT / "skills" / "academic-report-flow" / "references" / "intake.md")
 
     for key in record["metadata"]:
         assert f"metadata.{key}" in workflow, f"the workflow intake must name metadata.{key}"

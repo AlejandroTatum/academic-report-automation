@@ -1,4 +1,4 @@
-"""Shared pytest helpers for the document-workflow status suites.
+"""Shared pytest helpers for the academic-report-flow status suites.
 
 Every ``doc_status`` phase test starts from the same on-disk shapes, so the
 builders live here once instead of being copy-pasted per file. They are plain

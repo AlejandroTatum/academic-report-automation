@@ -130,4 +130,4 @@ The checked-in `config/academic-pipeline.yml` is only a backend/capability templ
 
 `REVIEW_REQUIRED` is a workflow state, not visual approval. Never pair it with `VISUAL_PASS` unless independent semantic inspection passed.
 
-`academic-report-builder` owns full document deliverables on every route, university work included. The `reporte` command is a quick wrapper for lab reports that prepares `report.yml`, `body.md`, and `sources.bib` for the same router. Use the wrapper only when Alejandro invokes `/reporte`; use this skill for profiles, non-lab formats, or more structured work.
+`academic-report-flow` owns full document deliverables on every route, university work included. The `reporte` command is a quick wrapper for lab reports that prepares `report.yml`, `body.md`, and `sources.bib` for the same router. Use the wrapper only when Alejandro invokes `/reporte`; use this skill for profiles, non-lab formats, or more structured work.

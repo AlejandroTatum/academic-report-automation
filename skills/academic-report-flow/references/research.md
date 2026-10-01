@@ -37,7 +37,7 @@ evidence-matrix.md` (and, once written, `research/evidence.yml`) carries claims,
 conflicts, and unresolved questions into the report, but neither file satisfies
 the phase on its own. The matrix is pre-document evidence, never confirmed
 document intake: it does not choose document type, structure, citation style, or
-prose. Document creation stays with `academic-report-builder`.
+prose. Document creation stays with `academic-report-flow`.
 
 Local inspected sources feed the bibliography: list them by stable locator from
 the local source library over `$REPORT_CONTENT_ROOT/academic-sources/manifest.yml`:

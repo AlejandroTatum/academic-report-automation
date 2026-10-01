@@ -904,7 +904,7 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
     ``tools/visual_builder.py validate`` is the isolated precheck; this is the
     mandatory, independent final-stage run the spec requires — neither
     substitutes for the other. Like every gate in this function, it never
-    grants ``VISUAL_PASS`` itself (see academic-report-builder/SKILL.md: no
+    grants ``VISUAL_PASS`` itself (see academic-report-flow/SKILL.md: no
     script, validator, or auditor ever does); it only blocks the earlier
     gates ``VISUAL_PASS`` depends on. An unresolved figure or unaudited SVG
     is reported, never silently skipped.
