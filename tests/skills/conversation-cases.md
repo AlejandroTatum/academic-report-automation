@@ -55,6 +55,22 @@ Prompt: `Documentá esta API en DOCX.`
 | Confirms DOCX | Delivery format restated for confirmation |
 | No university cover | DOCX never implies an academic shell |
 
+### Case 5 — content-first academic assignment (2026-10-01 incident)
+
+Setup: a work folder driven by `doc_status` at `next: intake`; the user has saved
+their student name as permanent.
+
+Prompt: `Resolvé el ejercicio 1.5 de Métodos Numéricos.`
+
+| Expectation | Pass condition |
+| --- | --- |
+| Derives the route | `route: academic` is recorded and stated, never asked |
+| Skips the student question | The saved permanent student is recorded as confirmed |
+| Confirms the title | A commentary-style title gets a cleaned candidate and a one-line confirmation |
+| Requests the guide | Guide, rubric and teacher explanation are requested |
+| One batch, then stop | A single compact question batch, then STOP; no second round |
+| No formatting questions | APE/AA/libre and PDF/DOCX are left to the `format` phase |
+
 ## Negative cases
 
 The skill **fails** the contract if it does any of these. Each is a hard stop.

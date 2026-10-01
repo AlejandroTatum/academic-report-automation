@@ -43,7 +43,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       invented); (c) guide/rubric/teacher-explanation always requested in content-first;
       (d) PDF/DOCX owned by the `format` phase; (e) triggers include exercise/homework/APE/AA.
       Keep `doc_status.py` guidance + `test_doc_status_guide.py` consistent.
-- [ ] 5. Docs: to-be flow diagram, README, conversation cases.
+- [x] 5. Docs: to-be flow diagram, README, conversation cases.
 - [ ] 6. (User decision) Install the unified skill into Claude/Codex/OpenCode/Pi runtimes and
       remove the two old skill dirs there.
 
@@ -71,3 +71,6 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   (description 240 chars), SKILL.md type prohibition now names the content-first route exception, de-garbled the
   doc_status.py student guidance sentence. Remaining suggestions (test substring strictness, duplicated scope note
   intake.md:66-73) left as minor follow-ups.
+- Rebased onto origin/main 54c7d01: Task 1 = 8435572, Task 2 = 302cdac, Task 3 = 9203619, Task 4 = 2a28625 + 8a39b50 (review lineages were bound to the pre-rebase trees).
+  Rebase side effect: the rebase's internal checkout of origin/main re-synced the old skills into ~/.claude/skills and ~/.codex/skills; they were trashed again.
+- Task 5: docs/diagrams/intake-flow.mmd (+ .png) to-be flow, as-is diagram marked historical, README "Document workflow" section, conversation case 5 (exercise 1.5 incident). `tests/skills tools` stays green. Commit recorded in git log.
