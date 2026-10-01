@@ -87,3 +87,6 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   `~/.pi/gentle-ai/skill-runtime/course-deliverables/academic-report-builder` left in place (no longer linked).
   Pi needs `/reload` to pick the change up.
 - Task 7: RED 3 failed / 1682 passed (new entry-rule contract tests); GREEN `tests/skills tools` 1685 passed, 0 failed. SKILL.md body 997 tokens. Commit: see git log (`fix(skills): create the work folder for new requests...`).
+- Task 7 review: review-0364c75be9645648 (1561238 + README 2f1057e) approved, burned. Advisory R3-same-document-criterion
+  fixed next commit (test-first, RED 1 -> GREEN): same-document criterion defined; a delivered match asks one
+  single-choice question (new suffixed version or resume) and never overwrites.

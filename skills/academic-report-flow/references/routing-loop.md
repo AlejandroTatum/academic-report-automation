@@ -7,8 +7,12 @@ first, so `doc_status` sees an empty folder (`next: intake`) and content-first i
 applies. The slug is lowercase ASCII kebab-case derived from the subject and assignment
 named in the request (e.g. `metodos-numericos-ejercicio-1-5`); if that folder already
 exists and belongs to a different document, append a numeric suffix. Never ask the user
-for the slug; state the folder in the intake summary. An existing folder for the same
-document is resumed, never recreated. The standalone full route applies only when the
+for the slug; state the folder in the intake summary. A folder is the same document when
+its `report.yml` names the same assignment (same `metadata.title`, or the same exercise or
+guide). The same document still in progress is resumed, never recreated. When the same
+document is already delivered (a current `final-review.yml` and a published version), ask
+one single-choice question: start a new version in a suffixed folder, or resume the
+delivered one; never overwrite a delivered folder. The standalone full route applies only when the
 work-folder flow is unavailable (no content root, or the user explicitly asks for a
 one-off document outside the reports flow).
 

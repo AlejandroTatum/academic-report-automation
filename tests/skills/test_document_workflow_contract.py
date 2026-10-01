@@ -889,6 +889,16 @@ def test_routing_loop_and_intake_agree_on_the_new_request_entry() -> None:
     assert "folder in the intake summary" in intake
 
 
+def test_existing_slug_folder_match_is_defined_and_asked_once() -> None:
+    """A matching folder is never silently resumed or overwritten when it may be a finished document."""
+    routing = _flat(SKILL_ROOT / "references" / "routing-loop.md")
+    assert "same document" in routing and "metadata.title" in routing
+    assert re.search(r"delivered[^.]*(ask|single-choice)", routing), (
+        "a delivered folder must trigger one single-choice question: new version or resume"
+    )
+    assert re.search(r"never overwrit", routing)
+
+
 def test_skill_body_stays_within_the_token_budget() -> None:
     body = read(SKILL_MD).split("---", 2)[2]
     assert len(body.split()) <= 1000
