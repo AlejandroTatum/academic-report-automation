@@ -10,9 +10,9 @@ exists and belongs to a different document, append a numeric suffix. Never ask t
 for the slug; state the folder in the intake summary. A folder is the same document when
 its `report.yml` names the same assignment (same `metadata.title`, or the same exercise or
 guide). The same document still in progress is resumed, never recreated. When the same
-document is already delivered (a current `final-review.yml` and a published version), ask
-one single-choice question: start a new version in a suffixed folder, or resume the
-delivered one; never overwrite a delivered folder. The standalone full route applies only when the
+document is already delivered, ask one single-choice question: start a new version in a
+suffixed folder, or resume the delivered one; never overwrite a delivered folder.
+Delivered means a current `final-review.yml` plus a published version. The standalone full route applies only when the
 work-folder flow is unavailable (no content root, or the user explicitly asks for a
 one-off document outside the reports flow).
 
