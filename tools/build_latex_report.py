@@ -255,6 +255,71 @@ def convert_inline(text: str) -> str:
 
 # Fenced code blocks: ``` or ~~~ (three or more), with an optional language
 # word. Anything between an opening fence and its closing fence is literal.
+# Fence language word -> listings language. Anything absent renders plain
+# (still styled): a wrong guess would colour code as the wrong language.
+LISTING_LANGUAGES = {
+    "octave": "Octave",
+    "matlab": "Matlab",
+    "python": "Python",
+    "py": "Python",
+    "bash": "bash",
+    "sh": "bash",
+    "shell": "bash",
+    "zsh": "bash",
+    "c": "C",
+    "c++": "C++",
+    "cpp": "C++",
+    "java": "Java",
+    "sql": "SQL",
+    "html": "HTML",
+    "xml": "XML",
+    "javascript": "Java",
+    "js": "Java",
+    "r": "R",
+    "tex": "TeX",
+    "latex": "[LaTeX]TeX",
+}
+
+# The one definition of the code look, injected through {{LISTING_PREAMBLE}}
+# after xcolor in every template. UTF-8 comes from XeLaTeX itself;
+# extendedchars keeps listings from splitting multibyte accents.
+LISTING_PREAMBLE = r"""\usepackage{listings}
+\definecolor{codebg}{gray}{0.955}
+\definecolor{coderule}{RGB}{90,110,140}
+\definecolor{codenum}{gray}{0.5}
+\definecolor{codekw}{RGB}{30,50,110}
+\definecolor{codecomment}{gray}{0.45}
+\definecolor{codestring}{RGB}{135,40,40}
+\lstdefinestyle{reportcode}{
+  basicstyle=\small\ttfamily,
+  backgroundcolor=\color{codebg},
+  frame=leftline,
+  rulecolor=\color{coderule},
+  framerule=1.4pt,
+  xleftmargin=2.6em,
+  framexleftmargin=2.4em,
+  xrightmargin=0pt,
+  framexrightmargin=0pt,
+  framesep=0.6em,
+  numbers=left,
+  numbersep=0.7em,
+  numberstyle=\tiny\ttfamily\color{codenum},
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{codenum}{\tiny$\hookrightarrow$}\space},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  extendedchars=true,
+  aboveskip=1.1em,
+  belowskip=0.9em,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestring},
+}"""
+
+
 CODE_FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})\s*(?P<language>[^`]*)$")
 # Headings the templates already print by themselves through \printbibliography.
 BIBLIOGRAPHY_HEADINGS = {"bibliografia", "referencias", "references", "bibliography"}
@@ -460,15 +525,14 @@ def markdown_to_latex(
             output.append(rf"\begin{{{env}}}")
             list_stack.append((indent, env))
 
-    def render_code_block(code_lines: list[str]) -> None:
-        r"""Emit a fenced block as page-breakable verbatim.
+    def render_code_block(code_lines: list[str], language: str = "") -> None:
+        r"""Emit a fenced block as a styled, page-breakable ``lstlisting``.
 
-        ``verbatim`` belongs to the LaTeX kernel, so this adds no package the
-        templates would have to load, and it breaks between its own lines
-        instead of overflowing the page as one atomic box. The content is
+        The look lives in ``LISTING_PREAMBLE`` (injected into every template),
+        so this only picks the style and the listings language. The content is
         emitted untouched — neither ``latex_escape()`` nor ``convert_inline()``
-        may run over it — except for a literal ``\end{verbatim}``, which would
-        otherwise close the environment from the inside.
+        may run over it — except for a literal ``\end{lstlisting}``, which
+        would otherwise close the environment from the inside.
         """
         block = list(code_lines)
         while block and not block[0].strip():
@@ -477,19 +541,14 @@ def markdown_to_latex(
             block.pop()
         if not block:
             return
-        # verbatim never wraps a long line, so the font size sets the usable
-        # column count. \footnotesize fits ~89 monospace columns in the A4
-        # text block; \small stops at ~79 and pushes a plain 80-column source
-        # line into the margin.
+        options = ["style=reportcode"]
+        lst_language = LISTING_LANGUAGES.get(language.split()[0].lower()) if language.split() else None
+        if lst_language:
+            options.append(f"language={lst_language}")
+        output.append(rf"\begin{{lstlisting}}[{', '.join(options)}]")
+        output.extend(line.rstrip().replace(r"\end{lstlisting}", r"\end {lstlisting}") for line in block)
         output.extend([
-            r"\begingroup",
-            r"\footnotesize",
-            r"\begin{verbatim}",
-        ])
-        output.extend(line.rstrip().replace(r"\end{verbatim}", r"\end {verbatim}") for line in block)
-        output.extend([
-            r"\end{verbatim}",
-            r"\endgroup",
+            r"\end{lstlisting}",
             "",
         ])
 
@@ -547,7 +606,7 @@ def markdown_to_latex(
                 i += 1
                 continue
             flush_paragraph(); close_list()
-            render_code_block(lines[i + 1 : closing])
+            render_code_block(lines[i + 1 : closing], fence.group("language").strip())
             i = closing + 1
             continue
 
@@ -987,6 +1046,7 @@ def render_tex(config: ReportConfig) -> str:
         "{{AI_DECLARATION}}": ai_declaration_latex,
         "{{AI_SIGNATURE}}": ai_signature_latex,
         "{{AFTER_BIBLIOGRAPHY}}": after_bibliography_latex,
+        "{{LISTING_PREAMBLE}}": LISTING_PREAMBLE,
         "{{BODY}}": body,
         # Emission is citation-driven (#26): only a body that actually cites
         # the .bib file prints the bibliography (and its template title).

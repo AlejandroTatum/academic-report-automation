@@ -335,7 +335,7 @@ def test_sentinel_begin_without_end_fails_closed(tmp_path, monkeypatch):
 
 
 def test_body_sentinel_lookalike_does_not_confuse_cover_stripping(tmp_path):
-    """A fenced code block renders as raw, unescaped verbatim text -- unlike
+    """A fenced code block renders as raw, unescaped listing text -- unlike
     every other body construct, which latex_escape() would neutralise. A
     literal sentinel-lookalike line inside it must never be read as a real
     marker: the scan stays inside \\begin{titlepage}...\\end{titlepage}.
