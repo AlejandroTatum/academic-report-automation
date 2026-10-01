@@ -1,0 +1,42 @@
+%% Current (as-is) intake flow, 2026-10-01. Evidence: skills/document-workflow, skills/academic-report-builder.
+flowchart TD
+    REQ["User request<br/>e.g. 'solve exercise 1.5'"] --> TRIG{"Which skill triggers?<br/>(no keyword matches either:<br/>model judgement - GAP)"}
+    TRIG -->|document-workflow| STATUS["doc_status.py on reports/&lt;folder&gt;/<br/>route by 'next' token"]
+    TRIG -->|academic-report-builder standalone| LOADI
+    STATUS -->|"next = intake"| DELEG["document-workflow references/intake.md<br/>delegates to academic-report-builder"]
+    DELEG --> LOADI["Load document-intake.md<br/>EVERY execution<br/>prompt / memory = proposal, never confirmation"]
+
+    LOADI --> MODE{"Running under<br/>content-first route?"}
+
+    MODE -->|yes| CF1["Ask: document type / route<br/>(intake.md:18,44 requires it;<br/>document-intake.md:11 minimum omits it - CONTRADICTION)"]
+    CF1 --> CF2["Ask: title"]
+    CF2 --> CF3["Ask: student<br/>(Alejandro Padilla only suggested,<br/>never auto-filled, even if saved in memory)"]
+    CF3 --> CF4["Request: teacher guide, rubric,<br/>teacher explanation<br/>(skipped in the observed run)"]
+    CF4 --> CFSTOP(["STOP and wait for answers"])
+    CFSTOP --> CFREC["Write report.yml<br/>audience/purpose/visual/template/cover/output<br/>derived, never asked"]
+
+    MODE -->|no: full route| C1["C1 Document type (5 options)<br/>never auto-selected"]
+    C1 --> C2["C2 Audience + purpose"]
+    C2 --> C3["C3 Template + identity / members"]
+    C3 --> CS["Mandatory structure (rubric / sections)"]
+    CS --> C4["C4 Delivery format PDF / DOCX / both"]
+    C4 --> C5["C5 Visual direction"]
+    C5 --> FSTOP(["STOP and wait for answers"])
+    FSTOP --> CFREC
+
+    CFREC --> IDONE{"route known AND<br/>title + student real?"}
+    IDONE -->|no| PEND["intake = pending<br/>(unknown route = blocked)"] --> LOADI
+    IDONE -->|yes| RES["research: >= 5 IEEE sources"]
+    RES --> PLAN["plan: rubric.yml"] --> DRAFT["draft: body.md"]
+    DRAFT --> APPR{"Human gate 1: approval<br/>approval.yml body_sha256"}
+    APPR -->|body.md edited| DRAFT
+    APPR -->|approved| VER["verify: content-check.yml"]
+    VER --> FMT["format: APE / AA / libre<br/>(PDF vs DOCX has no owner - GAP)"]
+    FMT --> GEN["generate PDF"] --> VAL["validate: validation.yml"]
+    VAL --> REV{"Human gate 2: final review<br/>final-review.yml"}
+    REV --> DEL["deliver: ~/Documents/&lt;cat&gt;/&lt;slug&gt;/&lt;slug&gt;-vNNN.pdf"] --> DONE([done])
+
+    classDef gap fill:#ffe0e0,stroke:#c00,color:#000
+    classDef stop fill:#fff4c2,stroke:#a80,color:#000
+    class TRIG,CF1,CF4,FMT gap
+    class CFSTOP,FSTOP,APPR,REV stop
