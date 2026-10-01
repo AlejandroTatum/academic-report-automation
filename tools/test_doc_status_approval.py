@@ -12,14 +12,76 @@ from __future__ import annotations
 
 from pathlib import Path
 
+
+def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path) -> None:
+    import yaml
+    import doc_status
+    from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
+    _approval(folder)
+    _content_check(folder)
+    marker_path = folder / "content-check.yml"
+    marker = yaml.safe_load(marker_path.read_text())
+    legacy = {key: marker[key] for key in (
+        "schema", "body_sha256", "checked_at", "criteria", "findings", "mechanical", "result"
+    )}
+    legacy["mechanical"] = [entry for entry in marker["mechanical"] if entry["check"] != "rubric_checks"]
+    marker_path.write_text(yaml.safe_dump(legacy))
+    status = doc_status.derive(folder)
+    verify = doc_status._phase_verify(folder, None, None)
+    assert verify.state == doc_status.PENDING
+    assert "TWO independent judges" in status.gate
+    assert "--judgments a.yml --judgments b.yml" in status.gate
+    assert "malformed" not in status.gate
+
+
+def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Path) -> None:
+    import doc_status
+    from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
+    _approval(folder)
+    _content_check(folder, mechanical=[])
+    status = doc_status.derive(folder)
+    assert "TWO independent judges" in status.gate
+    assert "--judgments a.yml --judgments b.yml" in status.gate
+    assert "content_check.py" in status.gate
+
+
+def test_failed_verify_guidance_requires_user_orders_and_reapproval(tmp_path: Path) -> None:
+    import doc_status
+    from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _body(folder)
+    _approval(folder)
+    _content_check(folder, result="fail", criteria=[{"id": "objetivo", "status": "flojo"}, {"id": "metodologia", "status": "cumple"}])
+    status = doc_status.derive(folder)
+    assert "user's literal edit orders" in status.gate
+    assert "re-approve" in status.gate
+    assert "run the check" not in status.gate
+
+
 import doc_status
 from conftest import (
     _approval,
     _body,
     _config,
     _marker_text,
-    _preview,
     _report,
+    _sources_bib,
 )
 
 
@@ -27,7 +89,6 @@ def test_approval_absent_is_pending_not_blocked(tmp_path: Path) -> None:
     """A missing marker is ordinary progress, so later phases wait, not abort."""
     folder = tmp_path / "wf"
     _report(folder)
-    _preview(folder)
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
@@ -48,41 +109,43 @@ def test_approval_current_is_done(tmp_path: Path) -> None:
     assert phase.state == doc_status.DONE
     assert phase.blocked_reason == ""
     assert phase.state != doc_status.BLOCKED
-    # The marker binds both preview.md and body.md (approval_marker.py
-    # REQUIRED_KEYS); the detail must name both, not just the file it used to
-    # bind before body_sha256 was added.
-    assert "preview.md" in phase.detail
+    # The marker binds exactly one artifact, body.md (approval_marker.py
+    # REQUIRED_KEYS); the detail must name it and nothing else.
     assert "body.md" in phase.detail
+    assert "preview.md" not in phase.detail
 
 
-def test_approval_stale_hash_is_blocked_with_stale_reason(tmp_path: Path) -> None:
+def test_approval_body_hash_mismatch_is_pending_for_reapproval(tmp_path: Path) -> None:
+    """A body edited after approval routes back to approval, never blocks the route."""
     folder = tmp_path / "wf"
     _report(folder)
-    _approval(folder, preview_sha256="0" * 64)
+    _approval(folder, body_sha256="0" * 64)
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
-    assert phase.state == doc_status.BLOCKED
-    assert phase.blocked_reason == "approval_marker_stale"
-    assert "approval.yml" in phase.detail
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+    assert "body.md" in phase.detail
+    assert "re-approve" in phase.detail
     assert phase.state != doc_status.DONE
 
 
-def test_approval_preview_edited_after_approval_is_blocked(tmp_path: Path) -> None:
-    """TRIANGULATE: editing the preview after approval invalidates the marker."""
+def test_approval_unrelated_edit_after_approval_stays_done(tmp_path: Path) -> None:
+    """TRIANGULATE: the marker binds only body.md; editing an unrelated artifact
+    (sources.bib) is not an approval event, so the phase stays done."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
-    _preview(folder, "# Content Preview: Informe\n\nOtro cuerpo.\n")
+    _sources_bib(folder, count=6)
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
-    assert phase.state == doc_status.BLOCKED
-    assert phase.blocked_reason == "approval_marker_stale"
+    assert phase.state == doc_status.DONE
+    assert phase.blocked_reason == ""
 
 
-def test_approval_body_edited_after_approval_is_blocked(tmp_path: Path) -> None:
-    """TRIANGULATE: editing body.md after approval invalidates the marker."""
+def test_approval_body_edited_after_approval_is_pending(tmp_path: Path) -> None:
+    """TRIANGULATE: editing body.md after approval sends the route back to approval."""
     folder = tmp_path / "wf"
     _report(folder)
     _approval(folder)
@@ -90,8 +153,9 @@ def test_approval_body_edited_after_approval_is_blocked(tmp_path: Path) -> None:
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
-    assert phase.state == doc_status.BLOCKED
-    assert phase.blocked_reason == "approval_marker_stale"
+    assert phase.state == doc_status.PENDING
+    assert phase.blocked_reason == ""
+    assert "re-approve" in phase.detail
 
 
 def test_approval_marker_without_body_hash_is_malformed(tmp_path: Path) -> None:
@@ -134,8 +198,7 @@ def test_approval_unparsable_marker_is_malformed_not_absent(tmp_path: Path) -> N
     """TRIANGULATE: a bad marker is named, never silently treated as absent."""
     folder = tmp_path / "wf"
     _report(folder)
-    _preview(folder)
-    _marker_text(folder, "preview_sha256: [unclosed\n")
+    _marker_text(folder, "body_sha256: [unclosed\n")
 
     phase = doc_status._phase_approval(folder, _config(folder), None)
 
@@ -147,7 +210,7 @@ def test_approval_derivation_never_repairs_the_marker(tmp_path: Path) -> None:
     """A stale or malformed marker is data the tool reports, never rewrites."""
     folder = tmp_path / "wf"
     _report(folder)
-    marker = _approval(folder, preview_sha256="0" * 64)
+    marker = _approval(folder, body_sha256="0" * 64)
     before = marker.read_bytes()
 
     doc_status._phase_approval(folder, _config(folder), None)

@@ -1,0 +1,154 @@
+% APE (Actividad Práctico-Experimental) report template — a LaTeX replica of
+% the teacher's Word template "Reporte técnico (estudiante)". Facts extracted
+% from the DOCX (odd/tasks/new-report-flow.md, T4):
+%   * A4 portrait; nominal margins top/bottom 2.5cm, left/right 3.0cm. The
+%     2cm-tall header logo starting 1.25cm from the paper edge pushes the Word
+%     body below the nominal top margin, so `top` here is 2.5cm + the header
+%     zone (1.25cm head start + 2.05cm head height + 0.45cm head separation):
+%     the rendered result matches the DOCX, not its nominal margin field.
+%   * No cover page and no visible page number: a header on every page with
+%     the faculty logo at the left and "FEIRNNR - Carrera de Computación" at
+%     the right, above a thin horizontal rule. No footer at all.
+%   * Body font Montserrat 10.5pt, justified, 3pt around paragraphs.
+%   * Title font "Play" at ~26pt, not bold.
+%   * Level-1 headings 14pt bold in the faculty's petrol blue (#0F4761),
+%     numbered "1. ..." by LaTeX numbering (the teacher types the same
+%     numbers manually in Word).
+%   * Section 1 is the identification table the renderer generates from
+%     metadata; the remaining fixed sections are authored in body.md; annexes
+%     render after the bibliography through the renderer's after-bibliography
+%     slot, as in the teacher's document.
+
+\documentclass[10pt,a4paper]{article}
+
+% 10.5pt body: the teacher's DOCX uses a size between the class's 10pt and
+% 11pt options, so the base size is scaled explicitly.
+\usepackage[fontsize=10.5pt]{fontsize}
+\usepackage[a4paper,top=3.75cm,bottom=2.5cm,left=3.0cm,right=3.0cm,headheight=2.05cm,headsep=0.45cm]{geometry}
+\usepackage{fontspec}
+% Body face: the teacher's template uses Montserrat, a free Google font that
+% is not part of TeX Live and often missing from the system. When it is not
+% installed we fall back to TeX Gyre Heros, the same sans fallback the other
+% templates already rely on.
+\IfFontExistsTF{Montserrat}{\setmainfont{Montserrat}[Ligatures=TeX]}{\setmainfont{TeX Gyre Heros}[Ligatures=TeX]}
+% Title face: the DOCX asks for "Play"; the same sans fallback applies when it
+% is not installed.
+\IfFontExistsTF{Play}{\newfontfamily\apetitlefont{Play}[Ligatures=TeX]}{\newfontfamily\apetitlefont{TeX Gyre Heros}[Ligatures=TeX]}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{needspace}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage[section]{placeins}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{ragged2e}
+\usepackage{fancyhdr}
+\usepackage{csquotes}
+\usepackage[backend=biber,style=ieee,sorting=none,hyperref=true]{biblatex}
+\usepackage[table]{xcolor}
+\usepackage{ifthen}
+\usepackage[hidelinks]{hyperref}
+% xurl permits breaks throughout long URL and nolinkurl runs.
+\usepackage{xurl}
+
+\newcommand{\reporthasbib}{{{HAS_BIB}}}
+\ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
+
+% Justified text with the teacher's 3pt paragraph separation and no first-line
+% indent. Unlike the institutional templates (onehalfspacing), the replica
+% keeps single line spacing, as in the Word original.
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\raggedbottom
+\emergencystretch=3em
+\setlist[itemize]{topsep=3pt,itemsep=2pt,leftmargin=1.1cm}
+\captionsetup{font=small,labelfont=bf,justification=centering}
+\renewcommand{\figurename}{Figura}
+
+% Level-1 headings: 14pt bold in the faculty's petrol blue, numbered "1. ..."
+% (LaTeX numbering renders exactly the numbers the teacher types in Word).
+\definecolor{apeheading}{HTML}{0F4761}
+\titleformat{\section}{\normalfont\bfseries\fontsize{14}{17}\selectfont\color{apeheading}}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalfont\bfseries\fontsize{12}{15}\selectfont\color{apeheading}}{\thesubsection.}{0.6em}{}
+\titleformat{\subsubsection}{\normalfont\bfseries\normalsize\color{apeheading}}{\thesubsubsection.}{0.6em}{}
+\titlespacing*{\section}{0pt}{14pt}{8pt}
+\titlespacing*{\subsection}{0pt}{11pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{9pt}{5pt}
+
+% Boxed environment used by the Markdown converter for highlighted answers.
+\newsavebox{\answerboxbox}
+\newenvironment{answerbox}{%
+  \par\medskip\noindent
+  \setlength{\fboxsep}{10pt}%
+  \begin{lrbox}{\answerboxbox}%
+  \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}%
+  \vspace{4pt}%
+}{%
+  \vspace{4pt}%
+  \end{minipage}%
+  \end{lrbox}%
+  \fcolorbox{gray!50!black}{gray!5!white}{\usebox{\answerboxbox}}%
+  \par\medskip
+}
+
+% Header on every page: faculty logo at the left, career text at the right,
+% thin rule underneath. No footer, so no page number is shown anywhere.
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\includegraphics[height=2.0cm]{{{APE_LOGO_PATH}}}}%
+\fancyhead[R]{\parbox[b][1.9cm][c]{6.5cm}{\raggedleft\small FEIRNNR - Carrera de Computación\par}}%
+\renewcommand{\headrulewidth}{0.4pt}
+
+\hypersetup{
+  pdftitle={{{APE_TITLE}}},
+  pdfauthor={{{STUDENT}}},
+  pdfsubject={{{SUBJECT}}},
+  colorlinks=false,
+  pdfborder={0 0 0}
+}
+
+\begin{document}
+
+% No cover page: the fixed title sits at the top of page 1, above the
+% identification section. ~26pt in the Play face, never bold.
+\begin{center}
+  {\apetitlefont\fontsize{26}{31}\selectfont {{APE_TITLE}}\par}
+\end{center}
+\vspace{0.35cm}
+
+% Section 1 is generated: heading plus the metadata table the renderer fills.
+\section{Datos de Identificación del Estudiante y la Práctica}
+
+{{IDENTIFICATION_TABLE}}
+
+\vspace{0.5cm}
+
+{{FRONT_MATTER}}
+
+{{AI_SIGNATURE}}
+
+{{BODY}}
+
+\ifthenelse{\equal{\reporthasbib}{true}}{
+\Needspace{6\baselineskip}
+{{PRINT_BIBLIOGRAPHY}}
+}{}
+
+% The renderer fills AFTER_BIBLIOGRAPHY with the `# Anexos` chunk it split off
+% body.md, so the annexes render after the IEEE bibliography, as in the
+% teacher's document.
+{{AFTER_BIBLIOGRAPHY}}
+
+% The renderer fills FRONT_MATTER with the very same block it puts in
+% AI_DECLARATION (the plain-report.tex mechanism), so the declaration is
+% printed once above and the duplicate is captured here instead of being
+% typeset twice.
+\long\def\reportaideclarationalias{{{AI_DECLARATION}}}
+
+\end{document}

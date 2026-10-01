@@ -17,6 +17,7 @@ if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
 from build_latex_report import (
+    APE_LOGO_FILENAME,
     ASSETS_DIR,
     BACKGROUND_FILENAME,
     EXPECTED_ASSETS,
@@ -147,26 +148,27 @@ class TestValidateAssetsExist:
         """When an asset file is missing, validate_assets_exist reports it."""
         with tempfile.TemporaryDirectory() as tmp:
             fake_assets = Path(tmp)
-            # Create only one of the three expected assets (> 1000 bytes to pass size check)
+            # Create only one of the four expected assets (> 1000 bytes to pass size check)
             content = "x" * 2000
             (fake_assets / LOGO_FILENAME).write_text(content, encoding="utf-8")
             monkeypatch.setattr("build_latex_report.ASSETS_DIR", fake_assets)
             errors = validate_assets_exist()
-            # Two missing: BACKGROUND_FILENAME + PLAIN_LOGO_FILENAME
-            assert len(errors) == 2
+            # Three missing: BACKGROUND_FILENAME + PLAIN_LOGO_FILENAME + APE_LOGO_FILENAME
+            assert len(errors) == 3
             assert BACKGROUND_FILENAME in errors[0] or BACKGROUND_FILENAME in errors[1]
 
     def test_empty_asset_reports_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An asset smaller than 1000 bytes should generate a warning-level error."""
         with tempfile.TemporaryDirectory() as tmp:
             fake_assets = Path(tmp)
-            # Create all three expected assets as tiny files
+            # Create all four expected assets as tiny files
             (fake_assets / LOGO_FILENAME).write_text("x", encoding="utf-8")
             (fake_assets / BACKGROUND_FILENAME).write_text("y", encoding="utf-8")
             (fake_assets / PLAIN_LOGO_FILENAME).write_text("z", encoding="utf-8")
+            (fake_assets / APE_LOGO_FILENAME).write_text("w", encoding="utf-8")
             monkeypatch.setattr("build_latex_report.ASSETS_DIR", fake_assets)
             errors = validate_assets_exist()
-            assert len(errors) == 3  # all three are suspiciously small
+            assert len(errors) == 4  # all four are suspiciously small
             assert all("sospechosamente pequeño" in e for e in errors)
 
 
@@ -190,14 +192,14 @@ class TestValidateReportAssetValidation:
 
         with tempfile.TemporaryDirectory() as tmp:
             fake_assets = Path(tmp)
-            # Create only one of three expected assets (> 1000 bytes to pass size check)
+            # Create only one of four expected assets (> 1000 bytes to pass size check)
             (fake_assets / LOGO_FILENAME).write_text("x" * 2000, encoding="utf-8")
             monkeypatch.setattr(blr, "ASSETS_DIR", fake_assets)
 
             config = ReportConfig(folder=Path("/tmp/fake"), raw={"type": "essay"})
             result = asset_validation(config)
-            # Two missing: BACKGROUND_FILENAME + PLAIN_LOGO_FILENAME
-            assert len(result.errors) == 2
+            # Three missing: BACKGROUND_FILENAME + PLAIN_LOGO_FILENAME + APE_LOGO_FILENAME
+            assert len(result.errors) == 3
             assert BACKGROUND_FILENAME in " ".join(result.errors)
 
     def test_non_latex_backend_still_validates_assets(self) -> None:

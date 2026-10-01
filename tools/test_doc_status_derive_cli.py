@@ -16,7 +16,15 @@ import hashlib
 from pathlib import Path
 
 import doc_status
-from conftest import _approval, _body, _pdf, _preview, _report, _skip_research
+from conftest import (
+    _approval,
+    _body,
+    _marker_text,
+    _pdf,
+    _report,
+    _rubric,
+    _sources_bib,
+)
 
 
 def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
@@ -35,10 +43,10 @@ def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
 
 
 def _working_folder(folder: Path) -> Path:
-    """Build a folder that reaches the approval phase: report, research, preview, body."""
+    """Build a folder that reaches the approval phase: report, research, plan, body."""
     _report(folder)
-    _skip_research(folder)
-    _preview(folder)
+    _sources_bib(folder)
+    _rubric(folder)
     _body(folder)
     return folder
 
@@ -96,20 +104,26 @@ def test_derive_fresh_folder_focus_is_intake_and_later_phases_pending(tmp_path: 
     assert all(phase.state == doc_status.PENDING for phase in status.phases[1:])
 
 
-def test_derive_focuses_on_draft_when_preview_done_and_body_missing(tmp_path: Path) -> None:
-    """Acceptance: preview.md present with no body.md routes to ``next: draft``."""
+def test_derive_focuses_on_draft_when_plan_done_and_body_missing(tmp_path: Path) -> None:
+    """Acceptance: rubric.yml present with no body.md routes to ``next: draft``."""
     folder = tmp_path / "wf"
     _report(folder)
-    _skip_research(folder)
-    _preview(folder)
+    _sources_bib(folder)
+    _rubric(folder)
 
     status = doc_status.derive(folder)
 
-    states = {phase.name: phase.state for phase in status.phases}
-    assert states["preview"] == doc_status.DONE
+    states = {phase.name for phase in status.phases}
+    assert states == set(doc_status.PHASES)
+    plan = next(phase for phase in status.phases if phase.name == "plan")
+    assert plan.state == doc_status.DONE
     assert status.current == "draft"
     assert status.next_token == "draft"
-    assert all(states[name] == doc_status.PENDING for name in doc_status.PHASES[4:])
+    assert all(
+        phase.state == doc_status.PENDING
+        for phase in status.phases
+        if phase.name in doc_status.PHASES[doc_status.PHASES.index("draft") + 1 :]
+    )
 
 
 def test_derive_projects_first_incomplete_phase_as_current(tmp_path: Path) -> None:
@@ -142,23 +156,22 @@ def test_derive_resolves_the_work_folder_so_guidance_is_absolute(
     assert str(folder) in status.gate
 
 
-def test_derive_keeps_focus_on_blocked_phase_and_forces_later_phases_pending(
+def test_derive_keeps_focus_on_stale_approval_and_forces_later_phases_pending(
     tmp_path: Path,
 ) -> None:
-    """A stale approval stops the route even when a newer PDF already exists."""
+    """A stale approval keeps the route waiting at approval, not blocked."""
     folder = _working_folder(tmp_path / "wf")
-    _approval(folder, preview_sha256="0" * 64)
+    _approval(folder, body_sha256="0" * 64)
     _pdf(folder)
 
     status = doc_status.derive(folder)
 
     states = {phase.name: phase.state for phase in status.phases}
-    assert states["approval"] == doc_status.BLOCKED
-    assert "approval_marker_stale" in status.blocked_reasons
+    assert states["approval"] == doc_status.CURRENT
+    assert status.blocked_reasons == ()
     assert status.current == "approval"
     assert status.next_token == "approval"
-    assert status.gate.startswith("approval blocked - ")
-    assert states["generate"] != doc_status.DONE
+    assert status.gate.startswith("approval pending - ")
     assert all(
         states[name] == doc_status.PENDING for name in ("generate", "validate", "deliver")
     )
@@ -174,20 +187,29 @@ def test_derive_wraps_unexpected_exception_as_blocked_never_done(
     def _boom(*_args: object, **_kwargs: object) -> doc_status.PhaseState:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(doc_status, "_phase_preview", _boom)
+    monkeypatch.setattr(doc_status, "_phase_plan", _boom)
 
     status = doc_status.derive(folder)
 
-    preview = next(phase for phase in status.phases if phase.name == "preview")
+    plan = next(phase for phase in status.phases if phase.name == "plan")
     states = {phase.name: phase.state for phase in status.phases}
-    assert preview.state == doc_status.BLOCKED
-    assert preview.state != doc_status.DONE
-    assert preview.blocked_reason == "derivation_error"
-    assert "boom" in preview.detail
-    assert status.current == "preview"
-    assert status.next_token == "preview"
+    assert plan.state == doc_status.BLOCKED
+    assert plan.state != doc_status.DONE
+    assert plan.blocked_reason == "derivation_error"
+    assert "boom" in plan.detail
+    assert status.current == "plan"
+    assert status.next_token == "plan"
     assert all(
-        states[name] == doc_status.PENDING for name in ("approval", "generate", "validate", "deliver")
+        states[name] == doc_status.PENDING
+        for name in (
+            "approval",
+            "verify",
+            "format",
+            "generate",
+            "validate",
+            "review",
+            "deliver",
+        )
     )
 
 
@@ -288,7 +310,7 @@ def test_main_derivable_folder_exits_zero_and_creates_nothing(tmp_path: Path, ca
 def test_main_blocked_phase_still_exits_zero(tmp_path: Path, capsys) -> None:
     """TRIANGULATE: a blocked phase is data, not a process failure."""
     folder = _working_folder(tmp_path / "wf")
-    _approval(folder, preview_sha256="0" * 64)
+    _marker_text(folder, "body_sha256: [unclosed\n")
 
     rc = doc_status.main([str(folder)])
 

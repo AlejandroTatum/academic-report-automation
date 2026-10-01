@@ -87,6 +87,32 @@ DOCX_TYPES = {"docx", "word", "docx_required", "plantilla_word"}
 # Sentinel telling "key absent" apart from a stored None/False value.
 MISSING = object()
 
+# Intake placeholders: bracket templates such as `[Nombre del estudiante]` are
+# instructions left in a template, not identity. A value that is entirely
+# bracketed can never be a real name/title/date, so it fails identity
+# validation wherever route or format metadata requires a concrete value.
+# Defined here (not in validate_report) so the route checks and the format
+# checks share one definition; validate_report re-exports the name.
+PLACEHOLDER_RE = re.compile(r"^\[.*\]$")
+
+# Word-style fill-in marks: the teacher's templates leave "X", "XXX" or "00X"
+# in fields the student must replace. A value made entirely of X/0 characters
+# is one of those marks, never a real name, number or date.
+EXAMPLE_VALUE_RE = re.compile(r"^[xX0]+$")
+
+
+def is_placeholder_value(value: Any) -> bool:
+    """True for bracket templates ("[Nombre]") and X/0 fill-in marks ("XXX").
+
+    An empty value is NOT a placeholder: emptiness is reported as "missing",
+    placeholders as "example value", and the two messages name different
+    corrections.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return PLACEHOLDER_RE.match(text) is not None or EXAMPLE_VALUE_RE.fullmatch(text) is not None
+
 # academic_format.yml sections a single report.yml may relax for itself.
 # Deliberately narrow: every other section stays globally owned.
 OVERRIDABLE_SECTIONS = frozenset({"cover"})
@@ -135,6 +161,39 @@ PUBLICATION_CATEGORIES = {
 }
 
 
+def resolve_documents_root(documents_root: Path | str | None = None) -> Path:
+    """Return the delivery root: ``~/Documents``, or the given test override.
+
+    The delivery tree is neither code (``ROOT``) nor production content
+    (``CONTENT_ROOT``): it is the clean, user-owned Documents library whose
+    course folders the user may turn into Git repositories. The publisher and
+    the status derivation resolve it through this one function so they can
+    never disagree about where a delivery lives.
+    """
+    if documents_root is None:
+        return Path.home() / "Documents"
+    return Path(documents_root)
+
+
+def versioned_artifact_pattern(slug: str, suffix: str) -> re.Pattern[str]:
+    """Match one document's ``<slug>-vNNN<suffix>`` delivery versions (3+ digits).
+
+    Publisher and status derivation must scan for the same version names, so
+    the pattern is built here instead of being rebuilt by each caller.
+    """
+    return re.compile(rf"^{re.escape(slug)}-v(\d{{3,}})\{suffix}$")
+
+
+def versioned_pdf_pattern(slug: str) -> re.Pattern[str]:
+    """Match one document's ``<slug>-vNNN.pdf`` delivery versions."""
+    return versioned_artifact_pattern(slug, ".pdf")
+
+
+def versioned_bib_pattern(slug: str) -> re.Pattern[str]:
+    """Match one document's paired ``<slug>-vNNN.bib`` delivery versions."""
+    return versioned_artifact_pattern(slug, ".bib")
+
+
 def ascii_slug(value: object) -> str:
     """Return a stable filesystem-safe ASCII slug for a confirmed identity."""
     normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
@@ -181,6 +240,57 @@ def unknown_route_message(route: str) -> str:
         f"Ruta de documento desconocida en report.yml: '{route}'. "
         f"Valores aceptados en 'route': {accepted} "
         "(o las letras a, b, c, d, e). Sin 'route' se asume ruta académica."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Document formats (new-report-flow)
+# ---------------------------------------------------------------------------
+#
+# `format:` in report.yml is the ONE format choice the user makes per document,
+# after content approval. It is a presentation classification, deliberately
+# independent of `route:` (the content classification): every format keeps IEEE
+# citations (biblatex style=ieee) and always builds a PDF through the existing
+# LaTeX pipeline.
+#
+#     format: ape     the teacher's Word replica (templates/ape-report.tex)
+#     format: aa      the current academic look (unl-report.tex), unchanged
+#     format: libre   a user-specified format: `format_spec:` in report.yml is
+#                     mandatory, and the plain template applies by default
+#
+# An absent key means the format has not been chosen yet, which is valid while
+# the flow is still content-first. An unrecognised value is a hard error, like
+# an unrecognised route: nothing may fall back silently to a look the user did
+# not pick.
+FORMAT_KEY = "format"
+FORMAT_HINT_KEY = "format_hint"
+DEFAULT_STUDENT = "Alejandro Padilla"
+
+# Metadata report.yml must carry, per chosen format. `aa` demands exactly what
+# the academic route already demands; `ape` extends it with the identification
+# fields the teacher's table prints; `libre` keeps the universal three plus the
+# `format_spec` description (validated separately, since it lives outside
+# `metadata:`). English canonical keys; the metadata aliases below accept the
+# obvious Spanish spellings.
+FORMAT_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
+    "aa": ("title", "subject", "teacher", "student", "date"),
+    "ape": (
+        "title", "subject", "teacher", "student", "date",
+        "cycle", "unit", "learning_outcome", "practice_number",
+        "practice_type", "schedule", "place", "planned_time",
+    ),
+    "libre": ("title", "student", "date"),
+}
+
+
+def unknown_format_message(format_value: str) -> str:
+    """Spanish guidance for a `format:` value no format table recognises."""
+    accepted = ", ".join(sorted(FORMAT_REQUIRED_METADATA))
+    return (
+        f"Formato de documento desconocido en report.yml: '{format_value}'. "
+        f"Valores aceptados en 'format': {accepted}. "
+        "Sin 'format' el documento aún no tiene formato elegido "
+        "(válido durante las fases de contenido)."
     )
 
 
@@ -283,6 +393,49 @@ class ReportConfig:
         return ROUTE_REQUIRED_METADATA[self.route]
 
     @property
+    def format(self) -> str | None:
+        """Canonical document format (``ape``, ``aa`` or ``libre``).
+
+        Returns ``None`` when the key is absent: the format has not been
+        chosen yet, which is valid while the flow is still content-first.
+        An unrecognised value is returned verbatim so callers can name it in
+        the error instead of guessing a format on the user's behalf — the
+        same contract as ``route``.
+        """
+        written = str(self.raw.get(FORMAT_KEY) or "").strip().lower()
+        return written or None
+
+    @property
+    def format_is_known(self) -> bool:
+        return self.format in FORMAT_REQUIRED_METADATA
+
+    @property
+    def format_hint(self) -> str | None:
+        written = str(self.raw.get(FORMAT_HINT_KEY) or "").strip().lower()
+        return written or None
+
+    @property
+    def format_hint_is_known(self) -> bool:
+        return self.format_hint in FORMAT_REQUIRED_METADATA
+
+    @property
+    def format_spec(self) -> str:
+        """The user's free-form format description (`format_spec:`), for libre."""
+        return str(self.raw.get("format_spec") or "").strip()
+
+    @property
+    def format_required_metadata(self) -> tuple[str, ...]:
+        """Metadata keys this report's chosen format genuinely needs.
+
+        Raises ValueError for an unrecognised format, exactly like
+        ``required_metadata`` does for an unrecognised route.
+        """
+        chosen = self.format
+        if chosen not in FORMAT_REQUIRED_METADATA:
+            raise ValueError(unknown_format_message(chosen or ""))
+        return FORMAT_REQUIRED_METADATA[chosen]
+
+    @property
     def backend(self) -> str:
         backend = str(self.raw.get("backend") or "auto").strip().lower()
         if backend != "auto":
@@ -325,6 +478,53 @@ class ReportConfig:
         return ascii_slug(self.metadata.get("title") or self.folder.name)
 
     @property
+    def delivery_subject_slug(self) -> str | None:
+        """Subject slug that scopes academic delivery, or ``None``.
+
+        Only the academic route carries a delivery subject level, and a
+        confirmed subject always yields one: the canonical alias when
+        ``output_router.subject_slug`` knows it, otherwise the subject's own
+        stable ASCII slug (``ascii_slug``), so a newly named course gets its
+        own delivery folder without being registered anywhere. ``None`` only
+        when there is no confirmed subject at all — the academic route's own
+        validation refuses that before delivery, and no generic fallback
+        bucket is invented. Imported lazily to avoid the ``output_router``
+        import cycle.
+        """
+        if self.route != DEFAULT_ROUTE:
+            return None
+        subject = self.metadata.get("subject")
+        if not subject:
+            return None
+        from output_router import subject_slug
+
+        return subject_slug(subject) or ascii_slug(subject)
+
+    def delivery_relative_folder(self) -> Path:
+        """This report's delivery folder, relative to the Documents root.
+
+        Academic route with a confirmed subject:
+        ``<Academicos>/<subject-slug>/<document-slug>/`` — canonical alias
+        when the shared vocabulary knows the subject, otherwise the subject's
+        stable ASCII slug. Every other case -- non-academic categories, or an
+        academic report without a confirmed subject -- keeps the flat
+        ``<category>/<document-slug>/`` layout that legacy deliveries use.
+
+        Publisher and status derivation must both ask this method instead of
+        rebuilding the path, or the deliver phase could look somewhere other
+        than where publication actually wrote.
+        """
+        slug = self.document_slug
+        subject = self.delivery_subject_slug
+        if subject:
+            return Path(self.publication_category) / subject / slug
+        return Path(self.publication_category) / slug
+
+    def delivery_folder(self, documents_root: Path | str | None = None) -> Path:
+        """Absolute delivery folder for this report's final PDF."""
+        return resolve_documents_root(documents_root) / self.delivery_relative_folder()
+
+    @property
     def body_path(self) -> Path:
         value = self.raw.get("body") or "body.md"
         return resolve_in_folder(self.folder, value)
@@ -334,6 +534,68 @@ class ReportConfig:
         value = self.raw.get("bibliography") or self.raw.get("bib") or "sources.bib"
         path = resolve_in_folder(self.folder, value)
         return path if path.exists() else None
+
+    @property
+    def deliver_bibliography(self) -> bool:
+        """Whether the user explicitly declared the bibliography a deliverable.
+
+        Strict boolean in report.yml (``deliver_bibliography: true``), default
+        ``False``: a ``sources.bib`` existing for citations never travels on
+        its own. Any other YAML type is a configuration error, exactly like
+        the other strict booleans.
+        """
+        return strict_bool(self.raw.get("deliver_bibliography", False), "deliver_bibliography")
+
+    def delivery_bibliography(self) -> Path | None:
+        """The declared `.bib` to deliver, validated; ``None`` when not opted in.
+
+        The refusal rule is fail-closed: when the option is enabled, the source
+        must exist as a regular ``.bib`` file inside the report work folder
+        (traversal, absolute paths and symlink escapes refuse), be non-empty,
+        and parse as BibTeX with the project's own minimal parser. Anything
+        else raises ``ValueError`` naming the refusal — before any delivery
+        gate or destination is touched. No DOI or citation-style policy is
+        imposed here: exporting the declared bytes is not a re-review.
+        """
+        if not self.deliver_bibliography:
+            return None
+        declared = self.raw.get("bibliography") or self.raw.get("bib") or "sources.bib"
+        path = resolve_in_folder(self.folder, declared)
+        folder = self.folder.resolve()
+        if not path.is_file():
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada no existe o no es un "
+                f"archivo regular: {path}"
+            )
+        if path.suffix.lower() != ".bib":
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada debe ser un "
+                f"archivo .bib: {path}"
+            )
+        if not path.resolve().is_relative_to(folder):
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada debe vivir dentro "
+                f"de la carpeta del reporte: {path}"
+            )
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada no se pudo leer: {path}: {exc}"
+            ) from exc
+        if not text.strip():
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada está vacía: {path}"
+            )
+        # The same minimal parser the DOCX renderer uses; no new dependency.
+        from build_docx_report import parse_bib
+
+        if not parse_bib(text):
+            raise ValueError(
+                f"deliver_bibliography: la bibliografía declarada no tiene entradas "
+                f"BibTeX válidas: {path}"
+            )
+        return path
 
     @property
     def tex_path(self) -> Path:
@@ -407,6 +669,24 @@ class ReportConfig:
             "career": ["career", "carrera"],
             "parallel": ["parallel", "paralelo"],
             "members": ["members", "integrantes", "miembros"],
+            # APE identification-table fields (new-report-flow): canonical
+            # English keys, with the obvious Spanish spellings the report.yml
+            # of a Spanish-language course naturally uses.
+            "cycle": ["cycle", "ciclo"],
+            "unit": ["unit", "unidad"],
+            "learning_outcome": [
+                "learning_outcome", "resultado_aprendizaje", "resultado_de_aprendizaje",
+            ],
+            "practice_number": [
+                "practice_number", "practica_numero", "practica_nro",
+                "numero_de_practica", "numero_practica",
+            ],
+            "practice_type": ["practice_type", "tipo_practica", "practica_tipo", "tipo"],
+            "schedule": ["schedule", "horario"],
+            "place": ["place", "lugar"],
+            "planned_time": [
+                "planned_time", "tiempo_planificado", "tiempo_planificado_en_el_silabo",
+            ],
         }
         for canonical, keys in aliases.items():
             if canonical in meta and meta[canonical]:
@@ -623,6 +903,10 @@ def load_report_config(folder: Path) -> ReportConfig:
 
     if not config.route_is_known:
         raise SystemExit(unknown_route_message(config.route))
+    if FORMAT_KEY in raw and not config.format_is_known:
+        raise SystemExit(unknown_format_message(config.format or ""))
+    if FORMAT_HINT_KEY in raw and not config.format_hint_is_known:
+        raise SystemExit(unknown_format_message(config.format_hint or "").replace("'format'", "'format_hint'"))
 
     declares_final_pdf = any(key in raw for key in ("pdf", "output_pdf"))
     if declares_final_pdf and targets_local_outputs(config):
@@ -630,6 +914,7 @@ def load_report_config(folder: Path) -> ReportConfig:
     try:
         _ = config.publish_global
         _ = config.validators
+        _ = config.deliver_bibliography
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

@@ -17,7 +17,7 @@ import types
 from pathlib import Path
 
 import publish_pdf
-from conftest import _approval, _body
+from conftest import _approval, _bibliography, _final_review
 
 import pytest
 
@@ -109,23 +109,34 @@ def test_distinct_destination_still_receives_a_copy(
     assert config.pdf_path.read_bytes() == (build_dir / "main.pdf").read_bytes()
 
 
-def _validated_pdf(tmp_path: Path, content: bytes = b"%PDF-1.7\nvalidated content\n") -> Path:
+DEFAULT_VALIDATED_CONTENT = b"%PDF-1.7\nvalidated content\n"
+
+
+def _validated_pdf(
+    tmp_path: Path, content: bytes = DEFAULT_VALIDATED_CONTENT, *, final_review: bool = True
+) -> Path:
     source = tmp_path / "work" / "validated.pdf"
-    source.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_bytes(content)
+    approved = tmp_path / "approved"
+    if final_review and (approved / "approval.yml").is_file():
+        # The publication gate also requires a final-review marker bound to the
+        # exact bytes being published; every ordinary publication path gets one.
+        _final_review(approved, pdf=source)
     return source
 
 
 @pytest.fixture
 def _approved_work_folder(tmp_path: Path) -> Path:
-    """A work folder whose approval.yml records the current preview.md and body.md hashes.
+    """A work folder whose approval.yml records the current body.md hash.
 
-    Publication is gated on this marker, so every pre-existing publication
-    assertion proves the ordinary, approved path still behaves exactly as it did
-    before the guard existed.
+    Publication is gated on this marker (plus the final-review marker the
+    publishing helpers write for the exact source bytes), so every pre-existing
+    publication assertion proves the ordinary, approved path still behaves
+    exactly as it did before the guards existed.
     """
     folder = tmp_path / "approved"
-    _approval(folder, preview="# Content Preview: Informe\n\nCuerpo.\n")
+    _approval(folder)
     return folder
 
 
@@ -173,6 +184,7 @@ def test_changed_hash_publishes_next_monotonic_version(
         source, "Academicos", "informe", documents, work_folder=_approved_work_folder
     )
     source.write_bytes(b"%PDF-1.7\nsecond\n")
+    _final_review(_approved_work_folder, pdf=source)
 
     published = publish_pdf.publish_validated_pdf(
         source, "Academicos", "informe", documents, work_folder=_approved_work_folder
@@ -254,23 +266,13 @@ def test_publish_refuses_absent_stale_malformed_marker(
         )
     assert not documents.exists()
 
-    # stale — the preview changed after the human approved it
-    (_approved_work_folder / "preview.md").write_text(
-        "# Content Preview: edited after approval\n", encoding="utf-8"
+    # stale — the body changed after the human approved it
+    (_approved_work_folder / "body.md").write_text(
+        "edited after approval\n", encoding="utf-8"
     )
     with pytest.raises(publish_pdf.PublicationError, match="obsoleta"):
         publish_pdf.publish_validated_pdf(
             source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
-        )
-    assert not documents.exists()
-
-    # stale — the body changed after the human approved it
-    stale_body_folder = tmp_path / "stale-body"
-    _approval(stale_body_folder)
-    _body(stale_body_folder, "# Informe\n\nOtro cuerpo.\n")
-    with pytest.raises(publish_pdf.PublicationError, match="obsoleta"):
-        publish_pdf.publish_validated_pdf(
-            source, "Tecnicos", "informe", documents, work_folder=stale_body_folder
         )
     assert not documents.exists()
 
@@ -282,6 +284,43 @@ def test_publish_refuses_absent_stale_malformed_marker(
     with pytest.raises(publish_pdf.PublicationError, match="inválido"):
         publish_pdf.publish_validated_pdf(
             source, "Tecnicos", "informe", documents, work_folder=malformed
+        )
+    assert not documents.exists()
+
+
+def test_publish_refuses_without_current_final_review(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """A current approval is not enough: the PDF needs a current final review too.
+
+    The gate is fail-closed like the approval gate: the refusal runs before any
+    hash, directory or temporary file, so a refused publication creates nothing.
+    """
+    documents = tmp_path / "Documents"
+
+    # absent — the human never reviewed the final PDF
+    absent_source = _validated_pdf(tmp_path, final_review=False)
+    with pytest.raises(publish_pdf.PublicationError, match="Falta la revisión humana final"):
+        publish_pdf.publish_validated_pdf(
+            absent_source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+    assert not documents.exists()
+
+    # stale — the PDF was rebuilt after the human reviewed it
+    stale_source = _validated_pdf(tmp_path)
+    stale_source.write_bytes(b"%PDF-1.7\nrebuilt after review\n")
+    with pytest.raises(publish_pdf.PublicationError, match="revisión final está obsoleta"):
+        publish_pdf.publish_validated_pdf(
+            stale_source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
+        )
+    assert not documents.exists()
+
+    # malformed — the marker cannot be read as a valid final-review record
+    malformed_source = _validated_pdf(tmp_path)
+    (_approved_work_folder / "final-review.yml").write_text("pdf_sha256: [unclosed\n", encoding="utf-8")
+    with pytest.raises(publish_pdf.PublicationError, match="final-review.yml es inválido"):
+        publish_pdf.publish_validated_pdf(
+            malformed_source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
         )
     assert not documents.exists()
 
@@ -310,22 +349,22 @@ def test_refusal_messages_match_design_verbatim(
     absent_message = str(exc.value)
     assert absent_message.startswith(
         "Falta la aprobación humana: no existe approval.yml en "
-        f"{absent}. Ejecutá la fase de aprobación después de revisar preview.md "
-        "y body.md; no se publica nada."
+        f"{absent}. Ejecutá la fase de aprobación después de revisar "
+        "body.md; no se publica nada."
     )
     assert absent_message.endswith(
         "La validación técnica pasó; falta únicamente la aprobación humana."
     )
 
-    (_approved_work_folder / "preview.md").write_text("edited\n", encoding="utf-8")
+    (_approved_work_folder / "body.md").write_text("edited\n", encoding="utf-8")
     with pytest.raises(publish_pdf.PublicationError) as exc:
         publish_pdf.publish_validated_pdf(
             source, "Tecnicos", "informe", documents, work_folder=_approved_work_folder
         )
     assert str(exc.value) == (
-        "La aprobación está obsoleta: preview_sha256 y/o body_sha256 de "
-        f"approval.yml no coinciden con preview.md y body.md en {_approved_work_folder}. "
-        "Volvé a aprobar el preview y el cuerpo actuales; no se publica nada."
+        "La aprobación está obsoleta: body_sha256 de "
+        f"approval.yml no coincide con body.md en {_approved_work_folder}. "
+        "Volvé a aprobar el cuerpo actual; no se publica nada."
     )
 
     malformed = tmp_path / "malformed-message"
@@ -363,3 +402,306 @@ def test_global_publication_still_runs_when_the_pdf_is_the_build_output(
     build_latex_report.compile_latex(config)
 
     assert published == [config.pdf_path]
+
+
+# ---------------------------------------------------------------------------
+# Subject-scoped academic publication (course-deliverables-hierarchy T1)
+# ---------------------------------------------------------------------------
+
+
+def test_subject_scoped_publication_lands_under_the_subject_folder(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """The optional course/subject level scopes the academic document folder."""
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+
+    published = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, subject="sistemas-operativos",
+    )
+
+    assert published.path == (
+        documents / "Academicos" / "sistemas-operativos" / "informe" / "informe-v001.pdf"
+    )
+    assert published.created is True
+    assert published.sha256 == hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def test_subject_scoped_reuse_and_next_version_stay_in_the_subject_folder(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """Hash reuse and the monotonic next version operate inside the subject folder."""
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+
+    first = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, subject="sistemas-operativos",
+    )
+    reused = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, subject="sistemas-operativos",
+    )
+    assert reused.path == first.path and reused.created is False
+
+    source.write_bytes(b"%PDF-1.7\nsecond\n")
+    _final_review(_approved_work_folder, pdf=source)
+    second = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, subject="sistemas-operativos",
+    )
+
+    assert second.path.name == "informe-v002.pdf"
+    assert second.path.parent == first.path.parent
+    assert {p.name for p in second.path.parent.iterdir()} == {"informe-v001.pdf", "informe-v002.pdf"}
+
+
+def test_gate_refusal_creates_nothing_not_even_the_subject_folder(
+    tmp_path: Path,
+) -> None:
+    """A refused publication must not create the subject level either."""
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+    absent = tmp_path / "absent"
+    absent.mkdir()
+
+    with pytest.raises(publish_pdf.PublicationError, match="Falta la aprobación humana"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents,
+            work_folder=absent, subject="sistemas-operativos",
+        )
+
+    assert not documents.exists()
+
+
+def test_git_metadata_at_the_course_root_coexists_with_publication(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """A course folder that is the user's Git repo must not block publication.
+
+    Git metadata lives at the course root, above the per-document folder; the
+    publisher never touches it and never creates a repo itself.
+    """
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+    course_root = documents / "Academicos" / "sistemas-operativos"
+    (course_root / ".git" / "objects").mkdir(parents=True)
+    (course_root / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (course_root / ".git" / "objects" / "packed-objects").write_bytes(b"git\n")
+
+    published = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, subject="sistemas-operativos",
+    )
+
+    assert published.path.is_file()
+    assert (course_root / ".git" / "HEAD").read_text(encoding="utf-8") == "ref: refs/heads/main\n"
+    assert (course_root / ".git" / "objects" / "packed-objects").read_bytes() == b"git\n"
+
+
+def test_document_folder_stays_pdf_only_even_for_git_metadata(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """Per-document folders remain PDF-only: a .git inside one still refuses."""
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+    destination = documents / "Academicos" / "sistemas-operativos" / "informe"
+    (destination / ".git").mkdir(parents=True)
+
+    with pytest.raises(publish_pdf.PublicationError, match="solo puede contener"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents,
+            work_folder=_approved_work_folder, subject="sistemas-operativos",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Declared bibliography pair publication (course-deliverables-hierarchy T2)
+# ---------------------------------------------------------------------------
+
+
+def _pair_folder(tmp_path: Path) -> tuple[Path, Path]:
+    """An approved work folder plus its declared bibliography source."""
+    work = tmp_path / "approved"
+    _approval(work)
+    bib = _bibliography(work)
+    return work, bib
+
+
+def test_opted_in_pair_publishes_versioned_pair_with_exact_names_and_hashes(
+    tmp_path: Path,
+) -> None:
+    """A declared bibliography ships as the same-version <slug>-vNNN.bib pair."""
+    source = _validated_pdf(tmp_path)
+    work, bib = _pair_folder(tmp_path)
+    _final_review(work, pdf=source, bibliography=bib)
+    documents = tmp_path / "Documents"
+
+    published = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=work, subject="sistemas-operativos", bibliography=bib,
+    )
+
+    folder = documents / "Academicos" / "sistemas-operativos" / "informe"
+    assert published.path == folder / "informe-v001.pdf"
+    pair = folder / "informe-v001.bib"
+    assert pair.is_file()
+    assert pair.read_bytes() == bib.read_bytes()
+    assert published.sha256 == hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def test_pair_reuse_and_set_switching_claim_new_versions(tmp_path: Path) -> None:
+    """Reuse matches the complete requested set; any set change claims a version."""
+    source = _validated_pdf(tmp_path)
+    work, bib = _pair_folder(tmp_path)
+    _final_review(work, pdf=source, bibliography=bib)
+    documents = tmp_path / "Documents"
+    kwargs = dict(work_folder=work, subject="sistemas-operativos")
+
+    first = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, bibliography=bib, **kwargs
+    )
+    reused = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, bibliography=bib, **kwargs
+    )
+    assert reused.path == first.path and reused.created is False
+
+    # Same PDF, changed bibliography: the old pair must never be reused.
+    bib.write_text('@book{bib1, title = "CHANGED"}\n', encoding="utf-8")
+    _final_review(work, pdf=source, bibliography=bib)
+    second = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, bibliography=bib, **kwargs
+    )
+    assert second.path.name == "informe-v002.pdf"
+    assert (second.path.parent / "informe-v002.bib").read_bytes() == bib.read_bytes()
+
+    # Switching to PDF-only is a different set: it claims its own version.
+    third = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, **kwargs
+    )
+    assert third.path.name == "informe-v003.pdf"
+    assert not (third.path.parent / "informe-v003.bib").exists()
+
+    # Switching back to the exact v002 set is a complete-set reuse, never v003.
+    fourth = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, bibliography=bib, **kwargs
+    )
+    assert fourth.path == second.path and fourth.created is False
+
+
+def test_pair_refusals_happen_before_destination_creation(tmp_path: Path) -> None:
+    """Missing sources and unbound human evidence refuse without creating anything."""
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+    work, bib = _pair_folder(tmp_path)
+    kwargs = dict(work_folder=work, subject="sistemas-operativos", bibliography=bib)
+
+    # The declared source disappeared before publication.
+    bib.unlink()
+    with pytest.raises(publish_pdf.PublicationError, match="bibliograf"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents, **kwargs
+        )
+    assert not documents.exists()
+
+    # The final review never bound the declared bibliography bytes.
+    bib.write_text('@book{bib1, title = "Bib Title 1", author = "Autor 1"}\n', encoding="utf-8")
+    _final_review(work, pdf=source)
+    with pytest.raises(publish_pdf.PublicationError, match="bibliography_sha256|revisi[nu]n"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents, **kwargs
+        )
+    assert not documents.exists()
+
+
+def test_delivery_folder_allows_only_versioned_final_artifacts(tmp_path: Path) -> None:
+    """Stray work files refuse; a .bib without its paired PDF refuses too."""
+    source = _validated_pdf(tmp_path)
+    work, bib = _pair_folder(tmp_path)
+    _final_review(work, pdf=source, bibliography=bib)
+    documents = tmp_path / "Documents"
+    folder = documents / "Academicos" / "informe"
+    folder.mkdir(parents=True)
+    (folder / "audit.txt").write_text("work file", encoding="utf-8")
+    kwargs = dict(work_folder=work, subject=None, bibliography=bib)
+
+    with pytest.raises(publish_pdf.PublicationError, match="solo puede contener"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents, **kwargs
+        )
+
+    (folder / "audit.txt").unlink()
+    (folder / "informe-v001.bib").write_bytes(bib.read_bytes())
+    with pytest.raises(publish_pdf.PublicationError, match="sin su PDF emparejado"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents, **kwargs
+        )
+
+
+def test_interrupted_pair_claim_cleans_only_its_own_partial_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failure between the two claims removes this call's files, nothing else."""
+    source = _validated_pdf(tmp_path)
+    work, bib = _pair_folder(tmp_path)
+    _final_review(work, pdf=source, bibliography=bib)
+    documents = tmp_path / "Documents"
+    real_link = publish_pdf.os.link
+    pdf_name = "informe-v001.pdf"
+
+    def fail_on_bib(source_path, destination_path):
+        if Path(destination_path).name.endswith(".bib"):
+            raise OSError("disk full")
+        return real_link(source_path, destination_path)
+
+    monkeypatch.setattr(publish_pdf.os, "link", fail_on_bib)
+    with pytest.raises(publish_pdf.PublicationError, match="No se pudo publicar"):
+        publish_pdf.publish_validated_pdf(
+            source, "Academicos", "informe", documents,
+            work_folder=work, bibliography=bib,
+        )
+
+    folder = documents / "Academicos" / "informe"
+    assert not (folder / pdf_name).exists(), "the claimed PDF of a broken pair must be removed"
+    assert sorted(path.name for path in folder.iterdir()) == [], "no partial files may remain"
+
+    # An earlier complete delivery is never touched by a later failed call.
+    monkeypatch.setattr(publish_pdf.os, "link", real_link)
+    first = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, work_folder=work, bibliography=bib,
+    )
+    assert first.path.is_file() and (first.path.parent / "informe-v001.bib").is_file()
+
+
+def test_concurrent_pair_claim_retries_without_overwriting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lost version race retries with a fresh scan instead of overwriting."""
+    source = _validated_pdf(tmp_path)
+    work, bib = _pair_folder(tmp_path)
+    _final_review(work, pdf=source, bibliography=bib)
+    documents = tmp_path / "Documents"
+    folder = documents / "Academicos" / "informe"
+    folder.mkdir(parents=True)
+    (folder / "informe-v001.pdf").write_bytes(b"%PDF-1.7\nfirst publisher\n")
+    real_link = publish_pdf.os.link
+    calls = 0
+
+    def collision_once(source_path, destination_path):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            Path(destination_path).write_bytes(b"%PDF-1.7\nconcurrent publisher\n")
+            raise FileExistsError
+        return real_link(source_path, destination_path)
+
+    monkeypatch.setattr(publish_pdf.os, "link", collision_once)
+    published = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents, work_folder=work, bibliography=bib,
+    )
+
+    assert published.path.name == "informe-v003.pdf"
+    assert (folder / "informe-v002.pdf").read_bytes() == b"%PDF-1.7\nconcurrent publisher\n"
+    assert not (folder / "informe-v002.bib").exists(), "the lost racer never claimed a bib"
+    assert (folder / "informe-v003.bib").read_bytes() == bib.read_bytes()

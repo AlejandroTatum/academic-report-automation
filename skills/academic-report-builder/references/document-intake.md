@@ -4,6 +4,15 @@ Run this intake on **every** execution, before designing, structuring, drafting,
 
 Stop after asking. Do not pre-build, do not draft "while waiting", do not produce a provisional structure.
 
+## Content-first route (document-workflow)
+
+When this intake runs under the document-workflow content-first route, ask only for
+the minimum: the title, the student, the teacher's guide and rubric material, and
+any teacher explanation. That route never asks formatting questions here: template,
+identity, delivery look, and the document format itself are decided at the `format`
+phase, after the content is drafted and approved. The confirmations below still
+govern every other run of this skill.
+
 ## Confirmation 1 — Document type
 
 Ask which domain the document belongs to:
@@ -167,6 +176,9 @@ cover:                        # top-level and optional: explicit values win over
   required: true
   logo_required: true
   body_starts_on_page: 2
+
+deliver_bibliography: true    # only when the course requires the .bib as a submitted artifact
+bibliography: sources.bib     # the declared .bib to deliver (existing key; default sources.bib)
 ```
 
 - `pdf:` (and `docx:`) is optional and top-level. Leaving it unset derives the
@@ -186,6 +198,13 @@ cover:                        # top-level and optional: explicit values win over
 - Route-derived rendering defaults (template, cover, section numbering, list of
   figures) resolve from the confirmed `route:` at build and validation time; an
   explicitly written value always wins. See `document-routing.md`.
+- `deliver_bibliography: true` is recorded only when the supplied requirement
+  names the bibliography as a submitted artifact: intake records it from the
+  material it is given and never adds a question or an approval gate for it.
+  The declared `.bib` (existing `bibliography:`/`bib:` selection, default
+  `sources.bib`) then ships as a final deliverable whose exact bytes are bound
+  by validation and final review. The default is `false`: a `sources.bib` that
+  exists only for citations never travels.
 - No other key is added for these meanings: there is no top-level `audience:`, no
   `document_type:`, and no `visual_direction:` outside `metadata:`.
 

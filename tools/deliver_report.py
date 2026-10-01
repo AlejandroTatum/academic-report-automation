@@ -4,14 +4,21 @@
 The deliver-phase entrypoint (#22): generation (``build_report_auto.py``) no
 longer publishes, so delivery is explicit. This module is a thin gate-checker on
 top of the existing guarded publisher (``publish_validated_pdf``), not a second
-publication system. It adds exactly one check the publisher does not own -- the
+publication system. It adds exactly two checks the publisher does not own -- the
 validation receipt ``validation.yml`` (schema ``academic.doc-validation/v1``)
-must record ``result: pass`` for the exact bytes of the final PDF -- and then
-delegates to the publisher, which enforces the current human approval marker and
-performs the atomic, versioned, hash-verified copy.
+must record ``result: pass`` for the exact bytes of the final PDF, and the final
+human review marker ``final-review.yml`` (schema
+``academic.doc-final-review/v1``) must be current for those same bytes -- and
+then delegates to the publisher, which re-checks the human markers and performs
+the atomic, versioned, hash-verified copy.
 
 No new states, gates or approvals are introduced: a refusal is a non-zero exit
 with the named missing evidence, and a rerun after fixing it is the only exit.
+The destination is the report's shared delivery folder (``config.delivery_folder``):
+the academic route is scoped by the confirmed subject's canonical slug
+(``Academicos/<subject-slug>/<document-slug>/``); every other route keeps the flat
+``<category>/<document-slug>/`` layout. The publisher and ``doc_status`` both ask
+``ReportConfig``, so they cannot disagree about the location.
 """
 from __future__ import annotations
 
@@ -20,10 +27,12 @@ import sys
 from pathlib import Path
 
 from approval_marker import sha256_file
+from final_review_marker import final_review_state
 from publish_pdf import PublicationError, publish_validated_pdf
 from report_config import load_report_config, read_yaml
 
 VALIDATION_RECEIPT = "validation.yml"
+FINAL_REVIEW_MARKER = "final-review.yml"
 
 # The full gate vocabulary the validate phase can grant, in the order
 # ``skills/document-workflow/references/validate.md`` names them. The
@@ -67,6 +76,13 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
     if not pdf.is_file():
         return _refuse(f"falta el PDF final: {pdf}. Ejecutá primero la fase generate.")
 
+    # The declared bibliography is resolved and refused before any gate that
+    # must bind it, and long before a destination can exist.
+    try:
+        bibliography = config.delivery_bibliography()
+    except ValueError as exc:
+        return _refuse(str(exc))
+
     receipt_path = folder / VALIDATION_RECEIPT
     if not receipt_path.is_file():
         return _refuse(
@@ -91,9 +107,41 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
             f"{pdf.name}; la evidencia está obsoleta. Volvé a validar."
         )
 
+    if bibliography is not None:
+        recorded_bib = str(receipt.get("bibliography_sha256") or "").strip().lower()
+        if not recorded_bib:
+            return _refuse(
+                f"deliver_bibliography está activo pero {VALIDATION_RECEIPT} no registra "
+                "bibliography_sha256; volvé a validar para vincular los bytes declarados."
+            )
+        if recorded_bib != sha256_file(bibliography):
+            return _refuse(
+                f"{VALIDATION_RECEIPT} bibliography_sha256 no coincide con los bytes actuales "
+                f"de {bibliography.name}; la evidencia está obsoleta. Volvé a validar."
+            )
+
+    review = final_review_state(folder, pdf, bibliography=bibliography)
+    if review.state == "absent":
+        return _refuse(
+            f"falta {FINAL_REVIEW_MARKER} en {folder}: falta la revisión humana final "
+            f"de {pdf.name}. Ejecutá primero la fase review; no se publica nada."
+        )
+    if review.state == "stale":
+        return _refuse(
+            f"{FINAL_REVIEW_MARKER} no corresponde a los bytes actuales de {pdf.name} "
+            f"({review.detail}); el PDF cambió después de la revisión final. "
+            "Volvé a revisar."
+        )
+    if review.state == "malformed":
+        return _refuse(
+            f"{FINAL_REVIEW_MARKER} es inválido en {folder}: {review.detail}. "
+            "No se publica nada y el marcador nunca se repara automáticamente."
+        )
+
     try:
         category = config.publication_category
         slug = config.document_slug
+        subject = config.delivery_subject_slug
     except (KeyError, ValueError):
         return _refuse("identidad de publicación (categoría/slug) no disponible en report.yml.")
 
@@ -105,12 +153,18 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
             documents_root=documents_root,
             work_folder=folder,
             expected_sha256=pdf_hash,
+            subject=subject,
+            bibliography=bibliography,
         )
     except PublicationError as exc:
         return _refuse(str(exc))
 
     action = "ENTREGADO" if publication.created else "REUTILIZADO"
     granted = _granted_gates(receipt)
+    if final_review_state(folder, pdf).state == "current":
+        granted = [gate for gate in KNOWN_GATES if gate == "HUMAN_REVIEW" or gate in granted]
+    else:
+        granted = [gate for gate in granted if gate != "HUMAN_REVIEW"]
     missing = [gate for gate in KNOWN_GATES if gate not in granted]
     status_note = f"gates otorgados: {', '.join(granted) if granted else 'ninguno'}"
     if missing:

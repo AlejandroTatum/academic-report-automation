@@ -214,6 +214,14 @@ Sync by hand:
 The sync is gated on the skill contract tests, so a skill that fails its own
 routing contract never reaches a runtime.
 
+### Document workflow
+
+The agent document flow is content-first — intake, research, plan, draft, approval,
+verify, format, generate, validate, review, deliver — owned by
+`skills/document-workflow/` and drawn in
+[`docs/diagrams/new-report-flow.es.svg`](docs/diagrams/new-report-flow.es.svg)
+(rendered: [`new-report-flow.es.png`](docs/diagrams/new-report-flow.es.png)).
+
 ### Syncing automatically on pull
 
 Install the versioned hooks once per clone:

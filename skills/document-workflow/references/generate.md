@@ -10,21 +10,21 @@ canonical build and validation commands; this skill never builds the document it
 ## Precondition
 
 Generation runs only when the routed block reports `approval: done` for the work
-folder: `approval.yml` exists and its `preview_sha256` matches the current
-`preview.md` and its `body_sha256` matches the current `body.md`. An absent, stale, or
-malformed marker keeps `approval` `pending` or `blocked`, so `doc_status` never
-returns `next: generate` and this reference must not be loaded or acted on. Never
-build before approval is `done`: a build made on an unapproved preview or body is
-discarded at publication, where the publisher re-checks the marker and refuses to
+folder: `approval.yml` exists and its `body_sha256` matches the current `body.md`.
+An absent, stale, or malformed marker keeps `approval` `pending` or `blocked`, so
+`doc_status` never returns `next: generate` and this reference must not be loaded or
+acted on. Never build before approval is `done`: a build made on an unapproved draft
+is discarded at publication, where the publisher re-checks the marker and refuses to
 deliver anything.
 
 ## Contract
 
-Generation exists to turn the confirmed report content into the single final PDF the
-later phases read. The executor runs the canonical pipeline, which builds from the
-confirmed `report.yml` plus the approved `body.md` -- the drafted body whose exact
-bytes the marker's `body_sha256` binds -- runs the configured technical validation,
-and records the artifact hash and page count:
+Generation exists to turn the approved draft plus the chosen format into the single
+final PDF the later phases read. The executor runs the canonical pipeline, which
+builds from the confirmed `report.yml` (including the `format:` choice and its
+metadata) plus the approved `body.md` -- the drafted body whose exact bytes the
+marker's `body_sha256` binds -- runs the configured technical validation, and records
+the artifact hash and page count:
 
 ```bash
 "$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/build_report_auto.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"
@@ -46,9 +46,17 @@ the deliver entrypoint (`tools/deliver_report.py`, see `references/deliver.md`) 
 the only publication route, and approval state is derived by
 `tools/doc_status.py` and re-checked by the publisher.
 
+## PDF handoff
+
+When presenting the generated PDF, use the exact short fish command produced by
+`doc_status` guidance: `set d <folder>`, `set f <exact PDF filename>`,
+`brave $d/$f`. Copy its quoting exactly; never use a glob. Never send screenshots
+in place of the PDF. The default viewer zathura does not follow internal links.
+
 ## Steps
 
-1. Read the routed `doc_status` block and the preview reference for the work folder.
+1. Read the routed `doc_status` block and the format recorded in `report.yml` for
+   the work folder.
 2. Run the canonical build and validation command from `automation-contract.md`.
 3. Keep validator output as precheck evidence and record the immutable hash.
 4. Re-run `doc_status` and report the new current phase.
@@ -56,7 +64,7 @@ the only publication route, and approval state is derived by
 ## Never
 
 - Do not publish, copy, or version the PDF: generate produces exactly one artifact.
-- Do not build before approval is `done`; an unapproved preview never produces the
+- Do not build before approval is `done`; an unapproved draft never produces the
   final PDF.
 - Do not write `approval.yml`. No process creates, repairs, or refreshes a marker.
 - Do not claim `VISUAL_PASS`, `HUMAN_REVIEW`, or `READY_TO_SUBMIT` from a build or a

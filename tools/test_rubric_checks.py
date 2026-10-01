@@ -1,0 +1,116 @@
+"""Behavior tests for planned, read-only rubric assertions."""
+from pathlib import Path
+
+import pytest
+
+from rubric_checks import TOLERANCE_RULES, run_checks
+
+
+def test_fenced_and_setext_sections_and_trailing_hashes(tmp_path: Path) -> None:
+    body = """~~~md
+# Fake
+~~~
+Real
+====
+needle
+```md
+# Fake two
+```
+# Next ###
+other
+"""
+    checks = [
+        {"type": "contains", "section": "Real", "text": "needle"},
+        {"type": "heading_present", "section": "Fake"},
+        {"type": "heading_present", "section": "Fake two"},
+        {"type": "heading_present", "section": "Next"},
+    ]
+    assert [r.ok for r in run_checks(tmp_path, [{"id": "x", "checks": checks}], body)] == [True, False, False, True]
+
+
+def test_thematic_break_after_blank_does_not_end_section(tmp_path: Path) -> None:
+    body = '# First\nneedle\n\n---\nmore text\n# Second\nother'
+    checks = [{'type': 'contains', 'section': 'First', 'text': 'more text'},
+              {'type': 'heading_present', 'section': 'more text'}]
+    assert [r.ok for r in run_checks(tmp_path, [{'id': 'x', 'checks': checks}], body)] == [True, False]
+    assert run_checks(tmp_path, [{'id': 'x', 'checks': [
+        {'type': 'heading_present', 'section': 'Actual'}]}], 'Actual\n---\nbody')[0].ok
+
+
+def test_unknown_runtime_check_fails_with_detail(tmp_path: Path) -> None:
+    result, = run_checks(tmp_path, [{"id": "x", "checks": [{"type": "unknown", "section": "Missing"}]}], "")
+    assert not result.ok and "unknown check type" in result.detail
+
+
+BODY = """# Óbjetivos
+Investigación aplicada y evaluación sistemática [@one] [@two].
+1. Analyze data
+2. Present findings
+![Chart](chart.png)
+<https://example.org/one> [Site](https://example.org/two)
+
+# Conclusiones
+La investigación y evaluación aportan resultados.
+"""
+
+
+@pytest.mark.parametrize("check,expected", [
+    ({"type": "heading_present", "section": "OBJETIVOS"}, True),
+    ({"type": "heading_present", "section": "Absent"}, False),
+    ({"type": "contains", "section": "objetivos", "text": "INVESTIGACIÓN"}, True),
+    ({"type": "contains", "text": "never"}, False),
+    ({"type": "matches", "section": "Objetivos", "pattern": r"evaluación\s+sistemática"}, True),
+    ({"type": "matches", "pattern": r"never\d+"}, False),
+    ({"type": "ordered_list", "section": "Objetivos", "min_items": 2}, True),
+    ({"type": "ordered_list", "section": "Conclusiones"}, False),
+    ({"type": "min_citations", "section": "Objetivos", "count": 2}, True),
+    ({"type": "min_citations", "section": "Conclusiones", "count": 1}, False),
+    ({"type": "figure_referenced", "section": "Objetivos"}, True),
+    ({"type": "figure_referenced", "section": "Conclusiones"}, False),
+    ({"type": "link_present", "section": "Objetivos", "pattern": "example.org/two"}, True),
+    ({"type": "link_present", "section": "Objetivos", "pattern": "other"}, False),
+    ({"type": "keywords_from_section", "section": "Conclusiones", "from_section": "Objetivos"}, True),
+    ({"type": "keywords_from_section", "section": "Conclusiones", "from_section": "Absent"}, False),
+    ({"type": "contains", "section": "Absent", "text": "data"}, False),
+])
+def test_each_check_pass_and_fail(tmp_path: Path, check: dict, expected: bool) -> None:
+    result, = run_checks(tmp_path, [{"id": "objective", "checks": [check]}], BODY)
+    assert result.ok is expected, result.detail
+    assert result.criterion_id == "objective"
+    assert result.check_index == 1
+    assert result.type == check["type"]
+
+
+@pytest.mark.parametrize("guide,body,expected", [
+    ("preparar el informe exacto", "Preparar el informe exacto", True),
+    ("Preparar el informe exacto", "preparar el informe exacto", True),
+    ("preparar el informe exacto", "Preparar el Informe exacto", False),
+    ("preparar el informe exacto", "Preparar el reporte exacto", False),
+])
+def test_verbatim_allows_only_initial_case_difference(tmp_path: Path, guide: str, body: str, expected: bool) -> None:
+    (tmp_path / "guide.md").write_text(guide)
+    check = {"type": "verbatim_from_guide", "section": "Objetivos", "source": "guide.md",
+             "text": "Preparar el informe exacto"}
+    result, = run_checks(tmp_path, [{"id": "objective", "checks": [check]}], "# Objetivos\n" + body)
+    assert result.ok is expected
+
+
+def test_verbatim_requires_guide_and_section_and_normalizes_whitespace(tmp_path: Path) -> None:
+    guide = tmp_path / "guide.md"
+    guide.write_text("Exact phrase from guide", encoding="utf-8")
+    check = {"type": "verbatim_from_guide", "section": "Objetivos", "source": "guide.md", "text": "Exact phrase from guide"}
+    criterion = [{"id": "exact", "checks": [check]}]
+    assert run_checks(tmp_path, criterion, "# Objetivos\nExact\n phrase from guide")[0].ok
+    assert not run_checks(tmp_path, criterion, BODY)[0].ok
+    guide.write_text("Different guide", encoding="utf-8")
+    assert not run_checks(tmp_path, criterion, "# Objetivos\nExact phrase from guide")[0].ok
+    assert not run_checks(tmp_path, criterion, "odd body without headings")[0].ok
+
+
+def test_tolerance_rules_constant_pins_the_check_tolerances() -> None:
+    """The judge brief quotes this constant, so its prose cannot drift."""
+    assert "verbatim_from_guide" in TOLERANCE_RULES
+    assert "normalizes whitespace" in TOLERANCE_RULES
+    assert "first letter" in TOLERANCE_RULES
+    assert "contains is case-insensitive" in TOLERANCE_RULES
+    assert "accent-insensitively" in TOLERANCE_RULES

@@ -183,8 +183,10 @@ def _write_report_yml(folder: Path) -> None:
 
 def test_research_phase_gate_validates_evidence_yml_structurally(tmp_path: Path) -> None:
     import doc_status
+    from conftest import _sources_bib
 
     _write_report_yml(tmp_path)
+    _sources_bib(tmp_path)
     (tmp_path / "research").mkdir()
     (tmp_path / "research" / "evidence.yml").write_text(
         yaml.dump({"claims": [complete_claim(evidence="")]}), encoding="utf-8"

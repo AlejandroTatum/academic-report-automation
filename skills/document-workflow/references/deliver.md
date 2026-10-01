@@ -1,7 +1,7 @@
 # Deliver phase
 
 Executor: academic-report-builder
-Artifact: `~/Documents/<category>/<slug>/<slug>-vNNN.pdf`
+Artifact: `~/Documents/<category>/[<subject-slug>/]<slug>/<slug>-vNNN.pdf (+ the same-version <slug>-vNNN.bib only when deliver_bibliography: true)`
 
 Load this reference only when `doc_status` returns `next: deliver`. The executor is
 `academic-report-builder`, using its own `references/clean-delivery.md`; this skill
@@ -14,14 +14,27 @@ executor runs the deliver entrypoint, `"$REPORT_AUTOMATION_ROOT/tools/deliver_re
 over `"$REPORT_CONTENT_ROOT/reports/<work-folder>/"`, which is a thin gate-checker
 over the existing publisher:
 it requires a `validation.yml` receipt recording `result: pass` for the exact final
-PDF bytes (`artifact_sha256` match), then calls the publisher, which re-checks the
-approval marker itself and refuses an absent, stale, or malformed `approval.yml`
-before it creates anything. Generation never publishes; this entrypoint is the only
+PDF bytes (`artifact_sha256` match) and a current `final-review.yml` marker whose
+`pdf_sha256` matches those same bytes (the human's final OK on the PDF itself),
+then calls the publisher, which re-checks both human markers and refuses an
+absent, stale, or malformed `approval.yml` or `final-review.yml` before it
+creates anything. Generation never publishes; this entrypoint is the only
 publication route. The
 phase produces exactly one artifact: a versioned
 `<slug>-vNNN.pdf` under `~/Documents/<category>/<slug>/`, where the category comes
-from the confirmed route and the slug from the confirmed title. That folder holds
-PDFs only.
+from the confirmed route and the slug from the confirmed title. On the academic
+route the confirmed subject scopes it one level deeper,
+`~/Documents/Academicos/<subject-slug>/<slug>/`: the canonical alias when the
+shared `output_router` vocabulary knows the subject, otherwise the subject's own
+stable ASCII slug, so a newly named course still gets its own folder; only a
+missing subject has no level. That folder holds versioned final artifacts only:
+PDFs by default, plus the same-version `<slug>-vNNN.bib` when the report declared
+its bibliography (`deliver_bibliography: true`, source from the existing
+`bibliography:`/`bib:` key). The declared `.bib` ships bound to evidence —
+`validation.yml` and `final-review.yml` must record its exact
+`bibliography_sha256` — and reuse compares the complete requested set: the same
+PDF with a changed `.bib` claims a new version, a partial pair is never a
+delivery, and a `sources.bib` that was never declared never travels.
 
 Publication stays atomic and monotonic: a first unique artifact is `v001`, an
 identical artifact is a hash-matched reuse, and a concurrent publisher never
@@ -48,6 +61,12 @@ review against immutable hashes.
 
 ## Never
 
-- Do not create, repair, or refresh `approval.yml` to make publication pass.
-- Do not write any file other than the versioned PDF into the delivery folder.
+- Do not create, repair, or refresh `approval.yml` or `final-review.yml` to make
+  publication pass.
+- Do not write any file other than the versioned PDF — and the declared,
+  versioned `.bib` pair when `deliver_bibliography: true` — into the delivery
+  folder.
+- Do not run any Git command (`git init`, `git add`, `git commit`, `git push`) in
+  the delivery tree: a course folder that is a repository belongs to the user, and
+  Git metadata stays at the course root, outside the per-document folders.
 - Do not report a run as `READY_TO_SUBMIT` from publication alone.
