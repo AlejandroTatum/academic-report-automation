@@ -52,6 +52,18 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       create `reports/<slug>/` under the content root, then `doc_status` (empty folder -> `next: intake`).
       Full route only when the work-folder flow is unavailable. Test-first; update to-be diagram.
 
+- [ ] 8. Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
+      level-1 `#` section headings and math for sub/superscripts, with a mechanical pre-approval check (Unicode
+      sub/superscripts are missing from TeX Gyre Termes; `##`-only bodies number sections 0.1.); (b) verify.md:
+      define the handoff when the executor cannot launch judge subagents (orchestrator runs the judges);
+      (c) routing-loop.md and doc_status research gate text still say "at least 5" under min_sources;
+      (d) build output path is keyed by title slug, so a second folder with the same title overwrites the first
+      folder's working PDF; (e) VISUAL_PASS ownership unclear: the visual inspection ran and passed but nobody
+      granted VISUAL_PASS, so delivery reported "sin VISUAL_PASS"; (f) plan.md has no no-rubric rule;
+      (g) verify_sources.py is silent on failure and false-MISMATCHes LaTeX-escaped titles; (h) draft.md step 4
+      names a content_check mode the CLI lacks; (i) quality-gates.md duplicate step number and stale line ref;
+      (j) existing folder without report.yml undefined; "delivered" definition untested.
+
 ## Evidence
 
 (commit ids recorded per task)
@@ -94,3 +106,8 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   distinct claims sharing one citation_key, impossible under min_sources: 1. Fix (test-first, RED 1 -> GREEN):
   only a repeated claim_id is an error; distinct claims may cite the same source. The existing "Duplicate mapping"
   test case was narrowed from shared citation_key to repeated claim_id.
+- Live test 2026-10-01 (exercise 1.5, reports/metodos-numericos-ejercicio-1-5-flow): intake 1 batch / 2 questions
+  (route + student derived), research min_sources 1, two verify rounds (4 judges, all cumple), validate failed twice
+  (citation-key tool bug fixed in c0f31a6; missing glyphs + 0.1. headings fixed by an approved body edit), delivered
+  ~/Documents/Academicos/analisis-numerico/solucion-analitica-y-numerica-del-ejercicio-1-5/...-v002.pdf
+  (sha256 d67dd7e4...), v001 untouched. Same numbers as v001.
