@@ -14,6 +14,10 @@ choice: wait for the user's answer before recording `format:`. Ask every remaini
 metadata gap through `ask_user_choice` with suggested options, never free text.
 Record confirmed answers in `report.yml`; do not invent missing values.
 
+Ask the delivery format (PDF or DOCX) in the same format step, alongside APE, AA
+or libre. It has no default and is never inferred from the request or the
+material; record the answer as `output:`.
+
 - `ape` - the practical-experimental technical report, a LaTeX replica of the
   teacher's DOCX. Its sections are fixed: Objetivo(s), Materiales, Procedimiento
   (steps as a list), Resultados, Preguntas de Control, Conclusiones (tied to the

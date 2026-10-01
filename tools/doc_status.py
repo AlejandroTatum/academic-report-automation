@@ -558,8 +558,10 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
                     "then re-approve the draft and re-run the independent judge")
     if phase_name == "intake" and not config.metadata.get("student"):
         template += (
-            f"; suggest {DEFAULT_STUDENT} as the default student and confirm "
-            "with the user through a single-choice prompt (do not auto-fill)"
+            "; if the user saved a student name as permanent for all future sessions, "
+            "saved as permanent counts as confirmed: record it without asking; otherwise suggest "
+            f"{DEFAULT_STUDENT} as the default student and confirm with the user "
+            "through a single-choice prompt (do not auto-fill, never invent a name)"
         )
     if phase_name == "format":
         facts = load_guide_facts(folder, config)

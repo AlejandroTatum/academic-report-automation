@@ -18,11 +18,25 @@ Default when a work folder is driven by `doc_status`. Ask only the content-first
 minimum: route, title, student, the teacher's guide and rubric material, teacher
 explanation.
 
-- The route (top-level `route:`, the document type) is resolved with the user, never
-  inferred.
-- `metadata.title` and `metadata.student` are the identity this phase is done on;
-  suggest the default student Alejandro Padilla through ask_user_choice as a
-  single-choice confirmation, but never auto-fill without the user's answer.
+- Route: when the request or supplied material names an academic assignment (a
+  subject or course, teacher, APE, AA, exercise/ejercicio, homework/tarea,
+  practice/práctica, guide or rubric), record `route: academic` without asking and
+  state it in the intake summary. Ask the route only when signals are absent or
+  conflicting. This derivation exists only here: the standalone full route
+  never infers the document type.
+- `metadata.title` and `metadata.student` are the identity this phase is done on.
+  A student identity the user explicitly saved as permanent (persistent memory or
+  preference such as "use this name for all future sessions") counts as confirmed:
+  intake records it without asking. Without such a saved preference, suggest the
+  default student Alejandro Padilla through ask_user_choice as a single-choice
+  confirmation, and never auto-fill without the user's answer. Never invent a name.
+- Free-text sanity: a title (or any free-text identity answer) that holds
+  commentary, a question or a complaint instead of a title is not accepted. Show
+  the cleaned candidate and ask for a one-line confirmation.
+- Guide material: intake always requests the teacher's guide, rubric and any
+  teacher explanation when not already supplied, in the same single compact
+  question batch as any other missing field. Never a second round, unless an
+  answer is unusable.
 - The teacher's guide and rubric material, plus any teacher explanation, stay as
   inputs for the `plan` phase; record the folder-relative `guide:` path in
   `report.yml`, run `tools/guide_facts.py <folder>` and, when it detects a family,
@@ -49,9 +63,14 @@ explanation.
   when the guide names them; the `format` phase completes whatever its chosen
   format still requires.
 - Never ask formatting questions at intake (template, identity tables, cover,
-  visual direction, output look, and the document format APE, AA or libre): the
-  `format` phase owns every formatting decision, after the content is approved.
-  Confirmations 3 and 5 below apply only to the standalone full route.
+  visual direction, output look, the document format APE, AA or libre, and the
+  delivery format PDF or DOCX): the `format` phase owns every formatting decision,
+  after the content is approved. Intake never asks the delivery format.
+- Full-route confirmations that do not apply in content-first: audience and purpose
+  (derived from supplied material and recorded, never asked), template and identity,
+  delivery format (PDF or DOCX, asked by the `format` phase), and visual direction.
+  Confirmations 2 to 5 below do not apply in content-first; Confirmation 1 is
+  replaced by the route rule above.
 
 ## Full-route confirmations
 

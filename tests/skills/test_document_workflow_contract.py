@@ -737,3 +737,106 @@ def test_review_reference_gates_delivery_on_an_explicit_pdf_ok() -> None:
     assert re.search(r"deliver\w*[^.]{0,60}only after", flat), (
         "review.md must gate delivery on the review"
     )
+
+
+# --- Task 4: hardened content-first intake (exercise 1.5 incident) ----------
+
+
+def _intake_flat() -> str:
+    text = read(SKILL_ROOT / "references" / "intake.md")
+    return re.sub(r"\s+", " ", re.sub(r"[*_`]", "", text)).lower()
+
+
+def _content_first_section() -> str:
+    flat = _intake_flat()
+    start = flat.index("## content-first intake")
+    return flat[start : flat.index("## full-route confirmations")]
+
+
+def test_intake_derives_the_academic_route_from_assignment_signals() -> None:
+    """Rule (a): an academic assignment signal records route academic without asking."""
+    section = _content_first_section()
+    for signal in ("subject", "teacher", "ape", "aa", "exercise", "ejercicio", "homework", "tarea",
+                   "práctica", "rubric"):
+        assert signal in section, f"content-first intake must list the assignment signal `{signal}`"
+    assert "route: academic" in section
+    assert "without asking" in section
+    assert "intake summary" in section, "the derived route must be stated in the intake summary"
+    assert re.search(r"ask the route only when[^.]*(absent|conflicting)", section), (
+        "the route is asked only when signals are absent or conflicting"
+    )
+    assert "resolved with the user, never inferred" not in section, (
+        "content-first no longer forbids deriving the route"
+    )
+
+
+def test_standalone_full_route_still_never_infers_the_document_type() -> None:
+    flat = _intake_flat()
+    full = flat[flat.index("## full-route confirmations") :]
+    assert "must never auto-select" in full
+    assert "there is no default type" in full
+    skill = re.sub(r"\s+", " ", read(SKILL_MD)).lower()
+    assert "prohibition on inferring document type" in skill
+    assert "never infer it from format, prompt, files, or history" in skill
+
+
+def test_intake_accepts_a_permanently_saved_student_without_asking() -> None:
+    """Rule (b): saved permanent identity is confirmed; otherwise a suggestion; never invented."""
+    section = _content_first_section()
+    assert re.search(r"saved as permanent[^.]*(memory|preference)", section)
+    assert "all future sessions" in section
+    assert "records it without asking" in section or "recorded without asking" in section
+    assert "single-choice" in section and "never auto-fill" in section
+    assert "never invent" in section
+
+
+def test_intake_always_requests_the_teacher_guide_in_the_single_batch() -> None:
+    """Rule (c): guide, rubric and teacher explanation are always requested, one batch."""
+    section = _content_first_section()
+    assert re.search(r"always requests the teacher'?s? guide, rubric", section)
+    assert "teacher explanation" in section
+    assert "not already supplied" in section
+    assert "single compact question" in section
+    assert "never a second round" in section
+    assert "unusable" in section
+
+
+def test_delivery_format_belongs_to_the_format_phase_and_scope_is_explicit() -> None:
+    """Rule (d): format.md owns PDF/DOCX; intake lists which full-route confirmations do not apply."""
+    section = _content_first_section()
+    assert "never asks the delivery format" in section or "intake never asks the delivery format" in section
+    assert "pdf or docx" in section
+    assert "do not apply in content-first" in section
+    for item in ("audience and purpose", "template and identity", "delivery format", "visual direction"):
+        assert item in section, f"scope note must name `{item}`"
+    assert "confirmations 3 and 5 below apply only" not in section, "stale partial scope note"
+    fmt = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "format.md")).lower()
+    assert "pdf or docx" in fmt and "same format step" in fmt
+    assert "never inferred" in fmt and "no default" in fmt
+
+
+def test_intake_rejects_commentary_in_free_text_answers() -> None:
+    """Rule (e): a complaint or question typed into a free-text field is not a title."""
+    section = _content_first_section()
+    assert re.search(r"(commentary|complaint)[^.]*(question|complaint)", section)
+    assert "not accepted" in section
+    assert "cleaned candidate" in section
+    assert "one-line confirmation" in section
+
+
+def test_description_triggers_cover_assignment_requests() -> None:
+    """Rule (f): trigger-first single line, <=250 chars, assignment words included."""
+    meta = frontmatter(read(SKILL_MD))
+    match = re.search(r'^description:\s*"(.*)"\s*$', meta, re.MULTILINE)
+    assert match, "description must be one quoted physical line"
+    description = match.group(1)
+    assert description.startswith("Trigger:") and len(description) <= 250
+    lowered = description.lower()
+    for word in ("academic report", "university report", "pdf", "docx", "doc status",
+                 "exercise", "ejercicio", "homework", "tarea", "ape", "aa"):
+        assert re.search(rf"(?<![a-z]){re.escape(word)}(?![a-z])", lowered), f"description must mention {word}"
+
+
+def test_skill_body_stays_within_the_token_budget() -> None:
+    body = read(SKILL_MD).split("---", 2)[2]
+    assert len(body.split()) <= 1000

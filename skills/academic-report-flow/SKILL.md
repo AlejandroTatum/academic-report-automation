@@ -1,6 +1,6 @@
 ---
 name: academic-report-flow
-description: "Trigger: academic report, university report, project documentation, professional or business report, technical document, PDF, DOCX, doc status, resume or approve report. Routes source-backed documents from doc_status."
+description: "Trigger: academic report, exercise/ejercicio, homework/tarea, APE, AA, university report, project documentation, professional or business report, technical document, PDF, DOCX, doc status. Routes source-backed documents from doc_status."
 license: Apache-2.0
 metadata:
   author: "gentleman-programming"
