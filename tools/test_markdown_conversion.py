@@ -48,17 +48,18 @@ Texto posterior.
 """
 
 
-def test_fenced_block_emits_a_verbatim_environment() -> None:
+def test_fenced_block_emits_a_styled_lstlisting_environment() -> None:
     tex = _tex_for(FENCED_MD)
-    assert r"\begin{verbatim}" in tex
-    assert r"\end{verbatim}" in tex
+    assert r"\begin{lstlisting}[style=reportcode, language=Python]" in tex
+    assert r"\end{lstlisting}" in tex
+    assert "verbatim" not in tex
 
 
 def test_fenced_block_preserves_line_breaks_and_indentation() -> None:
     tex = _tex_for(FENCED_MD)
     lines = tex.splitlines()
-    start = lines.index(r"\begin{verbatim}")
-    end = lines.index(r"\end{verbatim}")
+    start = next(n for n, l in enumerate(lines) if l.startswith(r"\begin{lstlisting}"))
+    end = lines.index(r"\end{lstlisting}")
     assert lines[start + 1 : end] == [
         "from output_router import publish_global_output",
         "",
@@ -70,7 +71,7 @@ def test_fenced_block_preserves_line_breaks_and_indentation() -> None:
 
 def test_fenced_block_content_is_not_escaped_or_inline_converted() -> None:
     tex = _tex_for(FENCED_MD)
-    body = tex[tex.index(r"\begin{verbatim}") : tex.index(r"\end{verbatim}")]
+    body = tex[tex.index(r"\begin{lstlisting}") : tex.index(r"\end{lstlisting}")]
     # latex_escape() would have turned `_` into `\_`; convert_inline() would
     # have wrapped things in \texttt{}. Neither may touch verbatim content.
     assert r"\_" not in body
@@ -88,7 +89,7 @@ def test_fence_markers_never_reach_the_output() -> None:
 
 def test_tilde_fences_are_recognised_too() -> None:
     tex = _tex_for("~~~\nvalor = 1\n~~~\n")
-    assert r"\begin{verbatim}" in tex
+    assert r"\begin{lstlisting}[style=reportcode]" in tex
     assert "valor = 1" in tex
     assert "~~~" not in tex
 
@@ -96,7 +97,7 @@ def test_tilde_fences_are_recognised_too() -> None:
 def test_code_block_is_page_breakable_not_boxed() -> None:
     """A long block must flow onto the next page.
 
-    ``verbatim`` breaks between its lines on its own; wrapping it in a box
+    ``lstlisting`` breaks between its lines on its own; wrapping it in a box
     (``minipage``, ``fbox``, ``figure``) would make it atomic again — exactly
     the overflow this pins against.
     """
@@ -105,16 +106,75 @@ def test_code_block_is_page_breakable_not_boxed() -> None:
         assert atomic not in tex
 
 
-def test_code_block_font_fits_an_eighty_column_source_line() -> None:
-    """``verbatim`` never wraps, so the font size decides the column budget.
+def test_code_block_wraps_long_lines_instead_of_overflowing() -> None:
+    """lstlisting wraps (``breaklines``) so no font-size column budget applies."""
+    assert "breaklines=true" in build_latex_report.LISTING_PREAMBLE
 
-    ``\\small`` stops at roughly 79 monospace columns in the A4 text block,
-    which pushes a plain 80-column line into the margin (reproduced with the
-    shell invocation in the technical-document fixture).
-    """
-    tex = _tex_for(FENCED_MD)
-    scoped = tex[tex.index(r"\begingroup") : tex.index(r"\endgroup")]
-    assert r"\footnotesize" in scoped
+
+@pytest.mark.parametrize(
+    ("fence", "expected"),
+    [
+        ("octave", r"\begin{lstlisting}[style=reportcode, language=Octave]"),
+        ("matlab", r"\begin{lstlisting}[style=reportcode, language=Matlab]"),
+        ("Python", r"\begin{lstlisting}[style=reportcode, language=Python]"),
+        ("sh", r"\begin{lstlisting}[style=reportcode, language=bash]"),
+        ("c++", r"\begin{lstlisting}[style=reportcode, language=C++]"),
+        ("sql", r"\begin{lstlisting}[style=reportcode, language=SQL]"),
+        ("klingon", r"\begin{lstlisting}[style=reportcode]"),
+        ("", r"\begin{lstlisting}[style=reportcode]"),
+    ],
+)
+def test_fence_language_maps_to_a_listings_language(fence: str, expected: str) -> None:
+    tex = _tex_for(f"```{fence}\nx = 1\n```\n")
+    assert expected in tex.splitlines()
+
+
+def test_literal_end_lstlisting_cannot_close_the_environment() -> None:
+    tex = _tex_for("```\nprimero\n\\end{lstlisting}\nsegundo\n```\n")
+    assert tex.count(r"\end{lstlisting}") == 1
+    assert tex.index("segundo") < tex.index(r"\end{lstlisting}")
+
+
+def test_code_block_trims_leading_and_trailing_blank_lines() -> None:
+    tex = _tex_for("```\n\n\nuno\n\ndos\n\n```\n")
+    lines = tex.splitlines()
+    start = next(n for n, l in enumerate(lines) if l.startswith(r"\begin{lstlisting}"))
+    assert lines[start + 1 : lines.index(r"\end{lstlisting}")] == ["uno", "", "dos"]
+
+
+def test_listing_style_is_defined_once_with_utf8_and_colors() -> None:
+    preamble = build_latex_report.LISTING_PREAMBLE
+    assert r"\usepackage{listings}" in preamble
+    assert r"\lstdefinestyle{reportcode}" in preamble
+    for needle in ("frame=leftline", "numbers=left", "extendedchars=true", "showstringspaces=false", "tabsize=2"):
+        assert needle in preamble
+
+
+def test_listing_is_single_spaced_inside_one_and_a_half_spaced_body() -> None:
+    # The body runs at 1.5 spacing; code inherits it unless the listing resets
+    # the stretch, which wastes vertical space and pushes later floats away.
+    assert r"\linespread{1}" in build_latex_report.LISTING_PREAMBLE
+
+
+def _em(preamble: str, key: str) -> float:
+    import re
+    return float(re.search(rf"\b{key}=([0-9.]+)em", preamble).group(1))
+
+
+def test_listing_frame_stays_inside_the_text_block() -> None:
+    # The rule sits framexleftmargin + framesep left of the code, so the code's
+    # own indent must cover both or the rule pokes into the page margin.
+    preamble = build_latex_report.LISTING_PREAMBLE
+    assert _em(preamble, "xleftmargin") >= _em(preamble, "framexleftmargin") + _em(preamble, "framesep")
+
+
+@pytest.mark.parametrize("template", ["unl", "ape", "plain", "chamba_overleaf"])
+def test_every_template_loads_the_listing_style(template: str) -> None:
+    path = build_latex_report.resolve_template(template)
+    source = path.read_text(encoding="utf-8")
+    assert "{{LISTING_PREAMBLE}}" in source
+    # xcolor must precede it: the style uses named colors.
+    assert source.index(r"\usepackage[table]{xcolor}") < source.index("{{LISTING_PREAMBLE}}")
 
 
 def test_unterminated_fence_does_not_swallow_the_rest_of_the_document() -> None:
@@ -151,7 +211,9 @@ def test_a_closed_fence_stays_quiet(capsys: pytest.CaptureFixture[str]) -> None:
 def test_fence_closes_an_open_list() -> None:
     tex = _tex_for("- uno\n- dos\n```\ncodigo\n```\n")
     lines = tex.splitlines()
-    assert lines.index(r"\end{itemize}") < lines.index(r"\begin{verbatim}")
+    assert lines.index(r"\end{itemize}") < next(
+        n for n, l in enumerate(lines) if l.startswith(r"\begin{lstlisting}")
+    )
 
 
 # ---------------------------------------------------------------------------
