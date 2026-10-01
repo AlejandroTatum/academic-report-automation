@@ -1,6 +1,6 @@
 # Document routing
 
-One route is resolved from Confirmation 1 of `document-intake.md`. Load only that route's references. Never blend routes, never fall back silently.
+One route is resolved from Confirmation 1 of `intake.md`. Load only that route's references. Never blend routes, never fall back silently.
 
 ## Route A — University academic work
 

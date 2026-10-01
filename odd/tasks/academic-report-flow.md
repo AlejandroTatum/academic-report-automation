@@ -34,7 +34,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       rule changes), repoint all contract tests, sibling skills (`research-workflow`,
       `academic-visual-builder`), `scripts/sync_skills.sh` SKILLS list, tool comments,
       README; delete the old dirs. Full `tests/skills` + `tools` tests green.
-- [ ] 3. Unify intake: merge `intake.md` + `document-intake.md` into one
+- [x] 3. Unify intake: merge `intake.md` + `document-intake.md` into one
       `references/intake.md` (content-first default, full-route confirmations as a
       section); remove the contradiction. Tests updated.
 - [ ] 4. Harden intake (test-first): (a) route derived as `academic` when the request names a
@@ -52,4 +52,15 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 (commit ids recorded per task)
 
 - Task 1: 9cccd7c
-- Task 2: mechanical merge into skills/academic-report-flow; `tests/skills tools` 1654 passed, 0 failed (RED before moves: 98 failed, 29 errors). SKILL.md body 906 tokens. Commit id: see git log subject `refactor(skills): merge document-workflow and academic-report-builder into academic-report-flow`.
+- Task 2: mechanical merge into skills/academic-report-flow; `tests/skills tools` 1654 passed, 0 failed (RED before moves: 98 failed, 29 errors). SKILL.md body 906 tokens. Commit 993084d. Native review lineage review-a0a5eccf88e1c24d (base feat/min-sources-override, 4 lenses): approved, authority burned.
+  Advisory findings carried into tasks 3-5: conflicting load rules / entry-contract conflict (SKILL.md:15-19),
+  self-delegation leftovers (references/intake.md:7, draft.md:7), dropped decision gates (SKILL.md:46-56),
+  stale test name (test_sync_skills.py:105), preview-guard substring hack (test_document_workflow_contract.py:603),
+  stale old skill dirs remain in runtimes (sync_skills.sh does not delete dropped skills -> task 6).
+- Task 3: references/intake.md + document-intake.md merged into one intake.md (git rm of the latter); advisory findings fixed (entry rule, self-delegation, decision gates, test name, preview guard). RED before skill edit: 2 failed, 1652 passed; GREEN: `tests/skills tools` 1654 passed, 0 failed. Commit recorded in git log.
+- Note: `git commit --amend` fires the post-rewrite hook and synced academic-report-flow into ~/.claude/skills and
+  ~/.codex/skills early (old skills still there too). Do not amend/rebase on this branch.
+- Runtime cleanup (user-approved, 2026-10-01): old `document-workflow` and `academic-report-builder` dirs in
+  ~/.claude/skills and ~/.codex/skills verified identical to the repo, then moved to the trash (`trash-put`).
+  Recurrence risk: any checkout/merge in another worktree whose `scripts/sync_skills.sh` still lists the old
+  names re-syncs them until this branch is merged; sync never deletes dropped skills (task 6 follow-up).

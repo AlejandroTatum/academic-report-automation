@@ -98,7 +98,7 @@ def _run_sync(repo: Path, home: Path, path: str, args: tuple[str, ...] = ()):
     )
 
 
-def test_document_workflow_and_codex_target_present():
+def test_academic_report_flow_and_codex_target_present():
     script = SYNC.read_text(encoding="utf-8")
     skills = _array_entries(script, "SKILLS")
     targets = _array_entries(script, "TARGETS")

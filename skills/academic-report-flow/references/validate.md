@@ -3,10 +3,9 @@
 Executor: academic-report-flow (`quality-gates.md`) or `gentle-ai review`
 Artifact: `reports/<wf>/validation.yml`
 
-Load this reference only when `doc_status` returns `next: validate`. The executor is
-`academic-report-flow`, using its own `references/quality-gates.md`, and the native
-`gentle-ai review` actor when receipt-driven development is on for the repository. This
-skill orchestrates validation and never runs a validator, a receipt, or a gate itself.
+Load this reference only when `doc_status` returns `next: validate`. This skill executes
+the phase itself, following `quality-gates.md`, or hands the receipt to the native
+`gentle-ai review` actor when receipt-driven development is on for the repository.
 
 ## Contract
 

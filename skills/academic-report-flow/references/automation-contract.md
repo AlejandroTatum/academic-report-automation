@@ -2,7 +2,7 @@
 
 This contract applies to every document type: academic work, project documentation, professional/business reports, and technical documents. The commands, gates, and readiness receipts are identical across routes.
 
-Route selection precedes the build. Complete the intake in `document-intake.md`, resolve the route in `document-routing.md`, and have a current human approval marker (`APPROVAL_CURRENT`) before running any command below. The Document Contract is recorded data, not the approval gate. Never start a build to "see how it looks" before the route is confirmed.
+Route selection precedes the build. Complete the intake in `intake.md`, resolve the route in `document-routing.md`, and have a current human approval marker (`APPROVAL_CURRENT`) before running any command below. The Document Contract is recorded data, not the approval gate. Never start a build to "see how it looks" before the route is confirmed.
 
 ## Canonical automation
 

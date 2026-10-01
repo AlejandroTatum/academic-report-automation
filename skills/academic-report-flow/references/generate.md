@@ -3,9 +3,9 @@
 Executor: academic-report-flow
 Artifact: `outputs/<materia>/<final>.pdf`
 
-Load this reference only when `doc_status` returns `next: generate`. The executor is
-`academic-report-flow`, using its own `references/automation-contract.md` for the
-canonical build and validation commands; this skill never builds the document itself.
+Load this reference only when `doc_status` returns `next: generate`. This skill executes
+the phase itself, using `automation-contract.md` for the canonical build and
+validation commands.
 
 ## Precondition
 

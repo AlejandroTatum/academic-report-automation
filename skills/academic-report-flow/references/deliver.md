@@ -3,9 +3,9 @@
 Executor: academic-report-flow
 Artifact: `~/Documents/<category>/[<subject-slug>/]<slug>/<slug>-vNNN.pdf (+ the same-version <slug>-vNNN.bib only when deliver_bibliography: true)`
 
-Load this reference only when `doc_status` returns `next: deliver`. The executor is
-`academic-report-flow`, using its own `references/clean-delivery.md`; this skill
-orchestrates publication and never copies or versions the PDF itself.
+Load this reference only when `doc_status` returns `next: deliver`. This skill executes
+the phase itself, following `clean-delivery.md`; publication goes through the
+deliver entrypoint, never a manual copy or version bump.
 
 ## Contract
 

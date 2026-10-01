@@ -441,7 +441,7 @@ def test_intake_reference_states_the_record_keys_without_inventing_a_schema() ->
     for key in ("metadata.audience", "metadata.purpose", "metadata.visual_direction"):
         assert key in flat, f"the intake record must place {key} in the consumed metadata map"
     assert "`cover:`" in flat, "cover is a top-level key"
-    assert "document-intake.md" in flat, "the record semantics stay owned by the builder reference"
+    assert "```yaml" in text, "the report.yml record lives in the same unified intake file"
 
 
 def test_generate_and_deliver_references_print_runnable_absolute_commands() -> None:
@@ -600,7 +600,7 @@ def test_no_flow_file_mentions_the_removed_preview() -> None:
     offenders = [
         str(path.relative_to(SKILL_ROOT))
         for path in all_skill_files()
-        if "preview" in read(path).lower().replace("post-preview", "")
+        if re.search(r"(?<!post-)\bpreview", read(path), re.IGNORECASE)
     ]
     assert offenders == [], f"stale preview mentions remain: {offenders}"
 
@@ -625,16 +625,20 @@ def test_intake_reference_asks_only_the_content_first_minimum() -> None:
     assert "format phase" in flat, "intake.md must defer formatting to the format phase"
 
 
-def test_builder_intake_defers_formatting_to_the_format_phase() -> None:
-    """T6 rule 1: the executor intake names the content-first minimum and the deferral."""
-    text = read(
-        ROOT / "skills" / "academic-report-flow" / "references" / "document-intake.md"
+def test_intake_is_one_reference_with_route_in_the_content_first_minimum() -> None:
+    """Task 3: one intake file; its content-first minimum names the route too."""
+    assert not (SKILL_ROOT / "references" / "document-intake.md").exists(), (
+        "document-intake.md must be gone: references/intake.md is the single intake source"
     )
+    text = read(SKILL_ROOT / "references" / "intake.md")
     flat = re.sub(r"\s+", " ", re.sub(r"[*_`]", "", text)).lower()
-    assert "content-first" in flat, "document-intake.md must name the content-first route"
-    for token in ("title", "student", "guide", "rubric"):
-        assert token in flat, f"document-intake.md must name the minimum input `{token}`"
-    assert "format phase" in flat, "document-intake.md must defer formatting to the format phase"
+    assert "content-first" in flat, "intake.md must name the content-first route"
+    assert re.search(
+        r"minimum[^.]*: route, title, student, [^.]*guide[^.]*rubric[^.]*, (?:and )?teacher explanation",
+        flat,
+    ), "the content-first minimum must list route, title, student, guide/rubric, teacher explanation"
+    assert "format phase" in flat, "intake.md must defer formatting to the format phase"
+    assert "document-intake" not in read(SKILL_MD), "SKILL.md must not load the removed file"
 
 
 def test_research_reference_demands_verifiable_ieee_sources() -> None:

@@ -19,7 +19,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[2] / "skills" / "academic-report-f
 REFERENCES = SKILL_ROOT / "references"
 
 SKILL_MD = SKILL_ROOT / "SKILL.md"
-INTAKE_MD = REFERENCES / "document-intake.md"
+INTAKE_MD = REFERENCES / "intake.md"
 ROUTING_MD = REFERENCES / "document-routing.md"
 VISUAL_MD = REFERENCES / "visual-directions.md"
 GATES_MD = REFERENCES / "quality-gates.md"
@@ -721,7 +721,7 @@ def test_clean_delivery_never_implies_automatic_publication() -> None:
 def intake_record_block() -> str:
     """The one canonical ``report.yml`` record block documented in the intake."""
     blocks = re.findall(r"```yaml\n(.*?)```", read(INTAKE_MD), re.DOTALL)
-    assert blocks, "document-intake.md must show the report.yml record as a ```yaml block"
+    assert blocks, "intake.md must show the report.yml record as a ```yaml block"
     assert len(blocks) == 1, "keep exactly one canonical record block so copies cannot drift"
     return blocks[0]
 

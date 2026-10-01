@@ -12,11 +12,11 @@ metadata:
 
 Use for creating, adapting, reviewing, exporting, resuming, or advancing a structured academic, project, professional, business, technical, PDF, or DOCX document. PDF or DOCX is a format signal only. The user chooses the document type; never infer it from format, prompt, files, or history.
 
-Always run `doc_status.py` first on `$REPORT_CONTENT_ROOT/reports/<work-folder>/` and load only the current phase reference. Without a work folder, run the full route: intake first, then the `next` token. Loop: `doc_status -> next -> reference -> delegate -> re-run`. See `references/routing-loop.md`.
+Entry rule: when a work folder exists, run `doc_status.py` first on `$REPORT_CONTENT_ROOT/reports/<work-folder>/` and load only the current phase reference; without a work folder, run the standalone full route (`references/intake.md`), then the `next` token. Loop: `doc_status -> next -> reference -> delegate -> re-run`. See `references/routing-loop.md`.
 
 ### Mandatory Intake
 
-Load `references/document-intake.md` on every execution. Record document type, audience, purpose, template/identity, delivery format, and visual direction, using the `report.yml` record keys that reference defines (`route:`, `output:`, `template:`, top-level `cover:`, and the `metadata:` fields). Render the Document Contract as a data record written to `report.yml`; it does not authorize generation. The single confirmation gate is post-preview and lives in `academic-report-flow/references/approval.md`; intake never asks for approval.
+Load `references/intake.md` for the `intake` phase and on every standalone run. It owns the `report.yml` record (`route:`, `output:`, `template:`, top-level `cover:`, `metadata:` fields) and the content-first minimum. The Document Contract is a data record and does not authorize generation. The single confirmation gate is post-preview and lives in `academic-report-flow/references/approval.md`; intake never asks for approval.
 
 ### Prohibition On Inferring Document Type
 
@@ -45,20 +45,22 @@ Recommend at most one type with a reason, but do not select it. Ambiguity stops 
 
 | Situation | Action |
 |---|---|
-| `next` names a phase | Load its reference and delegate to the executor. |
+| `next` names a phase | Load its reference and run its executor (this skill, `research-workflow`, or a judge). |
 | Intake data missing or ambiguous | Stop and ask; recording the contract is never approval. |
 | Approval marker absent or stale | Block generation and publication; request the single post-preview confirmation. |
 | `next: approval` / `next: review` | Present the human gate; write `approval.yml` / `final-review.yml` only on an explicit answer. |
 | Type ambiguous or non-academic | Recommend/resolve a route; never fall back to Route A. |
+| Template or rubric confirmed | Mirror its sections, formatting, and criteria. |
+| Visual-heavy section | Build and validate figures with `academic-visual-builder`, then inspect the assembled report. |
 | Unsupported backend/output or unknown executor | Stop; never substitute silently. |
 | Script PASS contradicts visible evidence | Record `VISUAL_FAIL`, correct, rebuild, and repeat all gates. |
-| Inspection incomplete | Return `REVIEW_REQUIRED`, without `VISUAL_PASS`. |
+| Inspection incomplete | Return `REVIEW_REQUIRED`, without `VISUAL_PASS`; a prior automatic PDF publication stays technical-copy status only. |
 | `next: done` | Report completion; route no further. |
 
 ## Execution Steps
 
 1. Run `doc_status.py`; present the human block verbatim; read `next`.
-2. Load `automation-contract.md` and the one phase reference; delegate to its executor.
+2. Load `automation-contract.md` and the one phase reference; run its executor.
 3. Bind sections, claims, citations, tables, and figures to the confirmed contract.
 4. Build with the canonical commands; record immutable artifact hash and page count.
 5. Retain validator/auditor outputs as precheck evidence; inspect every contact-sheet page and applicable full-size pages directly.
@@ -72,7 +74,7 @@ Return the verbatim human block, the `academic.doc-status/v1` block, the routed 
 ## References
 
 - `references/routing-loop.md` — phase/executor table, status template, content-first rules.
-- `references/intake.md` — content-first minimum intake and `report.yml`.
+- `references/intake.md` — the single intake source: content-first minimum, full-route confirmations, `report.yml`.
 - `references/research.md` — five-source IEEE gate (`sources.bib`).
 - `references/plan.md` — rubric as machine-checkable plan (`rubric.yml`).
 - `references/draft.md` — full draft (`body.md`).
@@ -83,6 +85,6 @@ Return the verbatim human block, the `academic.doc-status/v1` block, the routed 
 - `references/validate.md` — RDD or fallback validation.
 - `references/review.md` — final human review gate.
 - `references/deliver.md` — versioned publication.
-- `references/document-intake.md`, `document-routing.md`, `automation-contract.md`, `quality-gates.md`, `clean-delivery.md`, `visual-directions.md` — full-route contracts.
+- `references/document-routing.md`, `automation-contract.md`, `quality-gates.md`, `clean-delivery.md`, `visual-directions.md` — full-route contracts.
 - `references/unl-shell.md` and `references/profiles/` — Route A only.
 - `templates/academic_format.yml` — format and validator contract.

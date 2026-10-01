@@ -6,26 +6,26 @@ Run `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/doc_status.py"
 "$REPORT_CONTENT_ROOT/reports/<work-folder>/"` first; the returned `next` token owns
 the route. The selected interpreter (`REPORT_PYTHON`) and the roots are defined in
 `automation-contract.md`; every path above is absolute, so the working directory
-never changes the answer. This skill orchestrates only: it never re-implements a
-phase and never reads executor internals to decide where a run stands.
+never changes the answer. This skill never reads executor internals to decide where a run
+stands; only the `next` token does.
 
 The phase/reference/executor routing table is the whole routing logic:
 
 | next | reference | executor |
 |---|---|---|
-| intake | `references/intake.md` | `academic-report-flow` (`document-intake.md`) |
+| intake | `references/intake.md` | this skill (academic-report-flow, `intake.md`) |
 | research | `references/research.md` | `research-workflow` |
-| plan | `references/plan.md` | this skill (academic-report-flow) |
-| draft | `references/draft.md` | `academic-report-flow` (composition, body draft) |
+| plan | `references/plan.md` | this skill |
+| draft | `references/draft.md` | this skill (composition, body draft) |
 | approval | `references/approval.md` | this skill - human gate, no executor |
-| verify | `references/verify.md` | this skill (academic-report-flow) |
-| format | `references/format.md` | this skill (academic-report-flow) |
-| generate | `references/generate.md` | `academic-report-flow` (`automation-contract.md`) |
-| validate | `references/validate.md` | `academic-report-flow` (`quality-gates.md`) or `gentle-ai review` |
+| verify | `references/verify.md` | this skill |
+| format | `references/format.md` | this skill |
+| generate | `references/generate.md` | this skill (`automation-contract.md`) |
+| validate | `references/validate.md` | this skill (`quality-gates.md`) or `gentle-ai review` |
 | review | `references/review.md` | this skill - human gate, no executor |
-| deliver | `references/deliver.md` | `academic-report-flow` (`clean-delivery.md`) |
+| deliver | `references/deliver.md` | this skill (`clean-delivery.md`) |
 
-- Each delegation produces exactly one artifact consumed by the derivation table.
+- Each phase produces exactly one artifact consumed by the derivation table.
 - Present the human block verbatim; never summarize or reword it.
 - Present every human gate losslessly: complete options, consequences, exact
   allowed answers, no silent default, and never proceed on silence.

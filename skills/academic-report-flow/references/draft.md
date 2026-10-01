@@ -3,9 +3,8 @@
 Executor: academic-report-flow
 Artifact: `reports/<wf>/body.md`
 
-Load this reference only when `doc_status` returns `next: draft`. The executor is
-`academic-report-flow` in its composition role; this skill orchestrates the phase
-and never drafts the body itself.
+Load this reference only when `doc_status` returns `next: draft`. This skill executes
+the phase itself, in its composition role.
 
 ## Contract
 
