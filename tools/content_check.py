@@ -54,7 +54,7 @@ import rubric_checks
 import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
-from source_count import MIN_ACADEMIC_SOURCES, eligible_entry_keys
+from source_count import MIN_ACADEMIC_SOURCES, effective_min_sources, eligible_entry_keys
 from validate_ieee_refs import bib_keys, cited_keys
 
 CONTENT_CHECK_NAME = "content-check.yml"
@@ -289,12 +289,16 @@ def _missing_quote_warnings(judgments_file: str, judgments: list[dict], body_tex
 
 
 def mechanical_checks(
-    body_text: str, bib_text: str, criteria: list[dict], judgments: list[dict]
+    body_text: str,
+    bib_text: str,
+    criteria: list[dict],
+    judgments: list[dict],
+    min_sources: int = MIN_ACADEMIC_SOURCES,
 ) -> list[dict]:
     """Derive the deterministic per-check entries (``check``/``ok``/``detail``).
 
     (a) every ``[@key]`` citation in body.md resolves to a bib entry;
-    (b) at least ``MIN_ACADEMIC_SOURCES`` distinct eligible book/paper entries
+    (b) at least ``min_sources`` (the report's effective minimum) distinct eligible book/paper entries
         are actually cited in body.md (not merely present in the bib);
     (c) every rubric criterion id has exactly one judgment and no unknown ids.
     """
@@ -317,9 +321,9 @@ def mechanical_checks(
     checks.append(
         {
             "check": "eligible_sources_cited",
-            "ok": len(eligible_cited) >= MIN_ACADEMIC_SOURCES,
+            "ok": len(eligible_cited) >= min_sources,
             "detail": (
-                f"{len(eligible_cited)}/{MIN_ACADEMIC_SOURCES} eligible book or paper "
+                f"{len(eligible_cited)}/{min_sources} eligible book or paper "
                 f"sources cited in body.md"
                 + (f": {', '.join(eligible_cited)}" if eligible_cited else "")
             ),
@@ -435,6 +439,11 @@ def run_check(
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
 
     try:
+        min_sources = effective_min_sources(config)
+    except ValueError as exc:
+        return CheckOutcome("", {}, (str(exc),))
+
+    try:
         expected_inputs = judge_inputs(folder, config)
         criteria = rubric_plan.load_rubric(folder)
         rubric_hash = sha256_file(folder / rubric_plan.RUBRIC_NAME)
@@ -481,8 +490,8 @@ def run_check(
         for d in disagreements
     )]))
     judges = [item[2] for item in parsed]
-    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0])[-1] for item in parsed]
-    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments)
+    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources)[-1] for item in parsed]
+    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources)
     if not all(check["ok"] for check in individual_checks):
         checks[-1] = {"check": "judgments_match_rubric", "ok": False,
                       "detail": "; ".join(check["detail"] for check in individual_checks if not check["ok"])}

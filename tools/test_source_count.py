@@ -161,3 +161,51 @@ def test_source_gate_honors_bibliography_override(tmp_path: Path) -> None:
 
     assert missing.ok is False
     assert "absent.bib" in missing.reason
+
+
+def _bib_with(folder: Path, count: int) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "sources.bib").write_text(
+        "\n".join(f"@book{{k{i}, title={{T{i}}}}}" for i in range(count)) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_min_sources_override_lowers_the_gate(tmp_path: Path) -> None:
+    _bib_with(tmp_path, 1)
+
+    result = source_count.source_gate(tmp_path, _config(tmp_path, {"min_sources": 1}))
+
+    assert result.ok is True
+    assert result.reason == "sources.bib has 1/1 book or paper sources"
+
+
+def test_min_sources_override_can_raise_the_gate(tmp_path: Path) -> None:
+    _bib_with(tmp_path, 5)
+
+    result = source_count.source_gate(tmp_path, _config(tmp_path, {"min_sources": 7}))
+
+    assert result.ok is False
+    assert result.reason == "sources.bib has 5/7 book or paper sources"
+
+
+def test_absent_min_sources_keeps_default_five(tmp_path: Path) -> None:
+    _bib_with(tmp_path, 4)
+
+    result = source_count.source_gate(tmp_path, _config(tmp_path))
+
+    assert result.ok is False
+    assert result.reason == "sources.bib has 4/5 book or paper sources"
+    assert source_count.effective_min_sources(_config(tmp_path)) == 5
+
+
+@pytest.mark.parametrize("bad", [0, -1, "3", 2.5, True, None, [1]])
+def test_invalid_min_sources_fails_closed(tmp_path: Path, bad: object) -> None:
+    _bib_with(tmp_path, 9)
+    config = _config(tmp_path, {"min_sources": bad})
+
+    with pytest.raises(ValueError, match="min_sources"):
+        source_count.effective_min_sources(config)
+    result = source_count.source_gate(tmp_path, config)
+    assert result.ok is False
+    assert "min_sources" in result.reason

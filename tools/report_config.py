@@ -264,6 +264,7 @@ def unknown_route_message(route: str) -> str:
 # not pick.
 FORMAT_KEY = "format"
 FORMAT_HINT_KEY = "format_hint"
+MIN_SOURCES_KEY = "min_sources"
 DEFAULT_STUDENT = "Alejandro Padilla"
 
 # Metadata report.yml must carry, per chosen format. `aa` demands exactly what
@@ -434,6 +435,24 @@ class ReportConfig:
         if chosen not in FORMAT_REQUIRED_METADATA:
             raise ValueError(unknown_format_message(chosen or ""))
         return FORMAT_REQUIRED_METADATA[chosen]
+
+    @property
+    def min_sources(self) -> int | None:
+        """Per-report academic source minimum (``min_sources:``), or ``None``.
+
+        ``None`` means the key is absent and the shared default applies (see
+        ``source_count.effective_min_sources``). Only a positive YAML integer
+        is accepted -- booleans, strings, floats, null and values below 1 raise
+        ValueError rather than silently falling back to the default.
+        """
+        if MIN_SOURCES_KEY not in self.raw:
+            return None
+        value = self.raw[MIN_SOURCES_KEY]
+        if type(value) is not int or value < 1:
+            raise ValueError(
+                f"{MIN_SOURCES_KEY} debe ser un entero positivo en report.yml (recibido: {value!r})"
+            )
+        return value
 
     @property
     def backend(self) -> str:
@@ -915,6 +934,7 @@ def load_report_config(folder: Path) -> ReportConfig:
         _ = config.publish_global
         _ = config.validators
         _ = config.deliver_bibliography
+        _ = config.min_sources
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

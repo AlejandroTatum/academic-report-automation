@@ -1173,3 +1173,51 @@ def test_missing_quote_warning_does_not_soften_strictest_merge(tmp_path: Path) -
     assert content_check.content_check_state(folder) == "fail"
     assert [c["status"] for c in marker["criteria"]] == ["falta", "cumple"]
     assert any(f.startswith("quote warning") and "b.yml" in f and "objetivo" in f for f in marker["findings"])
+
+
+# ---------------------------------------------------------------------------
+# report.yml `min_sources` override
+# ---------------------------------------------------------------------------
+
+
+def _min_sources_folder(folder: Path, value: str | None, bib_count: int = 1) -> Path:
+    _report(folder)
+    if value is not None:
+        with (folder / "report.yml").open("a", encoding="utf-8") as handle:
+            handle.write(f"min_sources: {value}\n")
+    _sources_bib(folder, count=bib_count)
+    _rubric(folder)
+    _body(folder, "# Informe\n\nCuerpo con [@key1].\n")
+    return folder
+
+
+def test_min_sources_override_one_passes_with_one_cited_source(tmp_path: Path) -> None:
+    folder = _min_sources_folder(tmp_path / "wf", "1")
+
+    assert _run(folder) == 0
+
+    eligible = _mechanical(_marker(folder), "eligible_sources_cited")
+    assert eligible["ok"] is True
+    assert eligible["detail"].startswith("1/1 eligible book or paper sources cited")
+
+
+def test_absent_min_sources_still_requires_five_cited(tmp_path: Path) -> None:
+    folder = _min_sources_folder(tmp_path / "wf", None)
+
+    assert _run(folder) == 1
+
+    eligible = _mechanical(_marker(folder), "eligible_sources_cited")
+    assert eligible["ok"] is False
+    assert "1/5" in eligible["detail"]
+
+
+@pytest.mark.parametrize("bad", ["0", "-2", "'3'", "2.5", "true", "null"])
+def test_invalid_min_sources_is_input_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], bad: str
+) -> None:
+    folder = _min_sources_folder(tmp_path / "wf", bad)
+
+    assert _run(folder) == 2
+
+    assert "min_sources" in capsys.readouterr().err
+    assert not (folder / "content-check.yml").exists()
