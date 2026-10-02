@@ -930,7 +930,8 @@ def render_tex(config: ReportConfig) -> str:
     # Emission detection reads the MAIN body: the annex chunk follows the
     # bibliography by construction, so its citations (if any) cannot decide
     # whether the bibliography prints before them.
-    emit_bibliography = r"\cite{" in body and config.bib_path is not None
+    # ``uncited_bibliography: true`` prints the whole .bib without any \cite.
+    emit_bibliography = (r"\cite{" in body or config.uncited_bibliography) and config.bib_path is not None
     if emit_bibliography:
         body = markdown_to_latex(
             main_source, suppress_bibliography_heading=True, build_dir=build_dir,
@@ -1068,7 +1069,8 @@ def render_tex(config: ReportConfig) -> str:
         # Emission is citation-driven (#26): only a body that actually cites
         # the .bib file prints the bibliography (and its template title).
         "{{PRINT_BIBLIOGRAPHY}}": (
-            rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
+            (r"\nocite{*}" + "\n" if config.uncited_bibliography else "")
+            + rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
             if emit_bibliography
             else "% Bibliography omitted: the body cites nothing from the .bib file (#26)."
         ),

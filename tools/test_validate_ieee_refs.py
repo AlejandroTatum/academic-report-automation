@@ -220,3 +220,52 @@ def test_cited_document_still_requires_bibliography_section(tmp_path: Path, monk
     monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: "Texto [1] sin seccion final.")
     result = validate_ieee(config)
     assert any("Bibliograf" in e for e in result.errors)
+
+
+def _write_uncited_bibliography(folder: Path) -> None:
+    _write_academic_report(folder)
+    data = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    data["uncited_bibliography"] = True
+    (folder / "report.yml").write_text(yaml.dump(data), encoding="utf-8")
+    (folder / "body.md").write_text("# Informe\n\nTexto sin citas.\n", encoding="utf-8")
+    (folder / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+    (folder / "outputs").mkdir(exist_ok=True)
+
+
+def _validate_uncited(tmp_path: Path, monkeypatch, rendered: str):
+    import validate_ieee_refs
+
+    _write_uncited_bibliography(tmp_path)
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: rendered)
+    return validate_ieee(config)
+
+
+def test_uncited_bibliography_requires_the_bibliography_section(tmp_path: Path, monkeypatch) -> None:
+    result = _validate_uncited(tmp_path, monkeypatch, "Texto sin seccion final.")
+
+    assert any("Bibliograf" in e for e in result.errors)
+
+
+def test_uncited_bibliography_accepts_a_printed_section(tmp_path: Path, monkeypatch) -> None:
+    result = _validate_uncited(tmp_path, monkeypatch, "Texto.\nBibliografía\n[1] J. Smith, A Study.")
+
+    assert not any("Bibliograf" in e or "no citadas" in e for e in result.errors)
+    assert not any("no citadas" in w for w in result.warnings)
+
+
+def test_uncited_bibliography_skips_reciprocity_unused_error(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "research").mkdir()
+    (tmp_path / "research" / "evidence.yml").write_text(yaml.dump({"claims": []}), encoding="utf-8")
+
+    result = _validate_uncited(tmp_path, monkeypatch, "Bibliografía\n[1] J. Smith.")
+
+    assert not any("no citadas" in e for e in result.errors)
+
+
+def test_reciprocity_still_flags_unused_entries_by_default() -> None:
+    result = claim_support_and_reciprocity([], BIB_OK, "Texto sin citas.\n")
+
+    assert any("no citadas" in e for e in result.errors)
