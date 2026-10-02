@@ -76,11 +76,15 @@ def draft_record_path(pdf_path: Path) -> Path:
     return pdf.with_name(f"{pdf.stem}.body.sha256")
 
 
-def write_draft_record(pdf_path: Path, body_path: Path) -> Path:
-    """Record the ``body.md`` bytes a draft build is about to render."""
+def write_draft_record(pdf_path: Path, body_path: Path, digest: str | None = None) -> Path:
+    """Record the ``body.md`` bytes a draft build rendered.
+
+    ``digest`` is the hash taken before the build started, so an edit made
+    while the build ran is not recorded as rendered.
+    """
     record = draft_record_path(pdf_path)
     record.parent.mkdir(parents=True, exist_ok=True)
-    record.write_text(sha256_file(body_path) + "\n", encoding="utf-8")
+    record.write_text((digest or sha256_file(body_path)) + "\n", encoding="utf-8")
     return record
 
 

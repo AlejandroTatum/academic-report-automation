@@ -606,13 +606,13 @@ class TestMain:
 class TestApprovalGuard:
     """Building requires a current approval.yml unless explicitly skipped."""
 
-    def _run(self, folder: Path, extra: list[str] | None = None) -> MagicMock:
+    def _run(self, folder: Path, extra: list[str] | None = None, build_error: BaseException | None = None) -> MagicMock:
         config = FakeReportConfig(backend="latex", folder=folder)
         argv = ["build_report_auto.py", str(folder)] + (extra or [])
         with (
             patch.object(sys, "argv", argv),
             patch("build_report_auto.load_report_config", return_value=config),
-            patch("build_report_auto.build_backend") as mock_build,
+            patch("build_report_auto.build_backend", side_effect=build_error) as mock_build,
             patch("build_report_auto.validate", return_value=FakeValidation()),
             patch("build_report_auto.sha256_file", return_value="h"),
             patch("build_report_auto.approval_state", wraps=__import__("approval_marker").approval_state),
@@ -650,6 +650,28 @@ class TestApprovalGuard:
         self._run(tmp_path, ["--no-approval-check"])
         record = draft_record_path(tmp_path / "outputs" / "report.pdf")
         assert record.read_text(encoding="utf-8").strip() == sha256_file(body)
+
+    def test_failed_draft_build_leaves_no_fresh_record(self, tmp_path: Path) -> None:
+        from approval_marker import draft_is_fresh, draft_record_path, write_draft_record
+
+        body = tmp_path / "body.md"
+        body.write_text("# A\n", encoding="utf-8")
+        pdf = tmp_path / "outputs" / "report.pdf"
+        pdf.parent.mkdir(parents=True)
+        pdf.write_bytes(b"%PDF old")
+        write_draft_record(pdf, body)
+        body.write_text("# Edited\n", encoding="utf-8")
+        with pytest.raises(SystemExit):
+            self._run(tmp_path, ["--no-approval-check"], build_error=SystemExit("latex failed"))
+        assert not draft_record_path(pdf).exists()
+        assert not draft_is_fresh(pdf, body)
+
+    def test_tex_only_draft_build_writes_no_record(self, tmp_path: Path) -> None:
+        from approval_marker import draft_record_path
+
+        (tmp_path / "body.md").write_text("# A\n", encoding="utf-8")
+        self._run(tmp_path, ["--no-approval-check", "--tex-only"])
+        assert not draft_record_path(tmp_path / "outputs" / "report.pdf").exists()
 
     def test_final_build_does_not_write_a_draft_record(self, tmp_path: Path) -> None:
         from approval_marker import draft_record_path
