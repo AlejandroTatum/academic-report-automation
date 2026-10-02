@@ -55,7 +55,7 @@ import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
 from validate_report import bold_pseudo_heading_lines
-from source_count import MIN_ACADEMIC_SOURCES, effective_min_sources, eligible_entry_keys
+from source_count import MIN_ACADEMIC_SOURCES, all_entry_keys, effective_min_sources, eligible_entry_keys
 from validate_ieee_refs import bib_keys, cited_keys
 
 CONTENT_CHECK_NAME = "content-check.yml"
@@ -381,12 +381,14 @@ def mechanical_checks(
     criteria: list[dict],
     judgments: list[dict],
     min_sources: int = MIN_ACADEMIC_SOURCES,
+    uncited_bibliography: bool = False,
 ) -> list[dict]:
     """Derive the deterministic per-check entries (``check``/``ok``/``detail``).
 
     (a) every ``[@key]`` citation in body.md resolves to a bib entry;
     (b) at least ``min_sources`` (the report's effective minimum) distinct eligible book/paper entries
         are actually cited in body.md (not merely present in the bib);
+        (``uncited_bibliography`` replaces this with "the bib lists at least one entry");
     (c) every rubric criterion id has exactly one judgment and no unknown ids.
     """
     cited = cited_keys(body_text)
@@ -405,17 +407,28 @@ def mechanical_checks(
         detail = "no [@key] citations in body.md"
     checks.append({"check": "citations_resolve", "ok": not unresolved, "detail": detail})
 
-    checks.append(
-        {
-            "check": "eligible_sources_cited",
-            "ok": len(eligible_cited) >= min_sources,
-            "detail": (
-                f"{len(eligible_cited)}/{min_sources} eligible book or paper "
-                f"sources cited in body.md"
-                + (f": {', '.join(eligible_cited)}" if eligible_cited else "")
-            ),
-        }
-    )
+    if uncited_bibliography:
+        listed = len(all_entry_keys(bib_text))
+        noun = "entry" if listed == 1 else "entries"
+        checks.append(
+            {
+                "check": "eligible_sources_cited",
+                "ok": listed >= 1,
+                "detail": f"uncited bibliography: {listed} {noun} listed, no citations required",
+            }
+        )
+    else:
+        checks.append(
+            {
+                "check": "eligible_sources_cited",
+                "ok": len(eligible_cited) >= min_sources,
+                "detail": (
+                    f"{len(eligible_cited)}/{min_sources} eligible book or paper "
+                    f"sources cited in body.md"
+                    + (f": {', '.join(eligible_cited)}" if eligible_cited else "")
+                ),
+            }
+        )
 
     known_ids = [str(criterion.get("id")) for criterion in criteria]
     counts = Counter(str(judgment["id"]) for judgment in judgments)
@@ -527,6 +540,7 @@ def run_check(
 
     try:
         min_sources = effective_min_sources(config)
+        uncited = config.uncited_bibliography
     except ValueError as exc:
         return CheckOutcome("", {}, (str(exc),))
 
@@ -584,8 +598,8 @@ def run_check(
         for d in disagreements
     )]))
     judges = [item[2] for item in parsed]
-    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources)[-1] for item in parsed]
-    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources)
+    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources, uncited)[-1] for item in parsed]
+    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources, uncited)
     if reused and checks[-1]["ok"]:
         checks[-1]["detail"] += "; judgments reused: markup-only change"
     if not all(check["ok"] for check in individual_checks):
@@ -768,7 +782,9 @@ def body_check_results(folder: Path) -> list[dict]:
     criteria = rubric_plan.load_rubric(folder)
     config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
     min_sources = effective_min_sources(config)
-    mechanical = mechanical_checks(body_text, _read_bib(config), criteria, [], min_sources)
+    mechanical = mechanical_checks(
+        body_text, _read_bib(config), criteria, [], min_sources, config.uncited_bibliography
+    )
     results = [check for check in mechanical if check["check"] in _BODY_CHECK_MECHANICAL]
     format_problems = body_format_problems(body_text)
     results.append(

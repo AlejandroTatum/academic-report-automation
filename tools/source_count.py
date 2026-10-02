@@ -62,6 +62,7 @@ _DEFAULT_BIB = "sources.bib"
 # key; directives like `@string{name = "..."}` (no key) fall out naturally
 # because their type is not eligible.
 _ENTRY_HEADER = re.compile(r"@(\w+)\s*\{\s*([^,\s{}]+)")
+_DIRECTIVES = ("comment", "string", "preamble")
 
 
 @dataclass(frozen=True)
@@ -87,15 +88,63 @@ def eligible_entry_keys(bib_text: str) -> tuple[str, ...]:
     return tuple(keys)
 
 
+def all_entry_keys(bib_text: str) -> tuple[str, ...]:
+    """Return the deduplicated keys of every BibTeX entry of any type, in file order.
+
+    ``@comment``/``@string``/``@preamble`` directives are not entries.
+    """
+    keys: list[str] = []
+    for match in _ENTRY_HEADER.finditer(bib_text):
+        if match.group(1).lower() in _DIRECTIVES:
+            continue
+        key = match.group(2)
+        if key not in keys:
+            keys.append(key)
+    return tuple(keys)
+
+
+def _uncited_gate(config: ReportConfig, declared: str) -> SourceCount:
+    """Gate for ``uncited_bibliography: true``: at least one entry of any type."""
+    try:
+        config.uncited_bibliography
+    except ValueError as exc:
+        return SourceCount(0, (), False, str(exc))
+    bib = config.bib_path
+    if bib is None:
+        return SourceCount(0, (), False, f"{declared} is missing")
+    try:
+        text = bib.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return SourceCount(0, (), False, f"{declared} is not valid UTF-8; save it as UTF-8")
+    except OSError:
+        return SourceCount(0, (), False, f"{declared} unreadable")
+    keys = all_entry_keys(text)
+    count = len(keys)
+    noun = "entry" if count == 1 else "entries"
+    if count < 1:
+        return SourceCount(
+            0, (), False, f"{declared} lists 0 entries (uncited bibliography needs at least 1)"
+        )
+    return SourceCount(count, keys, True, f"{declared} lists {count} {noun} (uncited bibliography)")
+
+
 def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
     """Evaluate the ``>= effective_min_sources`` gate for a report folder.
 
     Reads the file ``ReportConfig.bib_path`` resolves (so ``bibliography:``/
     ``bib:`` overrides win over the ``sources.bib`` default) and returns the
     eligible count with a human-readable reason; ``ok`` is True only at or
-    above the minimum. An invalid ``min_sources:`` fails closed with its
+    above the minimum. With ``uncited_bibliography: true`` the gate instead
+    requires at least one entry of any type. An invalid ``min_sources:`` fails closed with its
     error as the reason.
     """
+    declared = str(config.raw.get("bibliography") or config.raw.get("bib") or _DEFAULT_BIB)
+    if config.raw.get("uncited_bibliography") is True:
+        return _uncited_gate(config, declared)
+    return _standard_gate(config, declared)
+
+
+def _standard_gate(config: ReportConfig, declared: str) -> SourceCount:
     try:
         minimum = effective_min_sources(config)
     except ValueError as exc:
@@ -105,7 +154,6 @@ def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
         # artifact is required, so a missing or unreadable bib is not a gap.
         return SourceCount(0, (), True, "min_sources: 0, no bibliography required")
     bib = config.bib_path
-    declared = str(config.raw.get("bibliography") or config.raw.get("bib") or _DEFAULT_BIB)
     if bib is None:
         return SourceCount(
             0,

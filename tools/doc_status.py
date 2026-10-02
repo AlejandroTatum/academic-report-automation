@@ -592,6 +592,14 @@ def _effective_min_sources(config: ReportConfig) -> int:
         return MIN_ACADEMIC_SOURCES
 
 
+def _uncited_bibliography(config: ReportConfig) -> bool:
+    """Whether ``uncited_bibliography:`` is on; an invalid value is the gate's to report."""
+    try:
+        return config.uncited_bibliography
+    except ValueError:
+        return False
+
+
 def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None, blocked_reason: str = "") -> str:
     """Action sentence for ``phase_name``, bound to the real work-folder path.
 
@@ -651,6 +659,11 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             handoff = "present PDF to the user (never screenshots):\nbrave '" + quoted + "'"
             if phase_name == "review":
                 template += "; " + handoff
+    if phase_name == "research" and _uncited_bibliography(config):
+        template = (
+            "write at least 1 entry (any type) to {sources}, the exact list to print "
+            "(uncited_bibliography: true), then re-run doc_status"
+        )
     if phase_name == "research" and _effective_min_sources(config) == 0:
         template = "no sources are required (min_sources: 0); re-run doc_status"
     return template.format(

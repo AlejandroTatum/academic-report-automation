@@ -269,6 +269,7 @@ def unknown_route_message(route: str) -> str:
 FORMAT_KEY = "format"
 FORMAT_HINT_KEY = "format_hint"
 MIN_SOURCES_KEY = "min_sources"
+UNCITED_BIBLIOGRAPHY_KEY = "uncited_bibliography"
 DEFAULT_STUDENT = "Alejandro Padilla"
 
 # Metadata report.yml must carry, per chosen format. `aa` demands exactly what
@@ -466,6 +467,29 @@ class ReportConfig:
                 f"{MIN_SOURCES_KEY} debe ser un entero positivo en report.yml (recibido: {value!r})"
             )
         return value
+
+    @property
+    def uncited_bibliography(self) -> bool:
+        """Whether the report prints its bibliography without in-text citations.
+
+        Strict boolean in report.yml (``uncited_bibliography: true``), default
+        ``False``. The opt-in is explicit and narrow: academic route only, a
+        bibliography file must exist (every entry in it is printed), and it is
+        mutually exclusive with ``min_sources``. Violations raise ValueError.
+        """
+        enabled = strict_bool(self.raw.get(UNCITED_BIBLIOGRAPHY_KEY, False), UNCITED_BIBLIOGRAPHY_KEY)
+        if not enabled:
+            return False
+        if self.route != DEFAULT_ROUTE:
+            raise ValueError(f"{UNCITED_BIBLIOGRAPHY_KEY}: solo se permite en la ruta academic")
+        if MIN_SOURCES_KEY in self.raw:
+            raise ValueError(f"{UNCITED_BIBLIOGRAPHY_KEY}: no se puede combinar con {MIN_SOURCES_KEY}")
+        if self.bib_path is None:
+            raise ValueError(
+                f"{UNCITED_BIBLIOGRAPHY_KEY}: la bibliografía declarada no existe; "
+                "crea el archivo .bib que se imprimirá completo"
+            )
+        return True
 
     @property
     def backend(self) -> str:
@@ -969,6 +993,7 @@ def load_report_config(folder: Path) -> ReportConfig:
         _ = config.validators
         _ = config.deliver_bibliography
         _ = config.min_sources
+        _ = config.uncited_bibliography
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

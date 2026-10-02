@@ -162,3 +162,33 @@ def test_delivered_needs_a_current_final_review_and_a_published_version(tmp_path
     # Both conditions together.
     _final_review(folder, pdf=pdf)
     assert doc_status._phase_review(folder, config, root).state == doc_status.DONE
+
+
+def test_research_phase_reports_the_uncited_bibliography(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    (folder / "report.yml").write_text(
+        (folder / "report.yml").read_text(encoding="utf-8") + "uncited_bibliography: true\n",
+        encoding="utf-8",
+    )
+    (folder / "sources.bib").write_text("@misc{slides, title={Slides}}\n", encoding="utf-8")
+
+    phase = doc_status._phase_research(folder, _config(folder), None)
+
+    assert phase.state == doc_status.DONE
+    assert phase.detail == "sources.bib lists 1 entry (uncited bibliography)"
+
+
+def test_research_guidance_for_uncited_bibliography_does_not_ask_for_five(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    (folder / "report.yml").write_text(
+        (folder / "report.yml").read_text(encoding="utf-8") + "uncited_bibliography: true\n",
+        encoding="utf-8",
+    )
+    (folder / "sources.bib").write_text("% empty\n", encoding="utf-8")
+
+    guidance = doc_status._guidance("research", folder, _config(folder))
+
+    assert "at least 5" not in guidance
+    assert "at least 1 entry" in guidance

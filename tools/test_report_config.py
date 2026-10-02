@@ -449,3 +449,64 @@ def test_work_folder_literally_named_documento_keeps_its_own_slug(tmp_path: Path
     config = load_report_config(_write_report(tmp_path / "documento", "technical", "Informe Tecnico"))
 
     assert config.pdf_path.name == "documento.pdf"
+
+
+def _uncited_folder(tmp_path: Path, bib: bool = True) -> Path:
+    if bib:
+        (tmp_path / "sources.bib").write_text("@misc{slides, title={Slides}}\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_uncited_bibliography_defaults_to_false(tmp_path: Path) -> None:
+    assert ReportConfig(folder=tmp_path, raw={}).uncited_bibliography is False
+
+
+def test_uncited_bibliography_true_on_academic_route_with_bib(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path)
+    config = ReportConfig(folder=folder, raw={"uncited_bibliography": True})
+
+    assert config.uncited_bibliography is True
+
+
+@pytest.mark.parametrize("bad", ["true", 1, None, [True]])
+def test_uncited_bibliography_rejects_non_boolean(tmp_path: Path, bad: object) -> None:
+    folder = _uncited_folder(tmp_path)
+
+    with pytest.raises(ValueError, match="uncited_bibliography"):
+        ReportConfig(folder=folder, raw={"uncited_bibliography": bad}).uncited_bibliography
+
+
+def test_uncited_bibliography_rejects_non_academic_route(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path)
+    raw = {"route": "business", "uncited_bibliography": True}
+
+    with pytest.raises(ValueError, match="uncited_bibliography.*academic"):
+        ReportConfig(folder=folder, raw=raw).uncited_bibliography
+
+
+def test_uncited_bibliography_requires_a_bibliography_file(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path, bib=False)
+
+    with pytest.raises(ValueError, match="uncited_bibliography.*bibliograf"):
+        ReportConfig(folder=folder, raw={"uncited_bibliography": True}).uncited_bibliography
+
+
+def test_uncited_bibliography_excludes_min_sources(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path)
+    raw = {"uncited_bibliography": True, "min_sources": 3}
+
+    with pytest.raises(ValueError, match="uncited_bibliography.*min_sources"):
+        ReportConfig(folder=folder, raw=raw).uncited_bibliography
+
+
+def test_uncited_bibliography_false_skips_the_other_checks(tmp_path: Path) -> None:
+    raw = {"route": "business", "uncited_bibliography": False, "min_sources": 3}
+
+    assert ReportConfig(folder=tmp_path, raw=raw).uncited_bibliography is False
+
+
+def test_load_report_config_rejects_invalid_uncited_bibliography(tmp_path: Path) -> None:
+    (tmp_path / "report.yml").write_text("uncited_bibliography: true\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="uncited_bibliography"):
+        load_report_config(tmp_path)

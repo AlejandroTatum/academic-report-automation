@@ -1470,3 +1470,43 @@ def test_normalize_body_text_keeps_math_operators() -> None:
     assert body_text_sha256("La masa es $a*b$.") != body_text_sha256("La masa es $ab$.")
     assert body_text_sha256("Vale $x^_$.") != body_text_sha256("Vale $x^$.")
     assert body_text_sha256("**Nota:** $x_1$") == body_text_sha256("Nota: $x_1$")
+
+
+def _uncited_folder(folder: Path, body: str = "# Informe\n\nSin citas en el texto.\n") -> Path:
+    _report(folder)
+    with (folder / "report.yml").open("a", encoding="utf-8") as handle:
+        handle.write("uncited_bibliography: true\n")
+    (folder / "sources.bib").write_text("@misc{slides, title={Slides}}\n", encoding="utf-8")
+    _rubric(folder)
+    _body(folder, body)
+    return folder
+
+
+def test_uncited_bibliography_passes_without_citations(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path / "wf")
+
+    assert _run(folder) == 0
+
+    marker = _marker(folder)
+    eligible = _mechanical(marker, "eligible_sources_cited")
+    assert eligible["ok"] is True
+    assert eligible["detail"] == "uncited bibliography: 1 entry listed, no citations required"
+    assert _mechanical(marker, "citations_resolve")["ok"] is True
+
+
+def test_uncited_bibliography_still_resolves_cited_keys(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path / "wf", "# Informe\n\nCita rota [@fantasma].\n")
+
+    assert _run(folder) == 1
+
+    marker = _marker(folder)
+    assert _mechanical(marker, "citations_resolve")["ok"] is False
+    assert _mechanical(marker, "eligible_sources_cited")["ok"] is True
+
+
+def test_uncited_bibliography_body_check_passes(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path / "wf")
+
+    results = {item["check"]: item for item in content_check.body_check_results(folder)}
+
+    assert results["eligible_sources_cited"]["ok"] is True
