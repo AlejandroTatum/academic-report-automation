@@ -83,6 +83,15 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   (academic rejects it with a clear error): research gate done without sources.bib, `eligible_sources_cited` passes, no
   references section; (b) `content_check --body-check` now catches bold pseudo-headings via validate_report's own rule.
 
+- [ ] 11. Efficiency follow-ups from the CataClub contract run (2026-10-01: 3 approvals, 8 judge runs, 3 failed
+      builds for a document that needed 1 approval): (a) Decision 2 shows a preview PDF built with
+      --no-approval-check so layout defects (split signatures, quotes) are seen BEFORE approval; (b) the format
+      batch at approval must also ask `format_spec` when `libre` is chosen (9.1 gap); (c) build converts straight
+      quotes to typographic quotes; (d) business/contract profile: suggest min_sources 0, signature table,
+      optional author/date line under the title; (e) rubric checks default to document-wide unless a section is
+      essential (section-scoped checks broke on a heading restructure); (f) reuse judgments when a body change is
+      proven markup-only (text identical after stripping markup), otherwise re-judge.
+
 ## Evidence
 
 (commit ids recorded per task)
