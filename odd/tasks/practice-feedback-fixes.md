@@ -26,7 +26,7 @@ approval rounds. Also closes #59 and #60.
 ## Tasks
 
 - [x] 1. guide_facts: detect APE guides, normalize practice numbers, read planned time from its labeled row.
-- [ ] 2. Body check enforces the fixed APE headings when `format: ape`.
+- [x] 2. Body check enforces the fixed APE headings when `format: ape`.
 - [ ] 3. Judges: brief carries an exact quoted YAML example; parser accepts finding mappings.
 - [ ] 4. `report.yml` delivery folder override for the publisher, keeping the version register.
 - [ ] 5. Simulación course profile (Guamán) applied by intake on subject match.
@@ -36,4 +36,5 @@ approval rounds. Also closes #59 and #60.
 - [ ] 9. Rubric checks are document-wide unless a section is explicitly bound.
 
 ## Evidence log
-- Task 1 (guide_facts): TBD — tools/test_guide_facts.py 8 passed (RED: 3 failed before implementation).
+- Task 1 (guide_facts): 18663ed — tools/test_guide_facts.py 8 passed (RED: 3 failed before implementation).
+- Task 2 (APE headings in body check): see commit subject 'fix(tools): check fixed APE headings at draft time' — test_content_check.py 142 passed (RED: 2 failed before); with test_guide_facts, test_validate_report_connector_wiring, test_ape_template: 194 passed.

@@ -54,7 +54,7 @@ import rubric_checks
 import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
-from validate_report import bold_pseudo_heading_lines
+from validate_report import ape_structure_validation, bold_pseudo_heading_lines
 from source_count import MIN_ACADEMIC_SOURCES, all_entry_keys, effective_min_sources, eligible_entry_keys
 from validate_ieee_refs import bib_keys, cited_keys
 
@@ -794,6 +794,15 @@ def body_check_results(folder: Path) -> list[dict]:
             "detail": "; ".join(format_problems) or "level-1 headings present, no Unicode sub/superscripts",
         }
     )
+    if config.format == "ape":
+        ape_errors = ape_structure_validation(config).errors
+        results.append(
+            {
+                "check": "ape_structure",
+                "ok": not ape_errors,
+                "detail": "; ".join(ape_errors) or "fixed APE headings present and in order",
+            }
+        )
     failed_rubric = [item for item in rubric_checks.run_checks(folder, criteria, body_text) if not item.ok]
     results.append(
         {

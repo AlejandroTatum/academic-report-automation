@@ -1510,3 +1510,40 @@ def test_uncited_bibliography_body_check_passes(tmp_path: Path) -> None:
     results = {item["check"]: item for item in content_check.body_check_results(folder)}
 
     assert results["eligible_sources_cited"]["ok"] is True
+
+
+def _ape_folder(tmp_path: Path, headings: tuple[str, ...]) -> Path:
+    folder = _verify_folder(tmp_path / "wf")
+    report = folder / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + "format: ape\n", encoding="utf-8")
+    body = "".join(f"# {title}\n\nTexto con [@key1].\n\n" for title in headings)
+    (folder / "body.md").write_text(body, encoding="utf-8")
+    return folder
+
+
+def _ape_check(folder: Path) -> dict | None:
+    return {i["check"]: i for i in content_check.body_check_results(folder)}.get("ape_structure")
+
+
+def test_body_check_fails_ape_body_with_wrong_heading_title(tmp_path: Path) -> None:
+    from validate_report import APE_BODY_HEADINGS
+
+    titles = tuple("Materiales y Herramientas" if t.startswith("Materiales") else t for t in APE_BODY_HEADINGS)
+    check = _ape_check(_ape_folder(tmp_path, titles))
+
+    assert check is not None and not check["ok"]
+    assert "Materiales, Reactivos, Equipos y Herramientas" in check["detail"]
+
+
+def test_body_check_passes_correct_ape_headings(tmp_path: Path) -> None:
+    from validate_report import APE_BODY_HEADINGS
+
+    check = _ape_check(_ape_folder(tmp_path, APE_BODY_HEADINGS))
+
+    assert check is not None and check["ok"]
+
+
+def test_body_check_skips_ape_structure_for_other_formats(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+
+    assert _ape_check(folder) is None
