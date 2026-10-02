@@ -71,7 +71,7 @@ La investigación y evaluación aportan resultados.
     ({"type": "link_present", "section": "Objetivos", "pattern": "other"}, False),
     ({"type": "keywords_from_section", "section": "Conclusiones", "from_section": "Objetivos"}, True),
     ({"type": "keywords_from_section", "section": "Conclusiones", "from_section": "Absent"}, False),
-    ({"type": "contains", "section": "Absent", "text": "data"}, False),
+    ({"type": "contains", "section": "Absent", "text": "never"}, False),
 ])
 def test_each_check_pass_and_fail(tmp_path: Path, check: dict, expected: bool) -> None:
     result, = run_checks(tmp_path, [{"id": "objective", "checks": [check]}], BODY)
@@ -131,3 +131,14 @@ def test_section_scope_warnings_flag_contains_scoped_to_a_missing_heading() -> N
 
     assert len(warnings) == 1
     assert "firmas" in warnings[0] and "Firmas" in warnings[0] and "document-wide" in warnings[0]
+
+
+@pytest.mark.parametrize("check", [
+    {"type": "contains", "section": "Renamed", "text": "investigación"},
+    {"type": "matches", "section": "Renamed", "pattern": r"evaluación\s+sistemática"},
+])
+def test_text_check_with_missing_section_falls_back_to_document_wide(tmp_path: Path, check: dict) -> None:
+    result, = run_checks(tmp_path, [{"id": "objective", "checks": [check]}], BODY)
+
+    assert result.ok is True, result.detail
+    assert "document-wide" in result.detail

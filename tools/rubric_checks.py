@@ -72,14 +72,18 @@ def _evaluate(folder: Path, check: dict, body: str) -> tuple[bool, str]:
         ok = _section(body, check["section"]) is not None
         return ok, f"heading '{check['section']}' {'present' if ok else 'missing'}"
     scope = body if "section" not in check else _section(body, check["section"])
+    note = ""
+    if scope is None and kind in ("contains", "matches"):
+        # A renamed heading must not fail a text check: widen to the whole draft.
+        scope, note = body, f" (section '{check['section']}' missing, checked document-wide)"
     if scope is None:
         return False, f"section '{check['section']}' missing"
     if kind == "contains":
         ok = check["text"].casefold() in scope.casefold()
-        return ok, f"text '{check['text']}' {'found' if ok else 'missing'}"
+        return ok, f"text '{check['text']}' {'found' if ok else 'missing'}{note}"
     if kind == "matches":
         ok = re.search(check["pattern"], scope) is not None
-        return ok, f"pattern '{check['pattern']}' {'matched' if ok else 'missing'}"
+        return ok, f"pattern '{check['pattern']}' {'matched' if ok else 'missing'}{note}"
     if kind == "verbatim_from_guide":
         source = Path(check["source"])
         if source.is_absolute() or ".." in source.parts:
