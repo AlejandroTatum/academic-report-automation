@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from approval_marker import sha256_file
+from approval_marker import approval_state, sha256_file
 from report_config import load_report_config
 from validate_report import validate
 
@@ -87,7 +87,21 @@ def main() -> None:
     parser.add_argument("folder", type=Path, help="Carpeta del reporte con report.yml")
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--tex-only", action="store_true", help="Para backend LaTeX: genera .tex sin compilar PDF")
+    parser.add_argument(
+        "--no-approval-check",
+        action="store_true",
+        help="Construye sin approval.yml vigente (solo previews; nunca para entrega)",
+    )
     args = parser.parse_args()
+
+    if not (args.validate_only or args.no_approval_check):
+        approval = approval_state(args.folder)
+        if approval.state != "current":
+            raise SystemExit(
+                f"APPROVAL REQUIRED: no se construye sin approval.yml vigente para body.md "
+                f"({approval.detail}). Pedí la aprobación explícita del usuario; "
+                "--no-approval-check es solo para previews."
+            )
 
     config = load_report_config(args.folder)
     print(f"Tipo: {config.type} | backend: {config.backend} | output: {config.output_format}")

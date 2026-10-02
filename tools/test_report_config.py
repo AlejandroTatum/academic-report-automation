@@ -443,3 +443,9 @@ def test_empty_work_folder_slug_falls_back_to_the_title_slug(tmp_path: Path) -> 
 
     assert config.pdf_path.name == "informe-tecnico.pdf"
     assert config.docx_path.name == "informe-tecnico.docx"
+
+
+def test_work_folder_literally_named_documento_keeps_its_own_slug(tmp_path: Path) -> None:
+    config = load_report_config(_write_report(tmp_path / "documento", "technical", "Informe Tecnico"))
+
+    assert config.pdf_path.name == "documento.pdf"

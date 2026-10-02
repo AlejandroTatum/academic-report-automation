@@ -194,11 +194,15 @@ def versioned_bib_pattern(slug: str) -> re.Pattern[str]:
     return versioned_artifact_pattern(slug, ".bib")
 
 
+def _raw_ascii_slug(value: object) -> str:
+    """ASCII slug of ``value``; empty when it holds no ASCII alphanumerics."""
+    normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+
+
 def ascii_slug(value: object) -> str:
     """Return a stable filesystem-safe ASCII slug for a confirmed identity."""
-    normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
-    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
-    return slug or "documento"
+    return _raw_ascii_slug(value) or "documento"
 
 # Metadata report.yml must carry, per route. Only Route A may demand the
 # academic machinery (`subject`, `teacher`); the other routes are forbidden by
@@ -649,7 +653,7 @@ class ReportConfig:
         stays ``document_slug``-based.
         """
         name = self.folder.resolve().name
-        return ascii_slug(name) if ascii_slug(name) != ascii_slug("") else self.document_slug
+        return _raw_ascii_slug(name) or self.document_slug
 
     def _default_build_path(self, suffix: str) -> Path:
         """Default build file; keeps a legacy ``<title-slug>`` build that exists."""
