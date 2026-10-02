@@ -68,6 +68,8 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       principle "text guides, tools enforce" - every quality rule is a tool gate before the next human decision.
       9.1 doc_status: the format question (AA/APE/libre, PDF/DOCX, missing metadata) is asked in the same batch as
           the draft approval; no separate format stop (test-first).
+          [x] 9.1 done. Evidence: RED 4 failed/1706 passed; GREEN 1710 passed (tools + tests/skills). format now also
+          requires explicit `output:`; approval guidance asks the format batch; format asks only missing fields.
       9.2 doc_status refuses to offer approval while `content_check --body-check` fails; fold task 8 (c)(d)(g)(h)(j)
           into tool gates/fixes (min_sources text, title-keyed output path, verify_sources errors, CLI names,
           missing report.yml) (test-first).

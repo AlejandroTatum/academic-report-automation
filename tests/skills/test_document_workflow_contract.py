@@ -948,3 +948,14 @@ def test_visual_pass_ownership_is_explicit_across_references() -> None:
     for name in ("quality-gates.md", "clean-delivery.md"):
         flat = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / name))
         assert "validate phase executor" in flat and "`VISUAL_PASS`" in flat, name
+
+
+def test_approval_batches_the_format_questions_and_format_asks_only_missing() -> None:
+    """Task 9.1: one human stop; format.md is a completeness check plus fallback."""
+    approval = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "approval.md")).lower()
+    for token in ("same batch", "ape", "aa", "libre", "pdf", "docx", "report.yml", "never infer"):
+        assert token in approval, f"approval.md must describe the single batch: {token}"
+    assert "only `body.md`" in approval or "binds only body.md" in approval
+
+    fmt = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "format.md")).lower()
+    assert "only the missing" in fmt and "never re-ask" in fmt

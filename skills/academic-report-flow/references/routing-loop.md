@@ -48,8 +48,8 @@ The phase/reference/executor routing table is the whole routing logic:
 - Content-first: intake asks only the minimum and never formatting questions;
   research is mandatory (at least 5 book or paper sources, IEEE, never invented);
   the plan mirrors the teacher's rubric; the user's text is applied verbatim; the
-  content check only reports findings; the format is one question (APE, AA or
-  libre).
+  content check only reports findings; the format questions (APE, AA or libre,
+  PDF or DOCX) ride on the approval batch and `format` asks only what is missing.
 
 Render the human block exactly (ASCII only for this status block, flat bullets,
 no tables, no nested headers); the `**Gate**` line names the phase the route is

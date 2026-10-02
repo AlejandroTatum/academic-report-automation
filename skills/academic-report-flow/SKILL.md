@@ -80,7 +80,7 @@ Return the verbatim human block, the `academic.doc-status/v1` block, the routed 
 - `references/draft.md` — full draft (`body.md`).
 - `references/approval.md` — human gate and literal edit-order loop.
 - `references/verify.md` — report-only content check.
-- `references/format.md` — single APE / AA / libre question.
+- `references/format.md` — completeness check; asks only missing format fields.
 - `references/generate.md` — approved build and PDF generation.
 - `references/validate.md` — RDD or fallback validation.
 - `references/review.md` — final human review gate.

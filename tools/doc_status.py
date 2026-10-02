@@ -82,14 +82,21 @@ _GUIDANCE = {
     ),
     "plan": "record the teacher's rubric in {rubric}, then re-run doc_status",
     "draft": "draft {body}, then re-run doc_status",
-    "approval": "generation runs only after you approve {body}",
+    "approval": (
+        "generation runs only after you approve {body}; in the same batch use ask_user_choice "
+        "(suggested options, never free text) for the document format AA, APE or libre, the "
+        "delivery format PDF or DOCX, and any metadata that format still needs; never infer "
+        "an answer, no defaults; record the answers in {report_yml} only when approval.yml is written"
+    ),
     "verify": (
         "launch TWO independent judges for {rubric}; run {check_command} "
         "--judgments a.yml --judgments b.yml, then re-run doc_status"
     ),
     "format": (
-        "use ask_user_choice for APE, AA or libre and each remaining metadata gap "
-        "with suggested options (never free text); decide group work and members here; "
+        "the format answers normally arrive with the approval batch; ask only the missing "
+        "fields named by doc_status, never re-ask what {report_yml} records: use ask_user_choice "
+        "for APE, AA or libre, PDF or DOCX, and each remaining metadata gap with suggested "
+        "options (never free text); decide group work and members here; "
         "record the answer in {report_yml}, then re-run doc_status"
     ),
     "generate": "build with {build_command}, then re-run doc_status",
@@ -290,11 +297,12 @@ def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | N
 def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
     """Map the chosen format and its metadata onto one phase state (T4/T5).
 
-    An absent ``format:`` is ordinary progress: the phase's guidance is to ask
-    the user the single question (APE, AA or libre). A chosen format needs its
-    required metadata present and placeholder-free -- and ``libre`` a
-    ``format_spec:`` -- so an incomplete choice simply stays ``pending`` with
-    the missing keys named. An unrecognised format is ``blocked`` (intake
+    The answers normally arrive with the approval batch (task 9.1), so this is a
+    completeness check: an absent ``format:`` is ordinary progress (ask APE, AA
+    or libre). A chosen format needs its required metadata present and
+    placeholder-free, ``libre`` a ``format_spec:``, and every format an explicit
+    ``output:`` (PDF or DOCX has no default) -- an incomplete choice stays
+    ``pending`` with only the missing keys named. An unrecognised format is ``blocked`` (intake
     already blocks it; this handler stays defensive).
     """
     chosen = config.format
@@ -309,9 +317,11 @@ def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | No
     ]
     if chosen == "libre" and not config.format_spec:
         missing.append("format_spec")
+    if str(config.raw.get("output") or "").strip().lower() not in ("pdf", "docx"):
+        missing.append("output")
     if missing:
         return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
-    return PhaseState("format", DONE, f"format={chosen}, metadata complete")
+    return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
 
 
 def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:

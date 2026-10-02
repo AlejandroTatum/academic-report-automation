@@ -385,7 +385,7 @@ def test_gate_and_guidance_helpers_are_ascii_and_folder_bound(tmp_path: Path) ->
     assert doc_status._guidance("draft", work) == (
         f"draft {work}/body.md, then re-run doc_status"
     )
-    assert doc_status._guidance("approval", work) == (
+    assert doc_status._guidance("approval", work).startswith(
         f"generation runs only after you approve {work}/body.md"
     )
     assert all(ord(char) < 128 for char in gate + doc_status._guidance("intake", work))

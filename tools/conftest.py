@@ -398,17 +398,19 @@ def _choose_format(folder: Path, chosen: str = "aa", **metadata: object) -> Path
 
     Keys are written at the top level, which ``ReportConfig.metadata`` resolves
     through its alias map, so the existing ``metadata:`` block is untouched.
-    The APE identification fields and the libre ``format_spec:`` are filled
-    with placeholder-free defaults unless ``metadata`` overrides them.
+    The APE identification fields, the libre ``format_spec:`` and ``output: pdf``
+    are filled with placeholder-free defaults unless ``metadata`` overrides them
+    (``output=None`` leaves the delivery format unrecorded).
     """
     folder.mkdir(parents=True, exist_ok=True)
     report = folder / "report.yml"
     lines = [f"format: {chosen}"]
     body: dict[str, object] = dict(_APE_METADATA_DEFAULTS) if chosen == "ape" else {}
+    body["output"] = "pdf"  # the format phase needs an explicit delivery format (task 9.1)
     if chosen == "libre":
         body["format_spec"] = "Ensayo libre de 5 secciones con portada simple"
     body.update(metadata)
-    lines.extend(f"{key}: {value}" for key, value in body.items())
+    lines.extend(f"{key}: {value}" for key, value in body.items() if value is not None)
     report.write_text(
         report.read_text(encoding="utf-8") + "\n".join(lines) + "\n", encoding="utf-8"
     )

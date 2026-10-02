@@ -29,6 +29,19 @@ reads `body.md` in full, so the orchestrator must present or point to the comple
 body, never a summary. It says plainly that generation happens only after this
 approval, and it never proceeds on silence, a non-answer, or an agent-invented yes.
 
+## One batch: approval plus format
+
+The gate is the only human stop before generation, so it asks in ONE batch, through
+`ask_user_choice` with suggested options and no free text: (1) approve `body.md`
+(exact bytes), and (2) the format decisions - document format AA, APE or libre
+(`format_hint:` first when present), delivery format PDF or DOCX (`output:`), and
+any metadata the chosen format still requires (subject, teacher, APE identification
+fields, group members). Never infer an answer and offer no default. When the user
+approves, write `approval.yml` and record the answers in `report.yml` at the same
+time; a decline or edit order records nothing. Approval still binds only `body.md`
+bytes; the format answers are plain `report.yml` data. The `format` phase then
+turns `done` on its own and asks only for what is still missing.
+
 ## The review loop - literal edit orders
 
 Between drafts the user answers with literal edit orders: "in paragraph X replace
@@ -55,7 +68,8 @@ bytes; a malformed marker is `blocked` (`approval_marker_malformed`).
 2. Between answers, apply the user's literal edit orders verbatim and re-present the
    gate for the edited bytes.
 3. Write `reports/<wf>/approval.yml` only on the human's explicit affirmative answer,
-   recording `body_sha256`, `approved_at`, and `approved_by`.
+   recording `body_sha256`, `approved_at`, and `approved_by`, and record the format
+   answers of the same batch in `reports/<wf>/report.yml`.
 4. On any other answer, write nothing and report approval as `pending`.
 5. Re-run `doc_status` and report the new current phase.
 

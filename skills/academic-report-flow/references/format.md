@@ -6,6 +6,12 @@ Artifact: `reports/<wf>/report.yml`
 Load this reference only when `doc_status` returns `next: format`. This skill executes
 the phase itself.
 
+The format answers are normally collected in the approval batch (`approval.md`) and
+this phase is then `done` without a stop. It is a completeness check plus a fallback
+question: when `report.yml` lacks a known `format:`, `output:` or that format's
+required metadata (legacy runs, a gap left by an answer), ask only the missing
+fields named by `doc_status` and never re-ask what `report.yml` already records.
+
 ## Contract
 
 Ask one question for format selection through `ask_user_choice` with APE, AA and libre as
