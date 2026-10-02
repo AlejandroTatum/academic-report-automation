@@ -1026,3 +1026,17 @@ def test_rubric_checks_default_to_document_wide() -> None:
     """Task 11(e): section-scoped checks only when the property must live in that section."""
     content = _flat(CONTENT_MD)
     assert "document-wide" in content and "only when the property must live in that section" in content
+
+
+def test_approval_gate_requires_fresh_preview_and_clickable_links() -> None:
+    """#59/#60: the gate needs a rebuilt preview and absolute file:// links to it and body.md."""
+    approval = _flat(APPROVAL_MD)
+    for token in ("records the sha256", "rebuild the draft pdf", "clickable markdown links", "absolute file:// urls", "never present the gate without them", "rebuild the preview pdf"):
+        assert token in approval, f"approval.md must require a fresh preview and links: {token}"
+
+
+def test_draft_phase_documents_the_docx_round_trip() -> None:
+    """Task 6: paraphrasing in DOCX goes through draft_docx export/import, never a regenerated open draft."""
+    content = _flat(CONTENT_MD)
+    for token in ("draft_docx.py", "export", "import", "show the diff", "--apply", "never regenerate a draft that is open"):
+        assert token in content, f"content.md must document the DOCX round-trip: {token}"

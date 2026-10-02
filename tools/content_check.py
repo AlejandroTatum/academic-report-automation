@@ -54,7 +54,7 @@ import rubric_checks
 import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
-from validate_report import bold_pseudo_heading_lines
+from validate_report import ape_structure_validation, bold_pseudo_heading_lines
 from source_count import MIN_ACADEMIC_SOURCES, all_entry_keys, effective_min_sources, eligible_entry_keys
 from validate_ieee_refs import bib_keys, cited_keys
 
@@ -180,6 +180,37 @@ def body_text_sha256(text: str) -> str:
     return hashlib.sha256(normalize_body_text(text).encode("utf-8")).hexdigest()
 
 
+JUDGE_EXAMPLE_NOTE = (
+    "\nDouble-quote every string value (every where, note and finding): an unquoted "
+    "': ' inside a value breaks the YAML.\nExample of a valid criteria entry and findings:\n"
+    "```yaml\n"
+    "criteria:\n"
+    '  - id: "objetivo"\n'
+    '    status: "flojo"\n'
+    '    where: "## Objetivos, first paragraph"\n'
+    '    note: "The goal is stated, but it is vague: no measurable outcome."\n'
+    "findings:\n"
+    '  - "WARNING: the conclusion repeats the introduction."\n'
+    "```\n"
+)
+
+_FINDING_SEVERITY_KEYS = ("severity", "level")
+_FINDING_TEXT_KEYS = ("text", "message", "detail")
+
+
+def _flatten_finding(item: object) -> str | None:
+    """A finding as a string; a mapping is flattened deterministically, other types are None."""
+    if isinstance(item, str):
+        return item
+    if not isinstance(item, dict) or not item:
+        return None
+    severity = next((item[k] for k in _FINDING_SEVERITY_KEYS if isinstance(item.get(k), str)), None)
+    text = next((item[k] for k in _FINDING_TEXT_KEYS if isinstance(item.get(k), str)), None)
+    if severity is not None and text is not None:
+        return f"{severity}: {text}"
+    return "; ".join(f"{k}: {item[k]}" for k in sorted(item, key=str))
+
+
 def judge_brief(folder: Path) -> str:
     """A self-contained, read-only assignment with hashes for the current draft.
 
@@ -222,7 +253,8 @@ def judge_brief(folder: Path) -> str:
             + "\n".join(str(folder / name) for name in inputs)
             + "\nReturn only judgments YAML using this schema. Judge every rubric criterion; "
               "allowed statuses: cumple|flojo|falta. Quote where locations.\n"
-            + yaml.safe_dump(schema, sort_keys=False))
+            + yaml.safe_dump(schema, sort_keys=False)
+            + JUDGE_EXAMPLE_NOTE)
 
 
 def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, list[str]]:
@@ -280,9 +312,12 @@ def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, 
         )
 
     findings = data.get("findings") or []
-    if not isinstance(findings, list) or any(not isinstance(f, str) for f in findings):
+    flattened = [_flatten_finding(f) for f in findings] if isinstance(findings, list) else [None]
+    if any(f is None for f in flattened):
         errors.append(f"{name} findings must be a list of strings")
         findings = []
+    else:
+        findings = flattened
     return judgments, findings, data.get("judge"), data.get("body_sha256"), data.get("rubric_sha256"), errors
 
 
@@ -794,6 +829,15 @@ def body_check_results(folder: Path) -> list[dict]:
             "detail": "; ".join(format_problems) or "level-1 headings present, no Unicode sub/superscripts",
         }
     )
+    if config.format == "ape":
+        ape_errors = ape_structure_validation(config).errors
+        results.append(
+            {
+                "check": "ape_structure",
+                "ok": not ape_errors,
+                "detail": "; ".join(ape_errors) or "fixed APE headings present and in order",
+            }
+        )
     failed_rubric = [item for item in rubric_checks.run_checks(folder, criteria, body_text) if not item.ok]
     results.append(
         {

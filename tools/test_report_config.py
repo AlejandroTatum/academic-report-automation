@@ -510,3 +510,40 @@ def test_load_report_config_rejects_invalid_uncited_bibliography(tmp_path: Path)
 
     with pytest.raises(SystemExit, match="uncited_bibliography"):
         load_report_config(tmp_path)
+
+
+# -- delivery_dir override ------------------------------------------------------
+
+
+def _delivery_config(folder: Path, value: object) -> ReportConfig:
+    return ReportConfig(folder=folder, raw={"title": "Informe", "delivery_dir": value})
+
+
+def test_delivery_dir_absent_keeps_the_documents_layout(tmp_path: Path) -> None:
+    config = ReportConfig(folder=tmp_path / "wf", raw={"title": "Informe"})
+    assert config.delivery_dir is None
+    assert config.delivery_folder(tmp_path / "docs") == tmp_path / "docs" / "Academicos" / "informe"
+
+
+def test_delivery_dir_absolute_overrides_the_delivery_folder(tmp_path: Path) -> None:
+    target = tmp_path / "course" / "unidad-1" / "ape-1" / "documento"
+    config = _delivery_config(tmp_path / "wf", str(target))
+    assert config.delivery_dir == target
+    assert config.delivery_folder(tmp_path / "docs") == target
+
+
+def test_delivery_dir_relative_resolves_against_the_report_folder(tmp_path: Path) -> None:
+    config = _delivery_config(tmp_path / "wf", "../course/documento")
+    assert config.delivery_dir == (tmp_path / "course" / "documento")
+
+
+def test_delivery_dir_expands_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    config = _delivery_config(tmp_path / "wf", "~/course/documento")
+    assert config.delivery_dir == tmp_path / "home" / "course" / "documento"
+
+
+@pytest.mark.parametrize("bad", [None, "", "   ", 3, True, ["a"], {"a": "b"}])
+def test_delivery_dir_invalid_value_is_a_config_error(tmp_path: Path, bad: object) -> None:
+    with pytest.raises(ValueError, match="delivery_dir"):
+        _delivery_config(tmp_path / "wf", bad).delivery_dir

@@ -70,6 +70,32 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def draft_record_path(pdf_path: Path) -> Path:
+    """Sidecar of a draft PDF holding the sha256 of the ``body.md`` it rendered."""
+    pdf = Path(pdf_path)
+    return pdf.with_name(f"{pdf.stem}.body.sha256")
+
+
+def write_draft_record(pdf_path: Path, body_path: Path, digest: str | None = None) -> Path:
+    """Record the ``body.md`` bytes a draft build rendered.
+
+    ``digest`` is the hash taken before the build started, so an edit made
+    while the build ran is not recorded as rendered.
+    """
+    record = draft_record_path(pdf_path)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text((digest or sha256_file(body_path)) + "\n", encoding="utf-8")
+    return record
+
+
+def draft_is_fresh(pdf_path: Path, body_path: Path) -> bool:
+    """True when the draft PDF exists and its record matches the current ``body.md``."""
+    record = draft_record_path(pdf_path)
+    if not (Path(pdf_path).is_file() and record.is_file() and Path(body_path).is_file()):
+        return False
+    return record.read_text(encoding="utf-8").strip() == sha256_file(body_path)
+
+
 def _malformed(detail: str) -> ApprovalState:
     return ApprovalState(state="malformed", reason="approval_marker_malformed", detail=detail)
 

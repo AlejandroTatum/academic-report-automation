@@ -16,7 +16,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from approval_marker import approval_state, sha256_file
+from approval_marker import approval_state, draft_record_path, sha256_file, write_draft_record
+# Separate name for the body.md hash so it stays distinct from the PDF hash checks.
+from approval_marker import sha256_file as body_digest
 from report_config import load_report_config
 from validate_report import validate
 
@@ -108,7 +110,18 @@ def main() -> None:
 
     # Build step — skipped when --validate-only
     if not args.validate_only:
+        # A draft build records the body.md bytes it renders so doc_status can
+        # tell a fresh draft PDF from one that predates the latest edit. The
+        # old record goes first and the new one is written only after the PDF
+        # compiled, so a failed or --tex-only build never looks fresh.
+        draft_body = config.folder / "body.md"
+        record_draft = args.no_approval_check and not args.tex_only and draft_body.is_file()
+        if record_draft:
+            rendered = body_digest(draft_body)
+            draft_record_path(config.pdf_path).unlink(missing_ok=True)
         build_backend(config, args)
+        if record_draft:
+            write_draft_record(config.pdf_path, draft_body, rendered)
 
     if args.tex_only:
         # --tex-only leaves no compiled PDF behind, so the post-build gates

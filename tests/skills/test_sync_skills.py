@@ -27,6 +27,7 @@ RUNTIME_TARGETS = (
     ".config/opencode/skills",
     ".claude/skills",
     ".codex/skills",
+    ".pi/agent/skills",
 )
 
 
@@ -104,6 +105,7 @@ def test_academic_report_flow_and_codex_target_present():
     targets = _array_entries(script, "TARGETS")
     assert "academic-report-flow" in skills
     assert "$HOME/.codex/skills" in targets
+    assert "$HOME/.pi/agent/skills" in targets
 
 
 def test_sync_exits_zero_without_gentle_ai_binary(tmp_path):

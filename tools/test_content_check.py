@@ -1391,7 +1391,7 @@ def _judged_pair(folder: Path) -> list[str]:
     """Two judgments files bound to the current body, carrying ``body_text_sha256``."""
     import yaml
 
-    brief = yaml.safe_load(content_check.judge_brief(folder).split("Return only judgments YAML using this schema.")[1].split("\n", 1)[1])
+    brief = yaml.safe_load(content_check.judge_brief(folder).split("Return only judgments YAML using this schema.")[1].split("\n", 1)[1].split("\nDouble-quote", 1)[0])
     paths = []
     for name, finding in (("a.yml", "first"), ("b.yml", "second")):
         path = _judgments(folder, name=name, findings=[finding])
@@ -1510,3 +1510,77 @@ def test_uncited_bibliography_body_check_passes(tmp_path: Path) -> None:
     results = {item["check"]: item for item in content_check.body_check_results(folder)}
 
     assert results["eligible_sources_cited"]["ok"] is True
+
+
+def _ape_folder(tmp_path: Path, headings: tuple[str, ...]) -> Path:
+    folder = _verify_folder(tmp_path / "wf")
+    report = folder / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + "format: ape\n", encoding="utf-8")
+    body = "".join(f"# {title}\n\nTexto con [@key1].\n\n" for title in headings)
+    (folder / "body.md").write_text(body, encoding="utf-8")
+    return folder
+
+
+def _ape_check(folder: Path) -> dict | None:
+    return {i["check"]: i for i in content_check.body_check_results(folder)}.get("ape_structure")
+
+
+def test_body_check_fails_ape_body_with_wrong_heading_title(tmp_path: Path) -> None:
+    from validate_report import APE_BODY_HEADINGS
+
+    titles = tuple("Materiales y Herramientas" if t.startswith("Materiales") else t for t in APE_BODY_HEADINGS)
+    check = _ape_check(_ape_folder(tmp_path, titles))
+
+    assert check is not None and not check["ok"]
+    assert "Materiales, Reactivos, Equipos y Herramientas" in check["detail"]
+
+
+def test_body_check_passes_correct_ape_headings(tmp_path: Path) -> None:
+    from validate_report import APE_BODY_HEADINGS
+
+    check = _ape_check(_ape_folder(tmp_path, APE_BODY_HEADINGS))
+
+    assert check is not None and check["ok"]
+
+
+def test_body_check_skips_ape_structure_for_other_formats(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+
+    assert _ape_check(folder) is None
+
+
+def _brief_example(folder: Path) -> str:
+    brief = content_check.judge_brief(folder)
+    assert "Double-quote every string value" in brief
+    return brief.split("```yaml\n", 1)[1].split("```", 1)[0]
+
+
+def test_judge_brief_example_parses_with_parse_judgments(tmp_path: Path) -> None:
+    folder = _checked_folder(tmp_path / "wf", checks=[], body=PLAIN_BODY, guide="guia\n")
+    path = tmp_path / "example.yml"
+    path.write_text(_brief_example(folder), encoding="utf-8")
+    judgments, findings, _judge, _body_sha, _rubric_sha, errors = content_check.parse_judgments(path)
+    assert errors == []
+    assert judgments and findings
+
+
+def _findings_file(tmp_path: Path, findings_yaml: str) -> Path:
+    path = tmp_path / "j.yml"
+    path.write_text(
+        "judge: {role: independent}\ncriteria:\n  - id: a\n    status: cumple\nfindings:\n" + findings_yaml,
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_parse_judgments_flattens_mapping_findings(tmp_path: Path) -> None:
+    path = _findings_file(tmp_path, "  - {severity: WARNING, text: weak intro}\n  - {b: 2, a: x}\n  - plain\n")
+    _j, findings, _judge, _b, _r, errors = content_check.parse_judgments(path)
+    assert errors == []
+    assert findings == ["WARNING: weak intro", "a: x; b: 2", "plain"]
+
+
+@pytest.mark.parametrize("bad", ["  - 3\n", "  - [a, b]\n", "  - null\n"])
+def test_parse_judgments_still_rejects_other_finding_types(tmp_path: Path, bad: str) -> None:
+    _j, _f, _judge, _b, _r, errors = content_check.parse_judgments(_findings_file(tmp_path, bad))
+    assert any("findings must be a list of strings" in e for e in errors)

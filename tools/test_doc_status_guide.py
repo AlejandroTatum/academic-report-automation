@@ -26,7 +26,7 @@ def test_intake_guidance_skips_the_student_suggestion_once_recorded(tmp_path: Pa
 
 
 def test_format_guidance_discloses_facts_and_remaining_gaps(tmp_path: Path):
-    (tmp_path / "guide.txt").write_text("APE Semana 1. Entrega grupal (4 horas)", encoding="utf-8")
+    (tmp_path / "guide.txt").write_text("APE Semana 1. Entrega grupal. Tiempo planificado 4 horas", encoding="utf-8")
     config = ReportConfig(tmp_path, {"guide": "guide.txt", "format_hint": "ape"})
     guidance = _guidance("format", tmp_path, config)
     for fragment in ("ask_user_choice", "family", "ape", "practice_number=1", "practice_type=Grupal", "planned_time=4 horas", "remaining gaps: cycle", "members"):

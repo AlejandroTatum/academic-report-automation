@@ -593,8 +593,33 @@ class ReportConfig:
             return Path(self.publication_category) / subject / slug
         return Path(self.publication_category) / slug
 
+    @property
+    def delivery_dir(self) -> Path | None:
+        """The ``delivery_dir:`` override from report.yml, or ``None`` when unset.
+
+        A non-empty string; ``~`` is expanded and a relative path resolves
+        against the report folder. Any other value is a configuration error,
+        like the other strict keys. The override only moves the destination:
+        the version register, hashing and locking are the publisher's.
+        """
+        if "delivery_dir" not in self.raw:
+            return None
+        value = self.raw["delivery_dir"]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("delivery_dir debe ser una ruta de texto no vacía")
+        path = Path(value.strip()).expanduser()
+        if not path.is_absolute():
+            path = self.folder / path
+        return Path(os.path.normpath(path))
+
     def delivery_folder(self, documents_root: Path | str | None = None) -> Path:
-        """Absolute delivery folder for this report's final PDF."""
+        """Absolute delivery folder for this report's final PDF.
+
+        ``delivery_dir`` wins when set; otherwise the shared Documents layout.
+        """
+        override = self.delivery_dir
+        if override is not None:
+            return override
         return resolve_documents_root(documents_root) / self.delivery_relative_folder()
 
     @property
