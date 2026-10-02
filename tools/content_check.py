@@ -247,7 +247,7 @@ def judge_brief(folder: Path) -> str:
     return ("You are an independent read-only judge. Judge only from these inputs; "
             "do not use the drafting conversation or any other files. Do not edit any file.\n"
             "Two judges run independently; do not coordinate with another judge.\n"
-            "Citations [@key] in body.md render in IEEE format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
+            f"Citations [@key] in body.md render in {config.citation_style.upper()} format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
             + _already_run_checks_section(folder, criteria, body_text)
             + "Allowed input paths (absolute):\n"
             + "\n".join(str(folder / name) for name in inputs)

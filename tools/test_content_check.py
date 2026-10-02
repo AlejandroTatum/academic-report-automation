@@ -1584,3 +1584,27 @@ def test_parse_judgments_flattens_mapping_findings(tmp_path: Path) -> None:
 def test_parse_judgments_still_rejects_other_finding_types(tmp_path: Path, bad: str) -> None:
     _j, _f, _judge, _b, _r, errors = content_check.parse_judgments(_findings_file(tmp_path, bad))
     assert any("findings must be a list of strings" in e for e in errors)
+
+
+def _brief_with_style(tmp_path: Path, style_line: str) -> str:
+    folder = _checked_folder(
+        tmp_path / "wf",
+        checks=[{"type": "verbatim_from_guide", "section": "Objetivos", "source": "guia.txt",
+                 "text": "preparar un informe de laboratorio"}],
+        body="# Informe\n\n## Objetivos\n\nPreparar un informe de laboratorio.\n",
+        guide="La catedra pide: preparar un informe de laboratorio.\n",
+    )
+    report = folder / "report.yml"
+    report.write_text(report.read_text() + style_line, encoding="utf-8")
+    return content_check.judge_brief(folder)
+
+
+def test_judge_brief_names_ieee_by_default(tmp_path: Path) -> None:
+    brief = _brief_with_style(tmp_path, "")
+    assert "render in IEEE format at build time" in brief
+
+
+def test_judge_brief_names_apa_when_opted_in(tmp_path: Path) -> None:
+    brief = _brief_with_style(tmp_path, "citation_style: apa\n")
+    assert "render in APA format at build time" in brief
+    assert "IEEE" not in brief

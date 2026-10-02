@@ -75,12 +75,12 @@ The user chooses one route (`data.md`); load only its references; never blend ro
 
 ### Route A - University academic work (`route: academic` or `a`)
 
-The only route that may activate institutional machinery (UNL shell, teacher, subject, parallel, academic period, institutional cover, rubric alignment, IEEE bibliography, teacher profile). Required metadata: `title`, `subject`, `teacher`, `student`, `date`. Sections: cover, metadata table, `Tema`, `Antecedentes`, `Desarrollo`/`Descripción`, comparative tables or maps, `Conclusiones`, `Bibliografía`. Forbidden: management framing, commercial recommendations, sales language, changelog. `unl-shell.md` and `profiles/` load only here, whatever the output format.
+The only route that may activate institutional machinery (UNL shell, teacher, subject, parallel, academic period, institutional cover, rubric alignment, IEEE bibliography by default, teacher profile; `citation_style: apa` is allowed on any route). Required metadata: `title`, `subject`, `teacher`, `student`, `date`. Sections: cover, metadata table, `Tema`, `Antecedentes`, `Desarrollo`/`Descripción`, comparative tables or maps, `Conclusiones`, `Bibliografía`. Forbidden: management framing, commercial recommendations, sales language, changelog. `unl-shell.md` and `profiles/` load only here, whatever the output format.
 
 | Route | `route:` | Sections in order | Forbidden |
 |---|---|---|---|
 | B Project documentation | `project` / `b` | name and version, objective, audience, scope, modules, requirements, flows, architecture, decisions, risks, traceability, pending | UNL cover, teacher, subject, motto, academic footer or numbering, "university submission" language |
-| C Professional/business | `business` / `c` | executive summary, problem, evidence, analysis, impact, options, recommendation, risks, next steps (decidable from page 1) | academic cover and metadata table, rubric alignment, required IEEE bibliography; implementation-level technical appendices in the main flow (technical depth moves to annexes) |
+| C Professional/business | `business` / `c` | executive summary, problem, evidence, analysis, impact, options, recommendation, risks, next steps (decidable from page 1) | academic cover and metadata table, rubric alignment, required bibliography (IEEE default, `citation_style: apa` opt-in); implementation-level technical appendices in the main flow (technical depth moves to annexes) |
 | D Technical document | `technical` / `d` | purpose, scope, concepts, architecture, contracts, procedures, examples, errors, observability, verification, references | academic cover, rubric language, executive persuasion, marketing copy |
 | E Other | `other` / `e` | built with the user before generating: sections, forbidden content, format sources, reading priorities | never fall silently back to academic or any other route; an incomplete contract stops the run; reuse fragments of other routes only when the user confirms each |
 

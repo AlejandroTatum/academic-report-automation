@@ -1040,3 +1040,15 @@ def test_draft_phase_documents_the_docx_round_trip() -> None:
     content = _flat(CONTENT_MD)
     for token in ("draft_docx.py", "export", "import", "show the diff", "--apply", "never regenerate a draft that is open"):
         assert token in content, f"content.md must document the DOCX round-trip: {token}"
+
+
+def test_citation_style_opt_in_is_documented_in_every_reference() -> None:
+    """IEEE is the default; `citation_style: apa` is the opt-in the guide must demand."""
+    for name in ("content.md", "approval.md", "production.md", "routing.md", "data.md"):
+        text = _flat(REFS / name)
+        assert "citation_style" in text, name
+    content = _flat(REFS / "content.md")
+    window = content[content.index("citation_style") :][:400]
+    for token in ("apa", "ieee", "default"):
+        assert token in window.lower()
+    assert "no other style exists" not in content
