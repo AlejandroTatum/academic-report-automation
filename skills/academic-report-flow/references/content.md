@@ -17,7 +17,7 @@ A confirmed teacher template is mirrored too: its sections, order and formatting
 
 - No teacher rubric: criteria come only from the guide's explicit demands (sections, questions, deliverables it states); never from the agent's idea of a good report. With neither rubric nor explicit demands, ask the user instead of inventing criteria.
 - `format_hint: ape`: map criteria and checks to the fixed APE sections (Objetivo(s), Materiales, Procedimiento, Resultados, Preguntas de Control, Conclusiones, Recomendaciones, Bibliografía/Referencias, Anexos); the hint guides planning, never chooses the format.
-- Write deterministic `checks:` before the draft exists for every mechanically checkable criterion (rubric TDD: red now, the draft turns them green). Types: `heading_present`, `contains`, `matches`, `verbatim_from_guide`, `ordered_list`, `min_citations`, `figure_referenced`, `link_present`, `keywords_from_section`. Purely semantic criteria may have none.
+- Write deterministic `checks:` before the draft exists for every mechanically checkable criterion (rubric TDD: red now, the draft turns them green). Types: `heading_present`, `contains`, `matches`, `verbatim_from_guide`, `ordered_list`, `min_citations`, `figure_referenced`, `link_present`, `keywords_from_section`. Checks are document-wide by default: use `section:` only when the property must live in that section (a heading restructure breaks scoped checks). Purely semantic criteria may have none.
 - Run `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/rubric_plan.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`; it blocks on a malformed rubric (`rubric_malformed`).
 
 ## Draft (artifact `reports/<wf>/body.md`)

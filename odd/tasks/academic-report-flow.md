@@ -83,7 +83,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   (academic rejects it with a clear error): research gate done without sources.bib, `eligible_sources_cited` passes, no
   references section; (b) `content_check --body-check` now catches bold pseudo-headings via validate_report's own rule.
 
-- [ ] 11. Efficiency follow-ups from the CataClub contract run (2026-10-01: 3 approvals, 8 judge runs, 3 failed
+- [ ] 11. (a)(b)(e) done, rest open. Efficiency follow-ups from the CataClub contract run (2026-10-01: 3 approvals, 8 judge runs, 3 failed
       builds for a document that needed 1 approval): (a) Decision 2 shows a preview PDF built with
       --no-approval-check so layout defects (split signatures, quotes) are seen BEFORE approval; (b) the format
       batch at approval must also ask `format_spec` when `libre` is chosen (9.1 gap); (c) build converts straight
@@ -91,6 +91,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       optional author/date line under the title; (e) rubric checks default to document-wide unless a section is
       essential (section-scoped checks broke on a heading restructure); (f) reuse judgments when a body change is
       proven markup-only (text identical after stripping markup), otherwise re-judge.
+      Done in this unit: (a)(b)(e); (c)(d)(f) remain open.
 
 ## Evidence
 
@@ -174,3 +175,4 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 - Task 10 contract run fixes: commits 3cc12de (min_sources 0 off academic; RED 13 failed, GREEN 14 passed) and the
   body-check bold pseudo-heading fix (RED 4 failed, GREEN 127 passed in test_content_check); `tests/skills tools` all green.
 - Task 10 follow-up: validate_ieee_refs required a Referencias section whenever a bib existed; now only when the body cites (RED 1 -> GREEN). Found by the contract build.
+- Task 11 (a)(b)(e): RED 6 failed, 1771 passed (preview/format_spec guidance, approval.md, rubric scope lint, document-wide rule); GREEN `tests/skills tools` 1777 passed, 0 failed. Generate already rejected a preview older than approval.yml (locked by a new test). Guard test_no_flow_file_mentions_the_removed_preview now exempts approval.md; doc_status approval guidance assertion startswith -> in.

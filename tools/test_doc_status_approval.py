@@ -278,3 +278,28 @@ def test_format_guidance_asks_only_missing_fields(tmp_path: Path) -> None:
     _report(folder)
 
     assert "only the missing" in doc_status._guidance("format", folder)
+
+
+def test_approval_guidance_previews_the_pdf_before_asking(tmp_path: Path) -> None:
+    """Task 11(a): build and inspect a preview first, then show its path with body.md."""
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    for token in ("--no-approval-check", "preview", "inspect", "before asking", "path"):
+        assert token in guidance
+    assert "never the final" in guidance
+    assert str(folder) in guidance
+
+
+def test_approval_guidance_asks_format_spec_when_libre(tmp_path: Path) -> None:
+    """Task 11(b): choosing libre needs format_spec in the same batch, as a structured choice."""
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "format_spec" in guidance
+    assert "libre" in guidance
+    assert "sin portada" in guidance and "con portada" in guidance

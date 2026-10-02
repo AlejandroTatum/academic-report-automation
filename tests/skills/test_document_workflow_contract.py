@@ -578,11 +578,15 @@ def all_skill_files() -> list[Path]:
 
 
 def test_no_flow_file_mentions_the_removed_preview() -> None:
-    """T6: the preview phase and its artifact are gone from every skill file."""
+    """T6: the preview phase and its artifact are gone from every skill file.
+
+    Task 11(a) adds a preview PDF at Decision 2, owned by approval.md alone: it is
+    neither a phase nor an artifact, so the guard exempts that one file.
+    """
     offenders = [
         str(path.relative_to(SKILL_ROOT))
         for path in all_skill_files()
-        if re.search(r"(?<!post-)\bpreview", read(path), re.IGNORECASE)
+        if path != APPROVAL_MD and re.search(r"(?<!post-)\bpreview", read(path), re.IGNORECASE)
     ]
     assert offenders == [], f"stale preview mentions remain: {offenders}"
 
@@ -998,3 +1002,16 @@ def test_stage_references_have_no_duplicate_step_numbers() -> None:
                 assert runs == list(range(1, len(runs) + 1)), f"{path.name}: {runs}"
                 runs = []
         assert not runs or runs == list(range(1, len(runs) + 1)), f"{path.name}: {runs}"
+
+
+def test_approval_previews_the_pdf_and_asks_format_spec_for_libre() -> None:
+    """Task 11(a)(b): preview + inspection before the batch; libre adds format_spec as a choice."""
+    approval = _flat(APPROVAL_MD)
+    for token in ("--no-approval-check", "preview", "every page", "before asking", "never the final", "format_spec", "sin portada", "con portada"):
+        assert token in approval, f"approval.md must describe the preview and libre format_spec: {token}"
+
+
+def test_rubric_checks_default_to_document_wide() -> None:
+    """Task 11(e): section-scoped checks only when the property must live in that section."""
+    content = _flat(CONTENT_MD)
+    assert "document-wide" in content and "only when the property must live in that section" in content

@@ -15,9 +15,13 @@ Silence, an inferred yes, a restated plan, or an agent decision never produces `
 
 The gate prompt is lossless and blocking: complete decision, consequences and exact allowed answers, no silent default. The approver reads `body.md` in full: point to the complete body, never a summary, and say that generation happens only after this approval.
 
+## Preview before asking
+
+Before asking, build a preview with `build_report_auto.py <folder> --no-approval-check`, render every page and inspect it against the blocking-defect list in `production.md`. Fix layout defects in `body.md` first (re-run the body check), then show the preview PDF path together with `body.md`. The preview is never the final artifact: it predates `approval.yml`, so generate stays `pending` and the final build runs after approval.
+
 ## One batch: approval plus format
 
-Ask in ONE batch, the same batch for approval and format, through `ask_user_choice` with suggested options, no free text: (1) approve `body.md` (exact bytes); (2) document format AA, APE or libre (`format_hint:` first when present), delivery format PDF or DOCX (`output:`), and the metadata the chosen format still requires (subject, teacher, APE identification fields, group members). Never infer an answer and offer no default. On approval write `approval.yml` and record the answers in `report.yml` at the same time; a decline or edit order records nothing. Approval binds only `body.md` bytes; the format answers are plain `report.yml` data.
+Ask in ONE batch, the same batch for approval and format, through `ask_user_choice` with suggested options, no free text: (1) approve `body.md` (exact bytes); (2) document format AA, APE or libre (`format_hint:` first when present), delivery format PDF or DOCX (`output:`), `format_spec` when `libre` is chosen (suggested options such as "documento sobrio sin portada" or "con portada"), and the metadata the chosen format still requires (subject, teacher, APE identification fields, group members). Never infer an answer and offer no default. On approval write `approval.yml` and record the answers in `report.yml` at the same time; a decline or edit order records nothing. Approval binds only `body.md` bytes; the format answers are plain `report.yml` data.
 
 ## Review loop - literal edit orders
 

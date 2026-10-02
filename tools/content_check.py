@@ -740,6 +740,9 @@ def body_check_results(folder: Path) -> list[dict]:
             or "all rubric checks pass",
         }
     )
+    scope_warnings = rubric_checks.section_scope_warnings(criteria, body_text)
+    if scope_warnings:
+        results.append({"check": "rubric_scope", "ok": True, "detail": "warning: " + "; ".join(scope_warnings)})
     return results
 
 

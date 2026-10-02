@@ -138,3 +138,19 @@ def test_generate_honours_the_configured_pdf_path(tmp_path: Path) -> None:
 
     assert phase.state == doc_status.DONE
     assert "final.pdf" in phase.detail
+
+
+def test_preview_built_before_approval_never_satisfies_generate(tmp_path: Path) -> None:
+    """Task 11(a): a --no-approval-check preview is older than the marker, so it is never the final artifact."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _mtime(folder / "report.yml", T0)
+    _pdf(folder, mtime=T0 + 30)  # preview built at Decision 2, before approval.yml exists
+    assert doc_status._phase_generate(folder, _config(folder), None).state == doc_status.PENDING
+
+    _approval(folder)
+    _mtime(folder / "approval.yml", T0 + 60)  # the approval lands after the preview
+    phase = doc_status._phase_generate(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert "older than approval.yml" in phase.detail

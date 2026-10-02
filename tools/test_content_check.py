@@ -1351,3 +1351,21 @@ def test_body_check_fails_on_bold_pseudo_heading(tmp_path: Path, capsys: pytest.
 
     out = capsys.readouterr().out
     assert "[FAIL] body_format:" in out and "line 3" in out
+
+
+def test_body_check_surfaces_a_section_scope_warning_without_failing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Task 11(e): a contains check scoped to a heading the draft lacks warns, it does not add a failure."""
+    folder = _verify_folder(tmp_path / "wf")
+    scoped = {"type": "contains", "section": "Seccion inexistente", "text": "Texto"}
+    results = content_check.body_check_results(folder)
+    assert "rubric_scope" not in {item["check"] for item in results}
+
+    import yaml
+    data = yaml.safe_load((folder / "rubric.yml").read_text(encoding="utf-8"))
+    data["criteria"][0]["checks"] = [scoped]
+    (folder / "rubric.yml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+
+    scope = {i["check"]: i for i in content_check.body_check_results(folder)}["rubric_scope"]
+    assert scope["ok"] and "Seccion inexistente" in scope["detail"] and "warning" in scope["detail"].lower()
+    content_check.main([str(folder), "--body-check"])
+    assert "rubric_scope" in capsys.readouterr().out

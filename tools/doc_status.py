@@ -83,8 +83,12 @@ _GUIDANCE = {
     "plan": "record the teacher's rubric in {rubric}, then re-run doc_status",
     "draft": "draft {body}, then re-run doc_status",
     "approval": (
+        "before asking, build a preview PDF with {build_command} --no-approval-check, render and "
+        "inspect every page, fix layout defects in {body}, and show the preview path with {body}; "
+        "the preview is never the final artifact; "
         "generation runs only after you approve {body}; in the same batch use ask_user_choice "
-        "(suggested options, never free text) for the document format AA, APE or libre, the "
+        "(suggested options, never free text) for the document format AA, APE or libre (libre also "
+        "needs format_spec: options 'documento sobrio sin portada' or 'con portada'), the "
         "delivery format PDF or DOCX, and any metadata that format still needs; never infer "
         "an answer, no defaults; record the answers in {report_yml} only when approval.yml is written"
     ),
