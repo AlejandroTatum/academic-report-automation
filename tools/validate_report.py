@@ -869,10 +869,22 @@ def latex_log_validation(config: ReportConfig) -> ValidationResult:
     return result
 
 
+BOLD_PSEUDO_HEADING_RE = re.compile(r"^\s*\*\*[^*]{4,}\*\*\s*$")
+
+
+def bold_pseudo_heading_lines(body: str) -> list[tuple[int, str]]:
+    """``(line number, line)`` for each bold-only line used as a heading.
+
+    Shared by ``source_layout_validation`` and the pre-approval body check so
+    both apply the same rule.
+    """
+    return [(n, line) for n, line in enumerate(body.splitlines(), start=1) if BOLD_PSEUDO_HEADING_RE.match(line)]
+
+
 def source_layout_validation(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     body = config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
-    bad_bold_titles = [line for line in body.splitlines() if re.match(r"^\s*\*\*[^*]{4,}\*\*\s*$", line)]
+    bad_bold_titles = [line for _, line in bold_pseudo_heading_lines(body)]
     if bad_bold_titles:
         result.errors.append("Usar headings Markdown (#, ##) para títulos, no negrita manual: " + bad_bold_titles[0][:80])
     return result

@@ -54,6 +54,7 @@ import rubric_checks
 import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
+from validate_report import bold_pseudo_heading_lines
 from source_count import MIN_ACADEMIC_SOURCES, effective_min_sources, eligible_entry_keys
 from validate_ieee_refs import bib_keys, cited_keys
 
@@ -323,6 +324,15 @@ def body_format_problems(body_text: str) -> list[str]:
             + ", ".join(f"line {n}" for n in bad_lines)
             + ": the PDF font renders them blank; write math instead, e.g. "
             "`$c_1$`, `$10^{-5}$`, `m/s$^2$`"
+        )
+    # The validator's own rule, applied to the whole body exactly as it will be
+    # at validation time, so a defect is caught before approval, not after.
+    bold = bold_pseudo_heading_lines(body_text)
+    if bold:
+        problems.append(
+            "bold-only line(s) used as headings at "
+            + ", ".join(f"line {n}" for n, _ in bold)
+            + ": use a `##`/`###` heading instead of manual bold"
         )
     return problems
 

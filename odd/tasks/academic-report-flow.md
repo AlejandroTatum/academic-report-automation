@@ -79,6 +79,9 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
           from ~14.8k words to ~5k, removing duplicated rules (automation-contract/quality-gates/clean-delivery);
           task 8 (f)(i) resolved here; contract tests updated, no rule silently dropped.
       9.4 Target diagram becomes current; README; live re-test on a new exercise.
+- [x] 10. Contract run fixes (business contract, 2026-10-01): (a) `min_sources: 0` allowed only off the academic route
+  (academic rejects it with a clear error): research gate done without sources.bib, `eligible_sources_cited` passes, no
+  references section; (b) `content_check --body-check` now catches bold pseudo-headings via validate_report's own rule.
 
 ## Evidence
 
@@ -159,3 +162,5 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   build, rubric_plan CLI, empty-slug fix, restored rules, dead refs); review-2b7394cd51201e2c approved, burned.
 - 9.4 docs: report-flow.mmd/.es.mmd (+png) promoted to the current flow; intake-flow* marked historical; README links.
   Live re-test pending a new exercise from the user.
+- Task 10 contract run fixes: commits 3cc12de (min_sources 0 off academic; RED 13 failed, GREEN 14 passed) and the
+  body-check bold pseudo-heading fix (RED 4 failed, GREEN 127 passed in test_content_check); `tests/skills tools` all green.

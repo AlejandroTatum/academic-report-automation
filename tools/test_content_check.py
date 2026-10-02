@@ -1315,3 +1315,39 @@ def test_marker_keeps_four_mechanical_entries_with_unambiguous_format_text(tmp_p
     assert [c["check"] for c in marker["mechanical"]][-1] == "rubric_checks"
     assert len(marker["mechanical"]) == 4
     assert "body_format: no level-1 heading" in marker["mechanical"][-1]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Bold pseudo-headings: the pre-approval check applies validate_report's rule
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["**Por el club**", '**Por el club (en adelante, "el club"):**'],
+)
+def test_body_format_flags_bold_pseudo_headings_with_line_numbers_and_hint(line: str) -> None:
+    problems = _body_problems(f"# Contrato\n\n{line}\n\nTexto.\n")
+
+    joined = " ".join(problems)
+    assert "line 3" in joined and "##" in joined
+
+
+def test_body_format_ignores_inline_bold_and_headings() -> None:
+    assert _body_problems("# Contrato\n\nTexto con **negrita** inline.\n\n## Por el club\n") == []
+
+
+def test_body_format_uses_the_validate_report_rule() -> None:
+    import validate_report
+
+    assert content_check.bold_pseudo_heading_lines is validate_report.bold_pseudo_heading_lines
+
+
+def test_body_check_fails_on_bold_pseudo_heading(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("# Informe\n\n**Por el club**\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    assert content_check.main([str(folder), "--body-check"]) == 1
+
+    out = capsys.readouterr().out
+    assert "[FAIL] body_format:" in out and "line 3" in out
