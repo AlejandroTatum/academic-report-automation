@@ -170,3 +170,35 @@ def test_uncited_bodies_print_no_bibliography_on_any_template(
     config = make_config(tmp_path_factory.mktemp(f"parity0-{template}"), UNCITED_BODY, template)
     tex = build_latex_report.render_tex(config)
     assert r"\printbibliography" not in tex
+
+
+def _uncited_config(folder: Path, body: str, template: str) -> report_config.ReportConfig:
+    config = make_config(folder, body, template)
+    raw = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    raw.update({"route": "academic", "uncited_bibliography": True})
+    (folder / "report.yml").write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return report_config.ReportConfig.load(folder)
+
+
+@pytest.mark.parametrize("template", ["unl", "plain"])
+def test_uncited_bibliography_prints_every_entry_without_citations(
+    tmp_path_factory: pytest.TempPathFactory, template: str
+) -> None:
+    config = _uncited_config(tmp_path_factory.mktemp(f"nocite-{template}"), UNCITED_BODY, template)
+
+    tex = build_latex_report.render_tex(config)
+
+    assert r"\cite{" not in tex
+    assert tex.count(r"\nocite{*}") == 1
+    assert tex.count(r"\printbibliography") == 1
+    assert tex.index(r"\nocite{*}") < tex.index(r"\printbibliography")
+    assert "{{PRINT_BIBLIOGRAPHY}}" not in tex
+
+
+@pytest.mark.parametrize("template", ["unl", "plain"])
+def test_bibliography_key_off_emits_no_nocite(
+    tmp_path_factory: pytest.TempPathFactory, template: str
+) -> None:
+    for body in (CITED_BODY, UNCITED_BODY):
+        config = make_config(tmp_path_factory.mktemp(f"off-{template}"), body, template)
+        assert r"\nocite" not in build_latex_report.render_tex(config)

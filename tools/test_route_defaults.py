@@ -1,6 +1,6 @@
 """Route-derived rendering defaults (#23).
 
-``document-routing.md`` says only Route A may activate academic machinery.
+``routing.md`` says only Route A may activate academic machinery.
 Before this fix every route silently received the academic defaults: the UNL
 institutional template, a required academic cover, an UNL logo check,
 numbered academic headings and a body that must start on page 2 — so a
@@ -243,7 +243,7 @@ def test_render_never_rewrites_report_yml(tmp_path):
 
 # ---------------------------------------------------------------------------
 # UNL cover on non-academic routes: the shell stays, the academic-only
-# fields (subject/activity/parallel box, DOCENTE) do not (document-routing.md
+# fields (subject/activity/parallel box, DOCENTE) do not (routing.md
 # forbids auto-including teacher, subject, parallel or "university submission"
 # language on Routes B-E).
 # ---------------------------------------------------------------------------
@@ -349,3 +349,29 @@ def test_body_sentinel_lookalike_does_not_confuse_cover_stripping(tmp_path):
     assert r"\fbox{" not in tex
     assert "DOCENTE" not in tex
     assert "% COVER_ACADEMIC_BOX:END" in tex
+
+
+def _plain_tex(tmp_path: Path, route: str, extra_metadata: dict | None = None) -> str:
+    raw = {"route": route, "metadata": {"title": "Contrato", "student": "Ana Autora",
+                                       "date": "1 de octubre de 2026", **(extra_metadata or {})}}
+    return build_latex_report.render_tex(make_render_config(tmp_path, raw, False))
+
+
+def test_business_title_block_omits_author_and_date_line(tmp_path):
+    body = _plain_tex(tmp_path, "business").split(r"\begin{document}")[1]
+    assert "Contrato" in body
+    assert r"\reportstudent" not in body and r"\reportdate" not in body
+
+
+def test_business_show_author_restores_the_line(tmp_path):
+    body = _plain_tex(tmp_path, "business", {"show_author": True}).split(r"\begin{document}")[1]
+    assert r"\reportstudent" in body and r"\reportdate" in body
+
+
+def test_technical_title_block_keeps_author_and_date_line(tmp_path):
+    body = _plain_tex(tmp_path, "technical").split(r"\begin{document}")[1]
+    assert r"\reportstudent" in body and r"\reportdate" in body
+
+
+def test_author_line_constant_matches_the_plain_template():
+    assert build_latex_report.AUTHOR_LINE_TEX in build_latex_report.PLAIN_TEMPLATE.read_text(encoding="utf-8")

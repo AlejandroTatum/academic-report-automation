@@ -1,6 +1,6 @@
 """Route-derived cover defaults and their validation alignment (#23).
 
-``document-routing.md`` says only Route A may activate academic machinery.
+``routing.md`` says only Route A may activate academic machinery.
 Before the route fix every route silently received the academic cover
 expectations, and a technical PDF was failed for lacking a cover it never
 agreed to.

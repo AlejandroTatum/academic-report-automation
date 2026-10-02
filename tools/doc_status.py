@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive the document-workflow phases from on-disk artifacts (read-only).
+"""Derive the academic-report-flow phases from on-disk artifacts (read-only).
 
 Slice 2c-i of the status layer: the phase vocabulary, the two value dataclasses,
 the eleven per-phase derivations, and the ``derive``/``main`` composition on top
@@ -44,7 +44,7 @@ from report_config import (
     versioned_pdf_pattern,
 )
 from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
-from source_count import source_gate
+from source_count import MIN_ACADEMIC_SOURCES, effective_min_sources, source_gate
 from structure_contract import structure_confirmation_state, structure_gate_engaged
 
 # new-report-flow T5: the content-first route. The preview phase is gone (the
@@ -77,19 +77,30 @@ SCHEMA_VERSION = 1
 _GUIDANCE = {
     "intake": "complete {report_yml}, then re-run doc_status",
     "research": (
-        "write at least 5 book or paper sources to {sources}, "
+        "write at least {min_sources} book or paper sources to {sources}, "
         "then re-run doc_status"
     ),
     "plan": "record the teacher's rubric in {rubric}, then re-run doc_status",
     "draft": "draft {body}, then re-run doc_status",
-    "approval": "generation runs only after you approve {body}",
+    "approval": (
+        "before asking, build a preview PDF with {build_command} --no-approval-check, render and "
+        "inspect every page, fix layout defects in {body}, and show the preview path with {body}; "
+        "the preview is never the final artifact; "
+        "generation runs only after you approve {body}; in the same batch use ask_user_choice "
+        "(suggested options, never free text) for the document format AA, APE or libre (libre also "
+        "needs format_spec: options 'documento sobrio sin portada' or 'con portada'), the "
+        "delivery format PDF or DOCX, and any metadata that format still needs; never infer "
+        "an answer, no defaults; record the answers in {report_yml} only when approval.yml is written"
+    ),
     "verify": (
         "launch TWO independent judges for {rubric}; run {check_command} "
         "--judgments a.yml --judgments b.yml, then re-run doc_status"
     ),
     "format": (
-        "use ask_user_choice for APE, AA or libre and each remaining metadata gap "
-        "with suggested options (never free text); decide group work and members here; "
+        "the format answers normally arrive with the approval batch; ask only the missing "
+        "fields named by doc_status, never re-ask what {report_yml} records: use ask_user_choice "
+        "for APE, AA or libre, PDF or DOCX, and each remaining metadata gap with suggested "
+        "options (never free text); decide group work and members here; "
         "record the answer in {report_yml}, then re-run doc_status"
     ),
     "generate": "build with {build_command}, then re-run doc_status",
@@ -227,7 +238,23 @@ def _phase_draft(folder: Path, _config: ReportConfig, _documents_root: Path | No
         return PhaseState("draft", BLOCKED, "body.md unreadable", "draft_unreadable")
     if not text.strip():
         return PhaseState("draft", PENDING, "body.md empty")
-    return PhaseState("draft", DONE, "body.md present")
+    # Tools enforce the quality rules before the human decision: while the same
+    # body check `content_check.py --body-check` runs would fail, approval is
+    # not offered. A current approval marker is never re-gated (the user already
+    # approved those exact bytes).
+    if approval_state(folder).state != "current":
+        try:
+            failed = [c for c in content_check.body_check_results(folder) if not c["ok"]]
+        except (OSError, ValueError, TypeError) as exc:
+            return PhaseState("draft", PENDING, f"body check could not run: {exc}", "body_check_failed")
+        if failed:
+            return PhaseState(
+                "draft",
+                PENDING,
+                "body check fails: " + "; ".join(f"{c['check']}: {c['detail']}" for c in failed),
+                "body_check_failed",
+            )
+    return PhaseState("draft", DONE, "body.md present and passes the body check")
 
 
 def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -287,15 +314,28 @@ def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | N
     return PhaseState("verify", BLOCKED, "content-check.yml malformed", "content_check_malformed")
 
 
-def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+def _has_legacy_pdf(folder: Path, config: ReportConfig, documents_root: Path | None) -> bool:
+    """A report from before explicit ``output:`` answers: its PDF already exists
+    and was validated or delivered, so it is treated as ``output: pdf``. A merely
+    generated PDF (possibly another folder's) never waives the answer."""
+    if not config.pdf_path.is_file():
+        return False
+    if (folder / "validation.yml").is_file():
+        return True
+    return _phase_deliver(folder, config, documents_root).state == DONE
+
+
+def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
     """Map the chosen format and its metadata onto one phase state (T4/T5).
 
-    An absent ``format:`` is ordinary progress: the phase's guidance is to ask
-    the user the single question (APE, AA or libre). A chosen format needs its
-    required metadata present and placeholder-free -- and ``libre`` a
-    ``format_spec:`` -- so an incomplete choice simply stays ``pending`` with
-    the missing keys named. An unrecognised format is ``blocked`` (intake
-    already blocks it; this handler stays defensive).
+    The answers normally arrive with the approval batch (task 9.1), so this is a
+    completeness check: an absent ``format:`` is ordinary progress (ask APE, AA
+    or libre). A chosen format needs its required metadata present and
+    placeholder-free, ``libre`` a ``format_spec:``, and every format an explicit
+    ``output:`` (PDF or DOCX has no default, except for a legacy report whose PDF is
+    already validated or delivered) -- an incomplete choice stays
+    ``pending`` with only the missing keys named. An unrecognised format or ``output:``
+    value is ``blocked`` and named (intake already blocks the format; this handler stays defensive).
     """
     chosen = config.format
     if chosen is None:
@@ -309,9 +349,19 @@ def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | No
     ]
     if chosen == "libre" and not config.format_spec:
         missing.append("format_spec")
+    output = str(config.raw.get("output") or "").strip()
+    if output and output.lower() not in ("pdf", "docx"):
+        return PhaseState(
+            "format", BLOCKED, f"output={output} not recognized: use pdf or docx", "unknown_output"
+        )
+    legacy_pdf = not output and _has_legacy_pdf(folder, config, documents_root)
+    if not output and not legacy_pdf:
+        missing.append("output")
     if missing:
         return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
-    return PhaseState("format", DONE, f"format={chosen}, metadata complete")
+    if legacy_pdf:
+        return PhaseState("format", DONE, f"format={chosen}, output pdf (legacy report), metadata complete")
+    return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
 
 
 def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -533,6 +583,23 @@ def _tool_command(script: str, work_folder: Path) -> str:
     return shlex.join([sys.executable, str(ROOT / "tools" / script), str(work_folder)])
 
 
+def _effective_min_sources(config: ReportConfig) -> int:
+    """The source minimum the research gate applies; the default if ``min_sources:`` is invalid
+    (the gate itself reports the invalid value)."""
+    try:
+        return effective_min_sources(config)
+    except ValueError:
+        return MIN_ACADEMIC_SOURCES
+
+
+def _uncited_bibliography(config: ReportConfig) -> bool:
+    """Whether ``uncited_bibliography:`` is on; an invalid value is the gate's to report."""
+    try:
+        return config.uncited_bibliography
+    except ValueError:
+        return False
+
+
 def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None, blocked_reason: str = "") -> str:
     """Action sentence for ``phase_name``, bound to the real work-folder path.
 
@@ -556,10 +623,14 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     if phase_name == "verify" and blocked_reason == "content_check_failed":
         template = ("fix findings in {body} through the user's literal edit orders, "
                     "then re-approve the draft and re-run the independent judge")
+    if phase_name == "draft" and blocked_reason == "body_check_failed":
+        template = "fix {body} until {check_command} --body-check passes, then re-run doc_status"
     if phase_name == "intake" and not config.metadata.get("student"):
         template += (
-            f"; suggest {DEFAULT_STUDENT} as the default student and confirm "
-            "with the user through a single-choice prompt (do not auto-fill)"
+            "; a student name the user saved as permanent for all future sessions "
+            "(saved as permanent) counts as confirmed: record it without asking; otherwise suggest "
+            f"{DEFAULT_STUDENT} as the default student and confirm with the user "
+            "through a single-choice prompt (do not auto-fill, never invent a name)"
         )
     if phase_name == "format":
         facts = load_guide_facts(folder, config)
@@ -588,9 +659,17 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             handoff = "present PDF to the user (never screenshots):\nbrave '" + quoted + "'"
             if phase_name == "review":
                 template += "; " + handoff
+    if phase_name == "research" and _uncited_bibliography(config):
+        template = (
+            "write at least 1 entry (any type) to {sources}, the exact list to print "
+            "(uncited_bibliography: true), then re-run doc_status"
+        )
+    if phase_name == "research" and _effective_min_sources(config) == 0:
+        template = "no sources are required (min_sources: 0); re-run doc_status"
     return template.format(
         folder=folder,
         report_yml=folder / "report.yml",
+        min_sources=_effective_min_sources(config),
         sources=folder / "sources.bib",
         rubric=folder / "rubric.yml",
         body=folder / "body.md",

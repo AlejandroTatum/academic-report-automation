@@ -35,7 +35,7 @@ VALIDATION_RECEIPT = "validation.yml"
 FINAL_REVIEW_MARKER = "final-review.yml"
 
 # The full gate vocabulary the validate phase can grant, in the order
-# ``skills/document-workflow/references/validate.md`` names them. The
+# ``skills/academic-report-flow/references/production.md`` names them. The
 # delivery message below reports exactly which of these the receipt
 # actually names, never a fixed phrase.
 KNOWN_GATES = ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW", "READY_TO_SUBMIT")
@@ -165,6 +165,10 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
         granted = [gate for gate in KNOWN_GATES if gate == "HUMAN_REVIEW" or gate in granted]
     else:
         granted = [gate for gate in granted if gate != "HUMAN_REVIEW"]
+    # READY_TO_SUBMIT follows once the receipt carries the inspected gates and
+    # the human review of these exact bytes is current.
+    if all(gate in granted for gate in ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW")):
+        granted = [gate for gate in KNOWN_GATES if gate == "READY_TO_SUBMIT" or gate in granted]
     missing = [gate for gate in KNOWN_GATES if gate not in granted]
     status_note = f"gates otorgados: {', '.join(granted) if granted else 'ninguno'}"
     if missing:

@@ -1,4 +1,4 @@
-# Conversation cases — academic-report-builder
+# Conversation cases — academic-report-flow
 
 Behavioral cases for the routing contract. Static tests in
 `test_report_builder_routing.py` prove the rules are *written*; these cases prove
@@ -54,6 +54,24 @@ Prompt: `Documentá esta API en DOCX.`
 | Confirms technical type | Route D proposed |
 | Confirms DOCX | Delivery format restated for confirmation |
 | No university cover | DOCX never implies an academic shell |
+
+### Case 5 — content-first academic assignment (2026-10-01 incident)
+
+Setup: a brand-new request, so no work folder exists yet; the skill creates
+`reports/metodos-numericos-ejercicio-1-5/` first, then `doc_status` returns
+`next: intake`; the user has saved their student name as permanent.
+
+Prompt: `Resolvé el ejercicio 1.5 de Métodos Numéricos.`
+
+| Expectation | Pass condition |
+| --- | --- |
+| Creates the folder first | The work folder is created before `doc_status`, the slug is never asked and the folder is stated in the intake summary |
+| Derives the route | `route: academic` is recorded and stated, never asked |
+| Skips the student question | The saved permanent student is recorded as confirmed |
+| Confirms the title | A commentary-style title gets a cleaned candidate and a one-line confirmation |
+| Requests the guide | Guide, rubric and teacher explanation are requested |
+| One batch, then stop | A single compact question batch, then STOP; no second round |
+| No formatting questions | APE/AA/libre and PDF/DOCX are left to the `format` phase |
 
 ## Negative cases
 

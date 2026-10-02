@@ -1,4 +1,4 @@
-"""Shared pytest helpers for the document-workflow status suites.
+"""Shared pytest helpers for the academic-report-flow status suites.
 
 Every ``doc_status`` phase test starts from the same on-disk shapes, so the
 builders live here once instead of being copy-pasted per file. They are plain
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from report_config import ReportConfig, read_yaml
 
-DEFAULT_BODY = "# Informe\n\nCuerpo del documento.\n"
+DEFAULT_BODY = "# Informe\n\nCuerpo del documento con fuentes [@key1], [@key2], [@key3], [@key4] y [@key5].\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
 FINAL_REVIEW_SCHEMA = "academic.doc-final-review/v1"
@@ -398,17 +398,19 @@ def _choose_format(folder: Path, chosen: str = "aa", **metadata: object) -> Path
 
     Keys are written at the top level, which ``ReportConfig.metadata`` resolves
     through its alias map, so the existing ``metadata:`` block is untouched.
-    The APE identification fields and the libre ``format_spec:`` are filled
-    with placeholder-free defaults unless ``metadata`` overrides them.
+    The APE identification fields, the libre ``format_spec:`` and ``output: pdf``
+    are filled with placeholder-free defaults unless ``metadata`` overrides them
+    (``output=None`` leaves the delivery format unrecorded).
     """
     folder.mkdir(parents=True, exist_ok=True)
     report = folder / "report.yml"
     lines = [f"format: {chosen}"]
     body: dict[str, object] = dict(_APE_METADATA_DEFAULTS) if chosen == "ape" else {}
+    body["output"] = "pdf"  # the format phase needs an explicit delivery format (task 9.1)
     if chosen == "libre":
         body["format_spec"] = "Ensayo libre de 5 secciones con portada simple"
     body.update(metadata)
-    lines.extend(f"{key}: {value}" for key, value in body.items())
+    lines.extend(f"{key}: {value}" for key, value in body.items() if value is not None)
     report.write_text(
         report.read_text(encoding="utf-8") + "\n".join(lines) + "\n", encoding="utf-8"
     )

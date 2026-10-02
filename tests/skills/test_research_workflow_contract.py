@@ -10,7 +10,7 @@ RESEARCH_ROOT = ROOT / "skills" / "research-workflow"
 RESEARCH_SKILL = RESEARCH_ROOT / "SKILL.md"
 PROTOCOL = RESEARCH_ROOT / "references" / "research-protocol.md"
 MATRIX = RESEARCH_ROOT / "assets" / "evidence-matrix-template.md"
-REPORT_SKILL = ROOT / "skills" / "academic-report-builder" / "SKILL.md"
+REPORT_SKILL = ROOT / "skills" / "academic-report-flow" / "SKILL.md"
 SYNC_SCRIPT = ROOT / "scripts" / "sync_skills.sh"
 
 
@@ -39,7 +39,7 @@ def test_research_skill_owns_evidence_not_document_creation() -> None:
     text = read(RESEARCH_SKILL).lower()
     assert "does not create, format, export, or deliver a report" in text
     assert "evidence package" in text
-    assert "academic-report-builder" in text
+    assert "academic-report-flow" in text
 
 
 def test_protocol_requires_traceable_claim_level_evidence() -> None:

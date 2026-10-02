@@ -57,9 +57,9 @@ def _isolated_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     shutil.copy2(SYNC, repo / "scripts" / "sync_skills.sh")
-    skill = repo / "skills" / "document-workflow"
+    skill = repo / "skills" / "academic-report-flow"
     skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text("---\nname: document-workflow\n---\n", encoding="utf-8")
+    (skill / "SKILL.md").write_text("---\nname: academic-report-flow\n---\n", encoding="utf-8")
     return repo
 
 
@@ -98,11 +98,11 @@ def _run_sync(repo: Path, home: Path, path: str, args: tuple[str, ...] = ()):
     )
 
 
-def test_document_workflow_and_codex_target_present():
+def test_academic_report_flow_and_codex_target_present():
     script = SYNC.read_text(encoding="utf-8")
     skills = _array_entries(script, "SKILLS")
     targets = _array_entries(script, "TARGETS")
-    assert "document-workflow" in skills
+    assert "academic-report-flow" in skills
     assert "$HOME/.codex/skills" in targets
 
 
@@ -119,7 +119,7 @@ def test_sync_exits_zero_without_gentle_ai_binary(tmp_path):
 
     assert result.returncode == 0, result.stderr
     for target in RUNTIME_TARGETS:
-        assert (home / target / "document-workflow" / "SKILL.md").is_file()
+        assert (home / target / "academic-report-flow" / "SKILL.md").is_file()
     assert "skill-registry refresh failed" not in result.stderr
 
 
@@ -148,4 +148,4 @@ def test_dry_run_exits_zero_without_gentle_ai_binary(tmp_path):
 
     assert result.returncode == 0, result.stderr
     for target in RUNTIME_TARGETS:
-        assert not (home / target / "document-workflow").exists()
+        assert not (home / target / "academic-report-flow").exists()

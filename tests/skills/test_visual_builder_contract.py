@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-REPORT_SKILL = ROOT / "skills" / "academic-report-builder" / "SKILL.md"
+REPORT_SKILL = ROOT / "skills" / "academic-report-flow" / "SKILL.md"
 VISUAL_ROOT = ROOT / "skills" / "academic-visual-builder"
 VISUAL_SKILL = VISUAL_ROOT / "SKILL.md"
 SCHEMA = VISUAL_ROOT / "references" / "figures-yml-schema.md"
@@ -88,8 +88,8 @@ def test_visual_assets_never_reach_the_delivery_folder() -> None:
     assert "delivery folder" in text.lower(), (
         "the visual skill must keep assets out of the user's delivery folder"
     )
-    assert "clean-delivery.md" in text, (
-        "the visual skill must point at the report skill's clean-delivery contract"
+    assert "delivery.md" in text, (
+        "the visual skill must point at the report skill's delivery contract"
     )
 
 

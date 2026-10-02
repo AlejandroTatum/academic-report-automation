@@ -114,3 +114,20 @@ def test_tolerance_rules_constant_pins_the_check_tolerances() -> None:
     assert "first letter" in TOLERANCE_RULES
     assert "contains is case-insensitive" in TOLERANCE_RULES
     assert "accent-insensitively" in TOLERANCE_RULES
+
+
+def test_section_scope_warnings_flag_contains_scoped_to_a_missing_heading() -> None:
+    from rubric_checks import section_scope_warnings
+
+    body = "# Objetivo\ntexto\n"
+    criteria = [{"id": "firmas", "checks": [
+        {"type": "contains", "section": "Firmas", "text": "Representante"},
+        {"type": "contains", "section": "Objetivo", "text": "texto"},
+        {"type": "contains", "text": "texto"},
+        {"type": "heading_present", "section": "Anexos"},
+    ]}]
+
+    warnings = section_scope_warnings(criteria, body)
+
+    assert len(warnings) == 1
+    assert "firmas" in warnings[0] and "Firmas" in warnings[0] and "document-wide" in warnings[0]

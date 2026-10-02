@@ -19,10 +19,9 @@ TARGETS=(
 )
 
 SKILLS=(
-  academic-report-builder
+  academic-report-flow
   academic-visual-builder
   research-workflow
-  document-workflow
 )
 
 APPLY=0

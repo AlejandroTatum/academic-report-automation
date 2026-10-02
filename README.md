@@ -34,7 +34,7 @@ There are two Markdown pipelines and they are not interchangeable.
 
 **`build_report_auto.py` is canonical for anything you intend to submit or
 ship.** It is the pipeline the agent skill mandates
-(`skills/academic-report-builder/references/automation-contract.md`), and it is
+(`skills/academic-report-flow/references/routing.md` and `production.md`), and it is
 the only one that renders BibTeX citations, institutional covers and the
 validation gates.
 
@@ -216,11 +216,20 @@ routing contract never reaches a runtime.
 
 ### Document workflow
 
-The agent document flow is content-first — intake, research, plan, draft, approval,
-verify, format, generate, validate, review, deliver — owned by
-`skills/document-workflow/` and drawn in
-[`docs/diagrams/new-report-flow.es.svg`](docs/diagrams/new-report-flow.es.svg)
-(rendered: [`new-report-flow.es.png`](docs/diagrams/new-report-flow.es.png)).
+One skill, `skills/academic-report-flow/`, owns the whole document flow: intake,
+research, plan, draft, approval, verify, format, generate, validate, review, deliver.
+`research-workflow` and `academic-visual-builder` stay separate.
+
+- **Entry:** a new request first creates its work folder `reports/<slug>/`; then `doc_status` runs and its `next` token selects the one phase reference to load (an empty folder yields `intake`). The standalone full route runs only when the work-folder flow is unavailable.
+- **Route:** an academic assignment (subject, teacher, APE, AA, exercise, homework) records `route: academic` without asking; the route is asked only when signals are absent or conflicting.
+- **Identity:** a student name the user saved as permanent counts as confirmed; otherwise it is a single-choice suggestion, never auto-filled. A title holding commentary gets a one-line confirmation.
+- **Guide:** the teacher's guide, rubric and explanation are always requested, in one compact question batch, then the run stops.
+- **Three decisions:** (1) intake data, (2) draft approval plus format (APE, AA or libre; PDF or DOCX) asked in one batch, (3) final review. Intake never asks formatting questions.
+
+Flow diagram: [`docs/diagrams/report-flow.mmd`](docs/diagrams/report-flow.mmd)
+(rendered: [`report-flow.png`](docs/diagrams/report-flow.png); Spanish:
+[`report-flow.es.png`](docs/diagrams/report-flow.es.png)). Older diagrams in `docs/diagrams/`
+(`intake-flow*`, `new-report-flow.es.*`) are historical.
 
 ### Syncing automatically on pull
 

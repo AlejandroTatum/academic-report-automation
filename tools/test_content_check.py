@@ -1221,3 +1221,292 @@ def test_invalid_min_sources_is_input_error(
 
     assert "min_sources" in capsys.readouterr().err
     assert not (folder / "content-check.yml").exists()
+
+
+# ---------------------------------------------------------------------------
+# Body format check (task 8a): level-1 headings and math sub/superscripts
+# ---------------------------------------------------------------------------
+
+
+def _body_problems(text: str) -> list[str]:
+    return content_check.body_format_problems(text)
+
+
+def test_body_without_level_one_heading_fails() -> None:
+    problems = _body_problems("## Seccion\n\nTexto.\n\n### Sub\n")
+    assert any("level-1" in problem and "# " in problem for problem in problems)
+
+
+def test_body_with_level_one_heading_passes() -> None:
+    assert _body_problems("# Seccion\n\n## Sub\n\nTexto.\n") == []
+
+
+def test_level_one_heading_inside_a_fence_does_not_count() -> None:
+    problems = _body_problems("## Seccion\n\n```\n# comentario\n```\n")
+    assert any("level-1" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("text", ["c\u2081", "v\u2080", "10\u207b\u2075", "m/s\u00b2", "x\u00b3", "a\u2090"])
+def test_unicode_sub_and_superscripts_fail_with_line_numbers(text: str) -> None:
+    problems = _body_problems(f"# T\n\nlinea ok\nvalor {text} aqui\n")
+    joined = " ".join(problems)
+    assert "line 4" in joined
+    assert "$c_1$" in joined and "$10^{-5}$" in joined and "m/s$^2$" in joined
+
+
+def test_unicode_scripts_in_code_are_allowed() -> None:
+    body = "# T\n\n```\nc\u2081 = 1\n```\n\nUsa `v\u2080` como nombre.\n"
+    assert _body_problems(body) == []
+
+
+def test_run_check_fails_on_format_defects_and_state_is_fail(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text(
+        "## Informe\n\nc\u2081 con [@key1] y [@key2], [@key3], [@key4], [@key5].\n", encoding="utf-8"
+    )
+    assert _run(folder) == 1
+    findings = " ".join(_marker(folder)["findings"])
+    assert "level-1" in findings and "line 3" in findings
+
+
+def test_body_check_mode_reports_without_writing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+    assert content_check.main([str(folder), "--body-check"]) == 1
+    out = capsys.readouterr().out
+    assert "level-1" in out
+    assert not (folder / "content-check.yml").exists()
+
+
+def test_body_check_mode_passes_a_clean_draft(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    assert content_check.main([str(folder), "--body-check"]) == 0
+    assert not (folder / "content-check.yml").exists()
+
+
+def test_body_check_results_select_checks_by_name_and_name_format_defects(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    results = {item["check"]: item for item in content_check.body_check_results(folder)}
+
+    assert {"citations_resolve", "eligible_sources_cited", "body_format"} <= set(results)
+    assert "judgments_match_rubric" not in results
+    assert not results["body_format"]["ok"] and "level-1" in results["body_format"]["detail"]
+    assert results["citations_resolve"]["ok"]
+
+
+def test_body_check_output_labels_body_format_defects(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    assert content_check.main([str(folder), "--body-check"]) == 1
+
+    assert "[FAIL] body_format:" in capsys.readouterr().out
+
+
+def test_marker_keeps_four_mechanical_entries_with_unambiguous_format_text(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    assert _run(folder) == 1
+
+    marker = _marker(folder)
+    assert [c["check"] for c in marker["mechanical"]][-1] == "rubric_checks"
+    assert len(marker["mechanical"]) == 4
+    assert "body_format: no level-1 heading" in marker["mechanical"][-1]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Bold pseudo-headings: the pre-approval check applies validate_report's rule
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["**Por el club**", '**Por el club (en adelante, "el club"):**'],
+)
+def test_body_format_flags_bold_pseudo_headings_with_line_numbers_and_hint(line: str) -> None:
+    problems = _body_problems(f"# Contrato\n\n{line}\n\nTexto.\n")
+
+    joined = " ".join(problems)
+    assert "line 3" in joined and "##" in joined
+
+
+def test_body_format_ignores_inline_bold_and_headings() -> None:
+    assert _body_problems("# Contrato\n\nTexto con **negrita** inline.\n\n## Por el club\n") == []
+
+
+def test_body_format_uses_the_validate_report_rule() -> None:
+    import validate_report
+
+    assert content_check.bold_pseudo_heading_lines is validate_report.bold_pseudo_heading_lines
+
+
+def test_body_check_fails_on_bold_pseudo_heading(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("# Informe\n\n**Por el club**\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    assert content_check.main([str(folder), "--body-check"]) == 1
+
+    out = capsys.readouterr().out
+    assert "[FAIL] body_format:" in out and "line 3" in out
+
+
+def test_body_check_surfaces_a_section_scope_warning_without_failing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Task 11(e): a contains check scoped to a heading the draft lacks warns, it does not add a failure."""
+    folder = _verify_folder(tmp_path / "wf")
+    scoped = {"type": "contains", "section": "Seccion inexistente", "text": "Texto"}
+    results = content_check.body_check_results(folder)
+    assert "rubric_scope" not in {item["check"] for item in results}
+
+    import yaml
+    data = yaml.safe_load((folder / "rubric.yml").read_text(encoding="utf-8"))
+    data["criteria"][0]["checks"] = [scoped]
+    (folder / "rubric.yml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+
+    scope = {i["check"]: i for i in content_check.body_check_results(folder)}["rubric_scope"]
+    assert scope["ok"] and "Seccion inexistente" in scope["detail"] and "warning" in scope["detail"].lower()
+    content_check.main([str(folder), "--body-check"])
+    assert "rubric_scope" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Judgment reuse for markup-only body changes (task 11 f)
+# ---------------------------------------------------------------------------
+
+PLAIN_BODY = (
+    "# Informe\n\nEl cliente dijo \"entrega inmediata\" con fuentes [@key1], [@key2], "
+    "[@key3], [@key4] y [@key5].\n\n- primer punto\n- segundo punto\n\n"
+    "| a | b |\n| --- | --- |\n| uno | dos |\n"
+)
+MARKUP_BODY = (
+    "# **Informe**\n\nEl cliente dijo “**entrega inmediata**” con fuentes [@key1], [@key2], "
+    "[@key3], [@key4] y [@key5].\n\n* primer punto\n* _segundo_ punto\n\n"
+    "| a  | b  |\n|:---|:---|\n| uno | dos |\n"
+)
+
+
+def _judged_pair(folder: Path) -> list[str]:
+    """Two judgments files bound to the current body, carrying ``body_text_sha256``."""
+    import yaml
+
+    brief = yaml.safe_load(content_check.judge_brief(folder).split("Return only judgments YAML using this schema.")[1].split("\n", 1)[1])
+    paths = []
+    for name, finding in (("a.yml", "first"), ("b.yml", "second")):
+        path = _judgments(folder, name=name, findings=[finding])
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["body_text_sha256"] = brief["body_text_sha256"]
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        paths.append(str(path))
+    return ["--judgments", paths[0], "--judgments", paths[1]]
+
+
+def _reuse_folder(folder: Path) -> list[str]:
+    _verify_folder(folder)
+    _body(folder, PLAIN_BODY)
+    return _judged_pair(folder)
+
+
+def test_judge_brief_carries_the_normalized_text_hash(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, PLAIN_BODY)
+    assert f"body_text_sha256: {content_check.body_text_sha256(PLAIN_BODY)}" in content_check.judge_brief(folder)
+    assert content_check.body_text_sha256(PLAIN_BODY) == content_check.body_text_sha256(MARKUP_BODY)
+
+
+def test_markup_only_edit_reuses_judgments(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY)
+    assert content_check.main([str(folder), *args]) == 0
+    marker = _marker(folder)
+    assert "judgments reused: markup-only change" in _mechanical(marker, "judgments_match_rubric")["detail"]
+    assert content_check.content_check_state(folder) == "pass"
+
+
+def test_unchanged_body_has_no_reuse_note(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    assert content_check.main([str(folder), *args]) == 0
+    assert "reused" not in _mechanical(_marker(folder), "judgments_match_rubric")["detail"]
+
+
+def test_one_word_edit_still_needs_new_judgments(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY.replace("primer", "tercer"))
+    assert content_check.main([str(folder), *args]) == 2
+    assert "judgments are for a different draft; re-run the judge" in capsys.readouterr().err
+
+
+def test_added_character_still_needs_new_judgments(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY.replace("dos |", "dos. |"))
+    assert content_check.main([str(folder), *args]) == 2
+
+
+def test_rubric_change_blocks_reuse_even_for_markup_only_edit(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY)
+    _rubric(folder, source="otra guia")
+    assert content_check.main([str(folder), *args]) == 2
+
+
+def test_stale_judgments_without_text_hash_are_not_reused(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, PLAIN_BODY)
+    first, second = _judgments(folder, name="a.yml"), _judgments(folder, name="b.yml", findings=["x"])
+    _body(folder, MARKUP_BODY)
+    assert content_check.main([str(folder), "--judgments", str(first), "--judgments", str(second)]) == 2
+
+
+def test_normalize_body_text_keeps_math_operators() -> None:
+    """A change inside math is a content change: judgments must not be reused."""
+    from content_check import body_text_sha256
+
+    assert body_text_sha256("La masa es $a*b$.") != body_text_sha256("La masa es $ab$.")
+    assert body_text_sha256("Vale $x^_$.") != body_text_sha256("Vale $x^$.")
+    assert body_text_sha256("**Nota:** $x_1$") == body_text_sha256("Nota: $x_1$")
+
+
+def _uncited_folder(folder: Path, body: str = "# Informe\n\nSin citas en el texto.\n") -> Path:
+    _report(folder)
+    with (folder / "report.yml").open("a", encoding="utf-8") as handle:
+        handle.write("uncited_bibliography: true\n")
+    (folder / "sources.bib").write_text("@misc{slides, title={Slides}}\n", encoding="utf-8")
+    _rubric(folder)
+    _body(folder, body)
+    return folder
+
+
+def test_uncited_bibliography_passes_without_citations(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path / "wf")
+
+    assert _run(folder) == 0
+
+    marker = _marker(folder)
+    eligible = _mechanical(marker, "eligible_sources_cited")
+    assert eligible["ok"] is True
+    assert eligible["detail"] == "uncited bibliography: 1 entry listed, no citations required"
+    assert _mechanical(marker, "citations_resolve")["ok"] is True
+
+
+def test_uncited_bibliography_still_resolves_cited_keys(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path / "wf", "# Informe\n\nCita rota [@fantasma].\n")
+
+    assert _run(folder) == 1
+
+    marker = _marker(folder)
+    assert _mechanical(marker, "citations_resolve")["ok"] is False
+    assert _mechanical(marker, "eligible_sources_cited")["ok"] is True
+
+
+def test_uncited_bibliography_body_check_passes(tmp_path: Path) -> None:
+    folder = _uncited_folder(tmp_path / "wf")
+
+    results = {item["check"]: item for item in content_check.body_check_results(folder)}
+
+    assert results["eligible_sources_cited"]["ok"] is True

@@ -351,6 +351,8 @@ def test_plan_derivation_never_repairs_the_rubric(tmp_path: Path) -> None:
 def test_draft_non_empty_is_done(tmp_path: Path) -> None:
     folder = tmp_path / "wf"
     _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
     _body(folder)
 
     phase = doc_status._phase_draft(folder, _config(folder), None)

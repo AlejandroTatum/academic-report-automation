@@ -9,7 +9,7 @@ type: essay
 backend: latex
 output: pdf
 
-# Ruta documental. Ver skills/academic-report-builder/references/document-routing.md
+# Ruta documental. Ver skills/academic-report-flow/references/routing.md
 # para los cinco valores y la metadata que exige cada uno. Sin esta clave, todo
 # documento se valida como trabajo académico universitario.
 route: academic

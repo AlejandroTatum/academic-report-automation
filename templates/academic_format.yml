@@ -44,7 +44,7 @@ cover:
   # required cover, no logo expectation, body starts on page 1), and an
   # explicit `cover: required: true` on a non-academic route upgrades the
   # dependent expectations below (logo, body page 2) unless that key is
-  # explicitly overridden. See document-routing.md, derived rendering defaults.
+  # explicitly overridden. See routing.md, derived rendering defaults.
   required: true              # [ENFORCED] academic route: PDF must have at least 2 pages (cover + body)
   full_first_page: true       # [GUIDANCE] template layout, not validated
   logo_required: true         # [ENFORCED] academic route: pdf_layout_validation checks for embedded images

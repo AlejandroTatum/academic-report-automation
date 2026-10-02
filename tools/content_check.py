@@ -54,7 +54,8 @@ import rubric_checks
 import yaml
 from approval_marker import BODY_NAME, sha256_file
 from report_config import ReportConfig, read_yaml
-from source_count import MIN_ACADEMIC_SOURCES, effective_min_sources, eligible_entry_keys
+from validate_report import bold_pseudo_heading_lines
+from source_count import MIN_ACADEMIC_SOURCES, all_entry_keys, effective_min_sources, eligible_entry_keys
 from validate_ieee_refs import bib_keys, cited_keys
 
 CONTENT_CHECK_NAME = "content-check.yml"
@@ -151,6 +152,34 @@ def _already_run_checks_section(folder: Path, criteria: list[dict], body_text: s
     return "\n".join(lines) + "\n"
 
 
+_QUOTE_STYLES = str.maketrans({"“": '"', "”": '"', "«": '"', "»": '"'})
+
+
+def normalize_body_text(text: str) -> str:
+    """The body's words with Markdown markup and quote style stripped.
+
+    Heading markers, list markers, block quotes, emphasis, code ticks, table
+    pipes/separator rows, curly versus straight quotes and whitespace do not
+    count; any other character does.
+    """
+    lines = []
+    for line in text.translate(_QUOTE_STYLES).splitlines():
+        if re.fullmatch(r"\s*\|?(?:\s*:?-{3,}:?\s*\|?)+\s*", line):
+            continue
+        line = re.sub(r"^\s*(?:#{1,6}\s+|>+\s*|[-*+]\s+|\d+[.)]\s+)", "", line)
+        # Math spans are content: their operators never count as markup.
+        parts = re.split(r"(\$[^$]*\$)", line)
+        for i in range(0, len(parts), 2):
+            text_part = parts[i].replace("|", " ").replace("*", "").replace("`", "")
+            parts[i] = re.sub(r"(?<!\w)_+|_+(?!\w)", "", text_part)
+        lines.append("".join(parts))
+    return re.sub(r"\s+", " ", " ".join(lines)).strip()
+
+
+def body_text_sha256(text: str) -> str:
+    return hashlib.sha256(normalize_body_text(text).encode("utf-8")).hexdigest()
+
+
 def judge_brief(folder: Path) -> str:
     """A self-contained, read-only assignment with hashes for the current draft.
 
@@ -179,6 +208,7 @@ def judge_brief(folder: Path) -> str:
         "judge": {"role": "independent", "inputs": inputs},
         "body_sha256": hashlib.sha256(body_bytes).hexdigest(),
         "rubric_sha256": sha256_file(folder / rubric_plan.RUBRIC_NAME),
+        "body_text_sha256": body_text_sha256(body_text),
         "criteria": [{"id": "<rubric criterion id>", "status": "cumple|flojo|falta",
                       "where": "<quoted location in body.md>", "note": "<reason>"}],
         "findings": [],
@@ -256,6 +286,15 @@ def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, 
     return judgments, findings, data.get("judge"), data.get("body_sha256"), data.get("rubric_sha256"), errors
 
 
+def _judged_text_hash(path: Path) -> str:
+    """The ``body_text_sha256`` a judgments file recorded, or ``""``."""
+    try:
+        value = yaml.safe_load(Path(path).read_text(encoding="utf-8")).get("body_text_sha256")
+    except Exception:
+        return ""
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
 # A single-quoted ``where`` fragment (T14). The opening quote may not sit
 # between word characters -- that is an ordinary apostrophe (``don't``,
 # ``student's``), not a quotation -- while apostrophes strictly inside a
@@ -288,18 +327,68 @@ def _missing_quote_warnings(judgments_file: str, judgments: list[dict], body_tex
     return warnings
 
 
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_SCRIPT_CHARS_RE = re.compile("[\u2070-\u209f\u00b9\u00b2\u00b3]")
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def body_format_problems(body_text: str) -> list[str]:
+    """Deterministic body.md format defects that only show up in the rendered PDF.
+
+    Fenced code blocks and inline code are skipped. The PDF template numbers
+    sections from level-1 headings (a ``##``-only body numbers them 0.1.) and
+    its font lacks Unicode sub/superscripts (they render blank), so a body
+    without a ``# `` heading, or carrying such characters, fails before approval.
+    """
+    has_h1 = False
+    bad_lines: list[int] = []
+    in_fence = False
+    for number, line in enumerate(body_text.splitlines(), start=1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if re.match(r"# \S", line):
+            has_h1 = True
+        if _SCRIPT_CHARS_RE.search(_INLINE_CODE_RE.sub("", line)):
+            bad_lines.append(number)
+    problems = []
+    if not has_h1:
+        problems.append("no level-1 heading: sections must start at `# ` (not `##`)")
+    if bad_lines:
+        problems.append(
+            "Unicode superscript/subscript characters at "
+            + ", ".join(f"line {n}" for n in bad_lines)
+            + ": the PDF font renders them blank; write math instead, e.g. "
+            "`$c_1$`, `$10^{-5}$`, `m/s$^2$`"
+        )
+    # The validator's own rule, applied to the whole body exactly as it will be
+    # at validation time, so a defect is caught before approval, not after.
+    bold = bold_pseudo_heading_lines(body_text)
+    if bold:
+        problems.append(
+            "bold-only line(s) used as headings at "
+            + ", ".join(f"line {n}" for n, _ in bold)
+            + ": use a `##`/`###` heading instead of manual bold"
+        )
+    return problems
+
+
 def mechanical_checks(
     body_text: str,
     bib_text: str,
     criteria: list[dict],
     judgments: list[dict],
     min_sources: int = MIN_ACADEMIC_SOURCES,
+    uncited_bibliography: bool = False,
 ) -> list[dict]:
     """Derive the deterministic per-check entries (``check``/``ok``/``detail``).
 
     (a) every ``[@key]`` citation in body.md resolves to a bib entry;
     (b) at least ``min_sources`` (the report's effective minimum) distinct eligible book/paper entries
         are actually cited in body.md (not merely present in the bib);
+        (``uncited_bibliography`` replaces this with "the bib lists at least one entry");
     (c) every rubric criterion id has exactly one judgment and no unknown ids.
     """
     cited = cited_keys(body_text)
@@ -318,17 +407,28 @@ def mechanical_checks(
         detail = "no [@key] citations in body.md"
     checks.append({"check": "citations_resolve", "ok": not unresolved, "detail": detail})
 
-    checks.append(
-        {
-            "check": "eligible_sources_cited",
-            "ok": len(eligible_cited) >= min_sources,
-            "detail": (
-                f"{len(eligible_cited)}/{min_sources} eligible book or paper "
-                f"sources cited in body.md"
-                + (f": {', '.join(eligible_cited)}" if eligible_cited else "")
-            ),
-        }
-    )
+    if uncited_bibliography:
+        listed = len(all_entry_keys(bib_text))
+        noun = "entry" if listed == 1 else "entries"
+        checks.append(
+            {
+                "check": "eligible_sources_cited",
+                "ok": listed >= 1,
+                "detail": f"uncited bibliography: {listed} {noun} listed, no citations required",
+            }
+        )
+    else:
+        checks.append(
+            {
+                "check": "eligible_sources_cited",
+                "ok": len(eligible_cited) >= min_sources,
+                "detail": (
+                    f"{len(eligible_cited)}/{min_sources} eligible book or paper "
+                    f"sources cited in body.md"
+                    + (f": {', '.join(eligible_cited)}" if eligible_cited else "")
+                ),
+            }
+        )
 
     known_ids = [str(criterion.get("id")) for criterion in criteria]
     counts = Counter(str(judgment["id"]) for judgment in judgments)
@@ -440,6 +540,7 @@ def run_check(
 
     try:
         min_sources = effective_min_sources(config)
+        uncited = config.uncited_bibliography
     except ValueError as exc:
         return CheckOutcome("", {}, (str(exc),))
 
@@ -452,15 +553,22 @@ def run_check(
     if not criteria:
         return CheckOutcome("", {}, ("rubric.yml missing or malformed",))
     names = [Path(path).name for path in judgments_path]
-    for name, (_, _, judge, judged_body, judged_rubric, _) in zip(names, parsed):
+    reused = False
+    for name, path, (_, _, judge, judged_body, judged_rubric, _) in zip(names, judgments_path, parsed):
         if not isinstance(judge, dict) or judge.get("role") != "independent":
             errors.append(f"{name}: judge.role must be independent")
         elif judge.get("inputs") != expected_inputs:
             errors.append(f"{name}: judge.inputs must list exactly: {', '.join(expected_inputs)}")
         if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
             errors.append(f"{name}: body_sha256 and rubric_sha256 are required")
-        elif judged_body != sha256_file(body_path) or judged_rubric != rubric_hash:
+        elif judged_rubric != rubric_hash:
             errors.append(f"{name}: judgments are for a different draft; re-run the judge")
+        elif judged_body != sha256_file(body_path):
+            # Stale body hash: still valid when only markup changed (same words).
+            if _judged_text_hash(path) == body_text_sha256(body_text):
+                reused = True
+            else:
+                errors.append(f"{name}: judgments are for a different draft; re-run the judge")
     if parsed[0][3:5] != parsed[1][3:5]:
         errors.append(f"{names[0]} and {names[1]} must bind the same body_sha256 and rubric_sha256")
     if errors:
@@ -490,20 +598,27 @@ def run_check(
         for d in disagreements
     )]))
     judges = [item[2] for item in parsed]
-    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources)[-1] for item in parsed]
-    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources)
+    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources, uncited)[-1] for item in parsed]
+    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources, uncited)
+    if reused and checks[-1]["ok"]:
+        checks[-1]["detail"] += "; judgments reused: markup-only change"
     if not all(check["ok"] for check in individual_checks):
         checks[-1] = {"check": "judgments_match_rubric", "ok": False,
                       "detail": "; ".join(check["detail"] for check in individual_checks if not check["ok"])}
     rubric_results = [vars(item) for item in rubric_checks.run_checks(folder, criteria, body_text)]
     failed = [item for item in rubric_results if not item["ok"]]
+    format_problems = body_format_problems(body_text)
     statuses = {item["id"]: item["status"] for item in judgments}
     detail = "; ".join(
         f"{item['criterion_id']} check {item['check_index']} ({item['type']}): {item['detail']}"
         + (" (judged cumple despite failing check)" if statuses.get(item["criterion_id"]) == "cumple" else "")
         for item in failed
     ) or f"all {len(rubric_results)} rubric checks pass"
-    checks.append({"check": "rubric_checks", "ok": not failed, "detail": detail})
+    # The format defects ride on the deterministic body check so the marker
+    # keeps its fixed set of mechanical entries.
+    if format_problems:
+        detail = "; ".join([*([detail] if failed else []), *(f"body_format: {p}" for p in format_problems)])
+    checks.append({"check": "rubric_checks", "ok": not failed and not format_problems, "detail": detail})
     mechanical_ok = all(check["ok"] for check in checks)
     criteria_ok = all(judgment["status"] == "cumple" for judgment in judgments)
     guide = _guide_input(folder, config)
@@ -652,6 +767,60 @@ def content_check_state(report_dir: Path) -> str:
     return "pass" if criteria_ok and mechanical_ok and ids_match else "fail"
 
 
+_BODY_CHECK_MECHANICAL = ("citations_resolve", "eligible_sources_cited")
+
+
+def body_check_results(folder: Path) -> list[dict]:
+    """The judgment-free draft checks as ``check``/``ok``/``detail`` entries.
+
+    One source of truth for ``--body-check`` and for ``doc_status``'s approval
+    gate. Raises ``OSError``/``ValueError``/``TypeError`` when an input
+    (body, rubric, report.yml, bib) is unreadable or invalid.
+    """
+    folder = Path(folder)
+    body_text = (folder / BODY_NAME).read_text(encoding="utf-8")
+    criteria = rubric_plan.load_rubric(folder)
+    config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    min_sources = effective_min_sources(config)
+    mechanical = mechanical_checks(
+        body_text, _read_bib(config), criteria, [], min_sources, config.uncited_bibliography
+    )
+    results = [check for check in mechanical if check["check"] in _BODY_CHECK_MECHANICAL]
+    format_problems = body_format_problems(body_text)
+    results.append(
+        {
+            "check": "body_format",
+            "ok": not format_problems,
+            "detail": "; ".join(format_problems) or "level-1 headings present, no Unicode sub/superscripts",
+        }
+    )
+    failed_rubric = [item for item in rubric_checks.run_checks(folder, criteria, body_text) if not item.ok]
+    results.append(
+        {
+            "check": "rubric_checks",
+            "ok": not failed_rubric,
+            "detail": "; ".join(f"{i.criterion_id} ({i.type}): {i.detail}" for i in failed_rubric)
+            or "all rubric checks pass",
+        }
+    )
+    scope_warnings = rubric_checks.section_scope_warnings(criteria, body_text)
+    if scope_warnings:
+        results.append({"check": "rubric_scope", "ok": True, "detail": "warning: " + "; ".join(scope_warnings)})
+    return results
+
+
+def run_body_check(folder: Path) -> int:
+    """Run the judgment-free mechanical checks on a draft; print, never write."""
+    try:
+        results = body_check_results(folder)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"content check input error: {exc}", file=sys.stderr)
+        return 2
+    for check in results:
+        print(f"  [{'ok' if check['ok'] else 'FAIL'}] {check['check']}: {check['detail']}")
+    return 0 if all(check["ok"] for check in results) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the hard content check for a report folder (never edits body.md)."
@@ -660,6 +829,11 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--judgments", type=Path, action="append")
     mode.add_argument("--judge-brief", action="store_true")
+    mode.add_argument(
+        "--body-check",
+        action="store_true",
+        help="draft-time mechanical checks (format, citations, rubric checks); no judgments, writes nothing",
+    )
     args = parser.parse_args(argv)
     if args.judge_brief:
         try:
@@ -668,6 +842,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"content check input error: {exc}", file=sys.stderr)
             return 2
         return 0
+
+    if args.body_check:
+        return run_body_check(args.folder)
 
     outcome = run_check(args.folder, args.judgments)
     if outcome.errors:

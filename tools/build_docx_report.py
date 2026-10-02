@@ -72,7 +72,7 @@ PAGE_SIZES: dict[str, tuple[float, float]] = {
 
 HEADING_SIZES_PT = {1: 16, 2: 14, 3: 13, 4: 12}
 
-# Institutional strings. Route A only — see references/document-routing.md.
+# Institutional strings. Route A only — see references/routing.md.
 DEFAULT_UNIVERSITY = "Universidad Nacional de Loja"
 DEFAULT_FACULTY = (
     "Facultad de la Energía, las Industrias y los Recursos Naturales no Renovables"
@@ -717,7 +717,7 @@ class DocxRenderer:
     def render_front_matter(self) -> None:
         """Route A gets the institutional cover; every other route a title block.
 
-        ``references/document-routing.md`` is emphatic: routes B–E MUST NOT
+        ``references/routing.md`` is emphatic: routes B–E MUST NOT
         auto-include a UNL cover, teacher, subject, institutional motto or
         academic section numbering. A business deliverable therefore gets a
         sober title block and nothing else.

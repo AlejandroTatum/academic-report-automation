@@ -222,3 +222,33 @@ def test_network_error_keeps_status_and_later_entries_run(tmp_path):
         rows = result_rows(folder)
         assert rows[0]['status'] == 'NETWORK_ERROR' and rows[0].get('detail')
         assert rows[1]['status'] == 'VERIFIED'
+
+
+def test_prints_one_summary_line_per_entry(tmp_path, capsys):
+    folder = report(
+        tmp_path,
+        '@article{a, title={A Study of Trees}, year={2020}, doi={10.1/a}}\n@book{b, title={Sin id}}',
+    )
+    assert main([str(folder)], fetch=lambda *_: doi_response()) == 1
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert any(line.startswith("a: VERIFIED") for line in lines)
+    assert any(line.startswith("b: NO_IDENTIFIER") for line in lines)
+
+
+def test_failure_prints_a_clear_error_and_exits_non_zero(tmp_path, capsys):
+    folder = report(tmp_path, '@article{a, title={A Study of Trees}, year={2020}, doi={10.1/a}}')
+    assert main([str(folder)], fetch=lambda *_: doi_response(title="Other Topic Entirely")) == 1
+    out = capsys.readouterr().out
+    assert "a: MISMATCH" in out and "title" in out
+    assert "verify_sources: 1 of 1 entries failed" in out
+
+
+def test_latex_accent_escapes_do_not_cause_a_title_mismatch(tmp_path):
+    cases = ("M{\\'e}todos Num{\\'e}ricos", "Ense{\\~n}anza de M{\\'e}todos", "M\\'etodos Num\\'ericos")
+    for index, escaped in enumerate(cases):
+        folder = report(
+            tmp_path / str(index),
+            '@article{a, title={' + escaped + '}, year={2020}, doi={10.1/a}}',
+        )
+        remote = escaped.replace("{\\'e}", "é").replace("\\'e", "é").replace("{\\~n}", "ñ")
+        assert verify_sources(folder, fetch=lambda *_: doi_response(title=remote)) == 0, escaped

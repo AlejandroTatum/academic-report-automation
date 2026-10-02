@@ -216,3 +216,90 @@ def test_approval_derivation_never_repairs_the_marker(tmp_path: Path) -> None:
     doc_status._phase_approval(folder, _config(folder), None)
 
     assert marker.read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# Task 9.1: the format decisions ride on the approval batch
+# ---------------------------------------------------------------------------
+
+
+def _verified_folder(folder: Path, **report_extra: object) -> None:
+    """A folder past approval and verify, with the format answers recorded."""
+    from conftest import _content_check, _choose_format, _cited_body, _rubric, _skip_research, _sources_bib
+
+    _report(folder)
+    _skip_research(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    _approval(folder)
+    _content_check(folder)
+    _choose_format(folder, "aa", **report_extra)
+
+
+def test_format_recorded_with_approval_goes_straight_to_generate(tmp_path: Path) -> None:
+    """Format, output and metadata recorded at approval: no separate format stop."""
+    folder = tmp_path / "wf"
+    _verified_folder(folder)
+
+    status = doc_status.derive(folder)
+
+    phases = {phase.name: phase for phase in status.phases}
+    assert phases["format"].state == doc_status.DONE
+    assert status.next_token == "generate"
+
+
+def test_format_without_output_is_pending_and_names_only_output(tmp_path: Path) -> None:
+    """PDF/DOCX has no default: a recorded format without ``output:`` stays pending."""
+    folder = tmp_path / "wf"
+    _verified_folder(folder, output=None)
+
+    status = doc_status.derive(folder)
+
+    phases = {phase.name: phase for phase in status.phases}
+    assert phases["format"].state == "current"
+    assert phases["format"].detail.endswith("output")
+    assert "subject" not in phases["format"].detail
+    assert status.next_token == "format"
+
+
+def test_approval_guidance_asks_the_format_batch(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    for token in ("ask_user_choice", "AA", "APE", "libre", "PDF", "DOCX", "same batch", "never infer"):
+        assert token in guidance
+
+
+def test_format_guidance_asks_only_missing_fields(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    assert "only the missing" in doc_status._guidance("format", folder)
+
+
+def test_approval_guidance_previews_the_pdf_before_asking(tmp_path: Path) -> None:
+    """Task 11(a): build and inspect a preview first, then show its path with body.md."""
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    for token in ("--no-approval-check", "preview", "inspect", "before asking", "path"):
+        assert token in guidance
+    assert "never the final" in guidance
+    assert str(folder) in guidance
+
+
+def test_approval_guidance_asks_format_spec_when_libre(tmp_path: Path) -> None:
+    """Task 11(b): choosing libre needs format_spec in the same batch, as a structured choice."""
+    folder = tmp_path / "wf"
+    _report(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "format_spec" in guidance
+    assert "libre" in guidance
+    assert "sin portada" in guidance and "con portada" in guidance

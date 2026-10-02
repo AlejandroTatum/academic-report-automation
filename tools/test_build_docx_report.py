@@ -379,7 +379,7 @@ def test_remote_image_is_skipped_with_a_warning(tmp_path: Path, capsys) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Route separation — document-routing.md is binding
+# Route separation — routing.md is binding
 # ---------------------------------------------------------------------------
 
 

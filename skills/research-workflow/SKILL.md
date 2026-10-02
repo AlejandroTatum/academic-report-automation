@@ -10,7 +10,7 @@ metadata:
 
 ## Activation Contract
 
-Use for source research, literature review, evidence gathering, or validating claims before an academic report is built. Produce a traceable evidence package for `academic-report-builder`; this skill does not create, format, export, or deliver a report.
+Use for source research, literature review, evidence gathering, or validating claims before an academic report is built. Produce a traceable evidence package for `academic-report-flow`; this skill does not create, format, export, or deliver a report.
 
 ## Hard Rules
 
@@ -18,7 +18,7 @@ Use for source research, literature review, evidence gathering, or validating cl
 - Record claim-level provenance: every reusable claim needs a source locator, verbatim evidence or an explicit paraphrase note, confidence, and limitations.
 - Record source eligibility/status on every source-inventory and evidence-matrix entry. A local source with `inspected: true` is eligible for final citation; a local uninspected source and an externally discovered but unverified source are `lead` and not bibliography-eligible until inspected and provenance-complete.
 - Respect source access, licensing, privacy, and user-provided source constraints. Flag inaccessible or conflicting evidence; do not conceal it.
-- Do not choose document type, structure, citation style, or final prose. `academic-report-builder` owns document intake and creation.
+- Do not choose document type, structure, citation style, or final prose. `academic-report-flow` owns document intake and creation.
 
 ## Decision Gates
 
@@ -35,11 +35,11 @@ Use for source research, literature review, evidence gathering, or validating cl
 2. Collect and assess sources; capture stable locators, access date where applicable, exact evidence, source limitations, provenance, and eligibility/status. Classify only local `inspected: true` sources as eligible for final citation; retain all other sources as leads until inspection and provenance are complete.
 3. Populate `assets/evidence-matrix-template.md` at claim level. Distinguish quotations from paraphrases, link each claim to its source, and record that source's eligibility/status.
 4. Reconcile duplicates, gaps, and contradictions. Assign confidence without converting uncertainty into fact.
-5. Hand the completed evidence package to `academic-report-builder` with only eligible bibliography-ready entries in the bibliography handoff; keep leads separately visible for follow-up.
+5. Hand the completed evidence package to `academic-report-flow` with only eligible bibliography-ready entries in the bibliography handoff; keep leads separately visible for follow-up.
 
 ## Output Contract
 
-Return an evidence package containing: research question and scope; method and source-selection criteria; source inventory with eligibility/status; completed evidence matrix (`research/evidence-matrix.md` plus the structured `research/evidence.yml`, #11); claim-to-source traceability; eligible bibliography-ready entries; separately visible leads for follow-up; conflicts, limitations, and unresolved questions; and a handoff note. State that document creation remains with `academic-report-builder`.
+Return an evidence package containing: research question and scope; method and source-selection criteria; source inventory with eligibility/status; completed evidence matrix (`research/evidence-matrix.md` plus the structured `research/evidence.yml`, #11); claim-to-source traceability; eligible bibliography-ready entries; separately visible leads for follow-up; conflicts, limitations, and unresolved questions; and a handoff note. State that document creation remains with `academic-report-flow`.
 
 ## References
 

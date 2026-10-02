@@ -67,7 +67,7 @@ def resolve_template(key: str | None) -> Path:
     return template_path
 
 
-# Default template per confirmed route (document-routing.md): only Route A may
+# Default template per confirmed route (routing.md): only Route A may
 # activate the UNL institutional shell; Routes B–E derive the plain template.
 # This is a DEFAULT for an absent `template:` key — an explicit key always
 # wins, in either direction, and report.yml is never rewritten.
@@ -107,7 +107,7 @@ def template_key_for(config: ReportConfig) -> str | None:
 
 
 # report.yml key that turns academic section numbering on or off for one
-# report. `document-routing.md` forbids auto-included academic section
+# report. `routing.md` forbids auto-included academic section
 # numbering on Routes B, C and D, but the templates numbered unconditionally.
 #
 # The DEFAULT is derived from the confirmed route (#23): academic reports
@@ -244,6 +244,9 @@ def convert_inline(text: str) -> str:
     keep(r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
          lambda m: r"\href{" + m.group(2) + "}{" + latex_escape(m.group(1)) + "}")
     keep(r"<(https?://[^\s>]+)>", lambda m: r"\url{" + m.group(1) + "}")
+    # Paired straight quotes become “…”; code, math, URLs and cites are already
+    # placeholders, and an unpaired quote has nothing to pair with.
+    text = re.sub(r'"([^"\s](?:[^"]*[^"\s])?)"', "“\\1”", text)
     escaped = latex_escape(text)
     escaped = re.sub(r"\*\*([^*]+)\*\*", lambda m: r"\textbf{" + m.group(1) + "}", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", lambda m: r"\emph{" + m.group(1) + "}", escaped)
@@ -429,6 +432,7 @@ def markdown_to_latex(
     suppress_bibliography_heading: bool = False,
     build_dir: Path | None = None,
     table_styles: TableStylesContext | None = None,
+    figure_placement: str = "tbp",
 ) -> str:
     lines = markdown.splitlines()
     output: list[str] = []
@@ -694,7 +698,7 @@ def markdown_to_latex(
             options = figure_includegraphics_options(resolved)
             output.extend([
                 r"\Needspace{6\baselineskip}",
-                r"\begin{figure}[tbp]",
+                rf"\begin{{figure}}[{figure_placement}]",
                 r"\centering",
                 rf"\includegraphics[{options}]{{{src}}}",
                 rf"\caption{{{caption}}}",
@@ -800,7 +804,7 @@ def markdown_to_latex(
 
 
 # Sentinel comment markers in unl-report.tex bracket the cover fields that
-# document-routing.md reserves for the academic route: subject, activity,
+# routing.md reserves for the academic route: subject, activity,
 # parallel (the framed box) and teacher (the DOCENTE block). The markers keep
 # the template itself route-agnostic -- render_tex() below decides, per
 # report, whether to strip just the marker lines (keeping the block
@@ -883,6 +887,18 @@ def _apply_cover_sentinels(
     return template[: match.start()] + section + template[match.end() :]
 
 
+# The author/date line of the plain template's title block (templates/plain-report.tex).
+AUTHOR_LINE_TEX = (
+    "\\noindent{\\sffamily\\small \\reportstudent\n"
+    "  \\ifthenelse{\\equal{\\reportdate}{}}{}{\\enskip\\textbullet\\enskip\\reportdate}\\par}\n"
+)
+
+
+def hides_author_line(config: ReportConfig) -> bool:
+    """A business document omits the author/date line unless ``metadata.show_author: true``."""
+    return config.route == "business" and config.metadata.get("show_author") is not True
+
+
 def render_tex(config: ReportConfig) -> str:
     template_key = normalize_template_key(template_key_for(config))
     template_path = resolve_template(template_key)
@@ -891,6 +907,8 @@ def render_tex(config: ReportConfig) -> str:
     if not config.body_path.exists():
         raise SystemExit(f"No existe body.md: {config.body_path}")
     template = template_path.read_text(encoding="utf-8")
+    if hides_author_line(config):
+        template = template.replace(AUTHOR_LINE_TEX, "")
     markdown_source = config.body_path.read_text(encoding="utf-8")
     # Bibliography emission is decided by the body's ACTUAL rendered citations
     # -- not by the mere presence of the .bib file (#26). A raw-Markdown regex
@@ -909,15 +927,19 @@ def render_tex(config: ReportConfig) -> str:
     main_source, annex_source = markdown_source, None
     if template_key in APE_TEMPLATE_KEYS:
         main_source, annex_source = split_annexes_markdown(markdown_source)
-    body = markdown_to_latex(main_source, build_dir=build_dir, table_styles=table_styles)
+    figure_spec = "H" if config.figure_placement == "here" else "tbp"
+    body = markdown_to_latex(
+        main_source, build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
+    )
     # Emission detection reads the MAIN body: the annex chunk follows the
     # bibliography by construction, so its citations (if any) cannot decide
     # whether the bibliography prints before them.
-    emit_bibliography = r"\cite{" in body and config.bib_path is not None
+    # ``uncited_bibliography: true`` prints the whole .bib without any \cite.
+    emit_bibliography = (r"\cite{" in body or config.uncited_bibliography) and config.bib_path is not None
     if emit_bibliography:
         body = markdown_to_latex(
             main_source, suppress_bibliography_heading=True, build_dir=build_dir,
-            table_styles=table_styles,
+            table_styles=table_styles, figure_placement=figure_spec,
         )
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.
@@ -1006,7 +1028,7 @@ def render_tex(config: ReportConfig) -> str:
     if annex_source is not None:
         annex_body = markdown_to_latex(
             annex_source, suppress_bibliography_heading=emit_bibliography,
-            build_dir=build_dir, table_styles=table_styles,
+            build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
         )
         after_bibliography_latex = f"{annex_body}\n{after_bibliography_latex}".strip() + "\n"
     bib_file = config.bib_path.name if config.bib_path else ""
@@ -1032,7 +1054,7 @@ def render_tex(config: ReportConfig) -> str:
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
         "{{SECTION_NUMBERING}}": "true" if section_numbering_enabled(config.raw) else "false",
-        # Academic preliminary pages are Route A machinery (document-routing.md):
+        # Academic preliminary pages are Route A machinery (routing.md):
         # only the academic route auto-receives the list-of-figures page, and
         # only when the body actually has figures. Non-academic routes render
         # their figures without the academic prelim page, and no explicit
@@ -1051,7 +1073,8 @@ def render_tex(config: ReportConfig) -> str:
         # Emission is citation-driven (#26): only a body that actually cites
         # the .bib file prints the bibliography (and its template title).
         "{{PRINT_BIBLIOGRAPHY}}": (
-            rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
+            (r"\nocite{*}" + "\n" if config.uncited_bibliography else "")
+            + rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
             if emit_bibliography
             else "% Bibliography omitted: the body cites nothing from the .bib file (#26)."
         ),

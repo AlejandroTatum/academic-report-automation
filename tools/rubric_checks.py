@@ -125,6 +125,22 @@ def _evaluate(folder: Path, check: dict, body: str) -> tuple[bool, str]:
     return False, f"unknown check type '{kind}'"
 
 
+def section_scope_warnings(criteria: list[dict], body_text: str) -> list[str]:
+    """Warn about ``contains`` checks scoped to a heading the draft does not have.
+
+    Checks are document-wide unless the property must live in one section; a
+    scope that breaks when the headings are restructured only costs a round.
+    """
+    return [
+        f"{criterion['id']} contains check {index} is scoped to section '{check['section']}', "
+        "which is not in body.md; drop `section:` (document-wide) unless the property must live there"
+        for criterion in criteria
+        for index, check in enumerate(criterion.get("checks", []), start=1)
+        if check.get("type") == "contains" and isinstance(check.get("section"), str)
+        and _section(body_text, check["section"]) is None
+    ]
+
+
 def run_checks(report_dir: Path, criteria: list[dict], body_text: str) -> list[CheckResult]:
     """Evaluate checks in rubric order without writing or changing the draft."""
     results = []

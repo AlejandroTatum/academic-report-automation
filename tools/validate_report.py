@@ -798,7 +798,7 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
             result.errors.append("La portada parece mezclada con el cuerpo; el cuerpo debe iniciar en página 2")
         # The marker vocabulary is academic Spanish (#23's numbering contract).
         # Non-academic routes render unnumbered, route-specific headings by
-        # contract (document-routing.md, routes B-D), so requiring one of
+        # contract (routing.md, routes B-D), so requiring one of
         # these words there is a false positive, not a real signal.
         if (
             config.route == DEFAULT_ROUTE
@@ -869,10 +869,22 @@ def latex_log_validation(config: ReportConfig) -> ValidationResult:
     return result
 
 
+BOLD_PSEUDO_HEADING_RE = re.compile(r"^\s*\*\*[^*]{4,}\*\*\s*$")
+
+
+def bold_pseudo_heading_lines(body: str) -> list[tuple[int, str]]:
+    """``(line number, line)`` for each bold-only line used as a heading.
+
+    Shared by ``source_layout_validation`` and the pre-approval body check so
+    both apply the same rule.
+    """
+    return [(n, line) for n, line in enumerate(body.splitlines(), start=1) if BOLD_PSEUDO_HEADING_RE.match(line)]
+
+
 def source_layout_validation(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     body = config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
-    bad_bold_titles = [line for line in body.splitlines() if re.match(r"^\s*\*\*[^*]{4,}\*\*\s*$", line)]
+    bad_bold_titles = [line for _, line in bold_pseudo_heading_lines(body)]
     if bad_bold_titles:
         result.errors.append("Usar headings Markdown (#, ##) para títulos, no negrita manual: " + bad_bold_titles[0][:80])
     return result
@@ -904,7 +916,7 @@ def connector_final_size_validation(config: ReportConfig) -> ValidationResult:
     ``tools/visual_builder.py validate`` is the isolated precheck; this is the
     mandatory, independent final-stage run the spec requires — neither
     substitutes for the other. Like every gate in this function, it never
-    grants ``VISUAL_PASS`` itself (see academic-report-builder/SKILL.md: no
+    grants ``VISUAL_PASS`` itself (see academic-report-flow/SKILL.md: no
     script, validator, or auditor ever does); it only blocks the earlier
     gates ``VISUAL_PASS`` depends on. An unresolved figure or unaudited SVG
     is reported, never silently skipped.

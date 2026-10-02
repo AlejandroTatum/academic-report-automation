@@ -1,4 +1,4 @@
-"""Static contract tests for the academic-report-builder skill.
+"""Static contract tests for the academic-report-flow skill.
 
 These tests read the skill markdown as data. They do not run the report
 pipeline. Their only job is to prove that the routing contract cannot
@@ -15,22 +15,22 @@ from pathlib import Path
 
 import pytest
 
-SKILL_ROOT = Path(__file__).resolve().parents[2] / "skills" / "academic-report-builder"
+SKILL_ROOT = Path(__file__).resolve().parents[2] / "skills" / "academic-report-flow"
 REFERENCES = SKILL_ROOT / "references"
 
 SKILL_MD = SKILL_ROOT / "SKILL.md"
-INTAKE_MD = REFERENCES / "document-intake.md"
-ROUTING_MD = REFERENCES / "document-routing.md"
+INTAKE_MD = REFERENCES / "data.md"
+ROUTING_MD = REFERENCES / "routing.md"
 VISUAL_MD = REFERENCES / "visual-directions.md"
-GATES_MD = REFERENCES / "quality-gates.md"
+GATES_MD = REFERENCES / "production.md"
 UNL_MD = REFERENCES / "unl-shell.md"
-DELIVERY_MD = REFERENCES / "clean-delivery.md"
+DELIVERY_MD = REFERENCES / "delivery.md"
 
 RESEARCH_ROOT = Path(__file__).resolve().parents[2] / "skills" / "research-workflow"
 RESEARCH_MD = RESEARCH_ROOT / "references" / "research-protocol.md"
 
 # The one human confirmation gate lives in the orchestrator skill, not in intake.
-APPROVAL_REFERENCE = "document-workflow/references/approval.md"
+APPROVAL_REFERENCE = "references/approval.md"
 
 ROUTE_SCOPED_FILES = (SKILL_MD, ROUTING_MD)
 
@@ -89,7 +89,7 @@ def routing() -> str:
 
 @pytest.mark.parametrize(
     "path",
-    [SKILL_MD, INTAKE_MD, ROUTING_MD, VISUAL_MD, GATES_MD, UNL_MD],
+    [SKILL_MD, INTAKE_MD, ROUTING_MD, VISUAL_MD, GATES_MD, UNL_MD, DELIVERY_MD],
     ids=lambda p: p.name,
 )
 def test_required_file_exists(path: Path) -> None:
@@ -119,7 +119,7 @@ def test_description_is_not_unl_only(skill: str) -> None:
 
 
 def test_document_type_gate_exists(skill: str) -> None:
-    assert "Mandatory Intake" in skill
+    assert "references/data.md" in skill, "SKILL.md must route intake to its reference"
     assert "Prohibition On Inferring Document Type" in skill
 
 
@@ -198,21 +198,18 @@ def test_document_contract_block_is_specified(intake: str) -> None:
     )
 
 
-def test_single_confirmation_is_post_preview_and_traceable(intake: str) -> None:
+def test_single_confirmation_is_the_approval_gate_and_traceable(intake: str) -> None:
     """Exactly one confirmation gate exists in the route, and intake defers to it.
 
-    Intake records data only; the single gate is the post-preview approval
-    defined in document-workflow/references/approval.md.
+    Intake records data only; the single gate is the human approval defined in
+    references/approval.md.
     """
     data = plain(intake)
     lowered = data.lower()
     assert data.count(APPROVAL_REFERENCE) == 1, (
         "intake must forward-reference the approval gate exactly once"
     )
-    assert "post-preview" in lowered or "after the preview" in lowered, (
-        "intake must state that the single confirmation is post-preview"
-    )
-    assert "generation starts only after the one post-preview confirmation" in lowered, (
+    assert "generation starts only after the one human approval" in lowered, (
         "intake must defer the single confirmation to the approval reference"
     )
     assert "never asks for approval" in lowered, (
@@ -243,25 +240,15 @@ def test_intake_may_ask_one_targeted_clarification_per_missing_field(intake: str
 # --------------------------------------------------------------------------
 
 
-def test_skill_defers_single_confirmation_to_post_preview_approval(skill: str) -> None:
-    """SKILL.md must record intake data and never authorize generation at intake.
+def test_skill_keeps_intake_data_only_and_gates_the_build_on_approval(skill: str) -> None:
+    """SKILL.md must never let intake authorize generation.
 
-    The only confirmation gate is the post-preview approval owned by
-    `document-workflow/references/approval.md`.
+    The only confirmation gate is the approval owned by `references/approval.md`;
+    the data-record wording itself lives once, in `references/data.md`.
     """
-    assert APPROVAL_REFERENCE in skill, (
-        "SKILL.md must forward-reference the single post-preview approval gate"
-    )
     lowered = re.sub(r"\s+", " ", plain(skill)).lower()
-    assert "data record" in lowered, (
-        "SKILL.md must describe the Document Contract as a data record"
-    )
-    assert "does not authorize generation" in lowered, (
-        "SKILL.md must state that recording the contract authorizes no generation"
-    )
-    assert "post-preview" in lowered or "after the preview" in lowered, (
-        "SKILL.md must place the single confirmation after the preview"
-    )
+    assert "intake data (references/data.md) never authorizes generation" in lowered
+    assert "never build before approval is done" in lowered
     for stale in (
         "wait for explicit confirmation before generation",
         "generation begins only after the user confirms this block",
@@ -280,14 +267,13 @@ def test_skill_publication_requires_current_approval(skill: str) -> None:
     assert "automatically publish" not in lowered, (
         "technical validation alone must not read as automatic publication"
     )
-    publication_lines = [
-        line for line in skill.splitlines() if "~/Documents" in line
-    ]
-    assert publication_lines, (
-        "SKILL.md must keep the automatic versioned PDF delivery path"
-    )
+    publication_lines = [line for line in skill.splitlines() if "deliver_report.py" in line]
     assert any("APPROVAL_CURRENT" in line for line in publication_lines), (
-        "the Documents publication rule must be conditioned on APPROVAL_CURRENT"
+        "the publication rule must be conditioned on APPROVAL_CURRENT"
+    )
+    delivery = re.sub(r"\s+", " ", read(DELIVERY_MD))
+    assert "~/Documents/<automatic-category>/<slug>/<slug>-vNNN.pdf" in delivery, (
+        "delivery.md must keep the automatic versioned PDF delivery path"
     )
 
 
@@ -359,7 +345,7 @@ def test_unl_shell_not_loaded_outside_academic_route(path: Path) -> None:
 
 
 def test_routing_confines_unl_shell_to_the_academic_section() -> None:
-    """In document-routing.md, unl-shell.md may only appear under Route A."""
+    """In routing.md, unl-shell.md may only appear under Route A."""
     for heading, body in sections(read(ROUTING_MD)).items():
         if "unl-shell" not in body:
             continue
@@ -440,10 +426,6 @@ def test_diagrams_must_be_module_specific() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_clean_delivery_reference_exists() -> None:
-    assert DELIVERY_MD.is_file(), "clean-delivery.md is required by the skill contract"
-
-
 def test_clean_delivery_keeps_evidence_out_of_delivery_folder() -> None:
     text = read(DELIVERY_MD)
     assert "pdfs only" in text.lower(), (
@@ -451,15 +433,15 @@ def test_clean_delivery_keeps_evidence_out_of_delivery_folder() -> None:
     )
     for forbidden in ("manifest", "report.yml", "sources.bib", "audit"):
         assert forbidden in text.lower(), (
-            f"clean-delivery.md must forbid {forbidden!r} in the delivery folder"
+            f"delivery.md must forbid {forbidden!r} in the delivery folder"
         )
 
 
 def test_clean_delivery_destination_is_automatic_and_versioned() -> None:
     text = read(DELIVERY_MD)
     assert "no `delivery_pdf:`" in text.lower()
-    assert "~/documents/<automatic-category>/<document-slug>/" in text.lower()
-    assert "~/documents/academicos/<subject-slug>/<document-slug>/" in text.lower()
+    assert "~/documents/<automatic-category>/<slug>/" in text.lower()
+    assert "~/documents/academicos/<subject-slug>/<slug>/" in text.lower()
     assert "v001" in text.lower()
     assert "sha-256" in text.lower()
 
@@ -486,7 +468,7 @@ def test_course_folder_git_ownership_is_documented() -> None:
     """T1: the delivery tree explains Git ownership and the PDF-only rule."""
     text = read(DELIVERY_MD)
     lowered = re.sub(r"\s+", " ", text.lower())
-    assert "never run `git init`" in lowered
+    assert "do not run any git command (`git init`" in lowered
     assert "`git push`" in lowered
     assert "the user owns every git operation" in lowered
     assert "at the course root" in lowered, "git metadata stays above per-document folders"
@@ -508,30 +490,14 @@ def test_clean_delivery_bibliography_is_a_declared_opt_in() -> None:
     assert "symlink escapes refuse" in lowered, "unsafe declared sources fail closed"
 
 
-def test_automation_contract_names_the_bibliography_opt_in() -> None:
-    """T2: the automation contract states the opt-in key and its evidence field."""
-    automation = re.sub(r"\s+", " ", read(REFERENCES / "automation-contract.md"))
-    assert "deliver_bibliography: true" in automation
-    assert "bibliography_sha256" in automation
-    assert "never copies a `sources.bib` merely because it exists" in automation
-
-
 def test_skill_references_clean_delivery_contract(skill: str) -> None:
-    assert "clean-delivery.md" in skill, (
-        "SKILL.md must reference the clean-delivery contract"
+    assert "references/delivery.md" in skill, (
+        "SKILL.md must reference the delivery contract"
     )
-
-
-def test_automation_contract_documents_clean_delivery() -> None:
-    automation = read(REFERENCES / "automation-contract.md")
-    assert "Clean delivery" in automation, (
-        "automation-contract.md must document the clean-delivery step"
-    )
-    assert "Documents" in automation
 
 
 def test_automatic_documents_publication_requires_a_confirmed_pdf() -> None:
-    combined = "\n".join(read(path) for path in (SKILL_MD, DELIVERY_MD, REFERENCES / "automation-contract.md"))
+    combined = "\n".join(read(path) for path in (SKILL_MD, DELIVERY_MD))
     assert "confirmed PDF output" in combined
     assert "hash before validation" in combined
     assert "immediately before publication" in combined
@@ -539,48 +505,36 @@ def test_automatic_documents_publication_requires_a_confirmed_pdf() -> None:
 
 def test_generation_does_not_publish_and_delivery_is_explicit() -> None:
     """#22: build_report_auto never publishes; deliver_report.py is the only route."""
-    automation = read(REFERENCES / "automation-contract.md")
-    assert "automatically publishes" not in automation, (
+    delivery = read(DELIVERY_MD)
+    assert "automatically publishes" not in delivery, (
         "generation must not be described as publishing to ~/Documents"
     )
-    assert "tools/deliver_report.py" in automation, (
-        "the automation contract must name the explicit deliver entrypoint"
-    )
-    assert "Generation never publishes" in automation
-
-    workflow = Path(__file__).resolve().parents[2] / "skills" / "document-workflow" / "references"
-    generate = read(workflow / "generate.md")
-    assert "does not publish" in generate
-    deliver = read(workflow / "deliver.md")
-    assert "tools/deliver_report.py" in deliver, (
+    assert "tools/deliver_report.py" in delivery, (
         "the deliver phase must name its executable entrypoint"
     )
-    assert "validation.yml" in deliver, (
+    assert "Generation never publishes" in delivery
+    assert "validation.yml" in delivery, (
         "delivery must require the validation receipt bound to the exact PDF bytes"
     )
+    assert "does not publish" in read(GATES_MD)
 
 
 def test_publication_gated_on_approval() -> None:
-    automation = read(REFERENCES / "automation-contract.md")
-    readiness = sections(automation)["Readiness and command scope"]
     gate_rows = [
         line
-        for line in readiness.splitlines()
+        for line in read(GATES_MD).splitlines()
         if "VERSIONED_PDF_PUBLISHED_OR_REUSED" in line
     ]
     assert gate_rows, (
-        "the readiness table must keep the VERSIONED_PDF_PUBLISHED_OR_REUSED gate"
+        "the gate table must keep the VERSIONED_PDF_PUBLISHED_OR_REUSED gate"
     )
     assert any("APPROVAL_CURRENT" in row for row in gate_rows), (
         "VERSIONED_PDF_PUBLISHED_OR_REUSED must list APPROVAL_CURRENT as a precondition"
     )
-    # Independent signal: the clean-delivery prose must also name the marker gate.
-    delivery = sections(automation)["Clean delivery to the user's Documents folder"]
-    assert "APPROVAL_CURRENT" in delivery, (
-        "the clean-delivery prose must name the APPROVAL_CURRENT precondition"
-    )
+    # Independent signal: the delivery prose must also name the approval marker gate.
+    delivery = read(DELIVERY_MD)
     assert "approval.yml" in delivery, (
-        "the clean-delivery prose must name the approval marker"
+        "the delivery prose must name the approval marker"
     )
 
 
@@ -655,7 +609,7 @@ def test_unl_shell_paralelo_defaults_to_a_with_data_override() -> None:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOOLS_DIR = REPO_ROOT / "tools"
-AUTOMATION_MD = REFERENCES / "automation-contract.md"
+AUTOMATION_MD = ROUTING_MD  # roots and interpreter selection live in routing.md
 
 
 def _tools_module(name: str):
@@ -685,7 +639,7 @@ def test_automation_contract_resolves_both_roots_without_a_hardcoded_home() -> N
 
 def test_automation_contract_commands_are_absolute_and_cwd_independent() -> None:
     """T7: every canonical command names its interpreter, tool and folder absolutely."""
-    automation = read(AUTOMATION_MD)
+    automation = "\n".join(read(path) for path in (ROUTING_MD, GATES_MD, DELIVERY_MD))
 
     assert '"$REPORT_PYTHON"' in automation, (
         "commands must name the selected dependency-equipped interpreter"
@@ -721,7 +675,7 @@ def test_clean_delivery_never_implies_automatic_publication() -> None:
 def intake_record_block() -> str:
     """The one canonical ``report.yml`` record block documented in the intake."""
     blocks = re.findall(r"```yaml\n(.*?)```", read(INTAKE_MD), re.DOTALL)
-    assert blocks, "document-intake.md must show the report.yml record as a ```yaml block"
+    assert blocks, "data.md must show the report.yml record as a ```yaml block"
     assert len(blocks) == 1, "keep exactly one canonical record block so copies cannot drift"
     return blocks[0]
 
@@ -787,7 +741,7 @@ def test_workflow_intake_reference_names_the_record_keys() -> None:
     import yaml
 
     record = yaml.safe_load(intake_record_block())
-    workflow = read(REPO_ROOT / "skills" / "document-workflow" / "references" / "intake.md")
+    workflow = read(INTAKE_MD)
 
     for key in record["metadata"]:
         assert f"metadata.{key}" in workflow, f"the workflow intake must name metadata.{key}"
@@ -800,7 +754,7 @@ def test_skill_points_at_the_route_derived_rendering_defaults(skill: str) -> Non
     """T4/T7: the always-read skill must not let a fresh run assume the academic shell."""
     flat = re.sub(r"\s+", " ", plain(skill)).lower()
 
-    assert "document-routing.md" in skill, "the routing reference must be linked"
+    assert "references/routing.md" in skill, "the routing reference must be linked"
     assert "route-derived" in flat or "derived from the confirmed route" in flat, (
         "the skill must state that rendering defaults come from the confirmed route"
     )

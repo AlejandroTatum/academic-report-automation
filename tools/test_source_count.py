@@ -209,3 +209,69 @@ def test_invalid_min_sources_fails_closed(tmp_path: Path, bad: object) -> None:
     result = source_count.source_gate(tmp_path, config)
     assert result.ok is False
     assert "min_sources" in result.reason
+
+
+def test_business_route_defaults_min_sources_to_zero(tmp_path: Path) -> None:
+    config = _config(tmp_path, {"route": "business"})
+
+    assert source_count.effective_min_sources(config) == 0
+    assert source_count.source_gate(tmp_path, config).ok is True
+
+
+def test_explicit_min_sources_wins_on_business_route(tmp_path: Path) -> None:
+    assert source_count.effective_min_sources(_config(tmp_path, {"route": "business", "min_sources": 3})) == 3
+
+
+@pytest.mark.parametrize("route", [None, "academic", "technical", "project"])
+def test_other_routes_keep_the_academic_default(tmp_path: Path, route: str | None) -> None:
+    raw = {} if route is None else {"route": route}
+
+    assert source_count.effective_min_sources(_config(tmp_path, raw)) == 5
+
+
+def _uncited_config(folder: Path) -> ReportConfig:
+    return _config(folder, {"uncited_bibliography": True})
+
+
+def test_uncited_bibliography_gate_accepts_one_misc_entry(tmp_path: Path) -> None:
+    (tmp_path / "sources.bib").write_text("@misc{slides, title={Slides}}\n", encoding="utf-8")
+
+    result = source_count.source_gate(tmp_path, _uncited_config(tmp_path))
+
+    assert result.ok is True
+    assert result.count == 1
+    assert result.keys == ("slides",)
+    assert result.reason == "sources.bib lists 1 entry (uncited bibliography)"
+
+
+def test_uncited_bibliography_gate_pluralizes_entries(tmp_path: Path) -> None:
+    (tmp_path / "sources.bib").write_text(
+        "@misc{a, title={A}}\n@online{b, title={B}}\n", encoding="utf-8"
+    )
+
+    result = source_count.source_gate(tmp_path, _uncited_config(tmp_path))
+
+    assert result.ok is True
+    assert result.reason == "sources.bib lists 2 entries (uncited bibliography)"
+
+
+def test_uncited_bibliography_gate_fails_on_empty_bib(tmp_path: Path) -> None:
+    (tmp_path / "sources.bib").write_text("% nothing here\n@comment{x}\n", encoding="utf-8")
+
+    result = source_count.source_gate(tmp_path, _uncited_config(tmp_path))
+
+    assert result.ok is False
+    assert result.reason == "sources.bib lists 0 entries (uncited bibliography needs at least 1)"
+
+
+def test_uncited_bibliography_gate_fails_when_bib_is_missing(tmp_path: Path) -> None:
+    result = source_count.source_gate(tmp_path, _config(tmp_path, {"uncited_bibliography": True}))
+
+    assert result.ok is False
+    assert "uncited_bibliography" in result.reason
+
+
+def test_uncited_bibliography_off_still_rejects_misc_only_bib(tmp_path: Path) -> None:
+    (tmp_path / "sources.bib").write_text("@misc{slides, title={Slides}}\n", encoding="utf-8")
+
+    assert source_count.source_gate(tmp_path, _config(tmp_path)).ok is False

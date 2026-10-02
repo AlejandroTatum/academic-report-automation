@@ -12,8 +12,8 @@ Run commands from `REPORT_AUTOMATION_ROOT`. Final report PDFs belong in
 `assets/generated/<materia>/<tarea>/`. Visual assets, specs, manifests, and
 audits are working evidence and are never copied to the user's Documents
 delivery folder — only the assembled final PDF/DOCX from
-`academic-report-builder` is delivered there (see that skill's
-`references/clean-delivery.md`).
+`academic-report-flow` is delivered there (see that skill's
+`references/delivery.md`).
 
 ## Asset classes
 
@@ -75,7 +75,7 @@ awkward, or styling is weak; use custom CSS or HTML/Playwright instead.
   isolated run is precheck evidence only; the final-size run is the
   mandatory, independent enforcement — neither substitutes for the other, and
   passing both is still not `VISUAL_PASS` (see the report skill's
-  `quality-gates.md`). Non-connector legibility (label
+  `references/production.md`). Non-connector legibility (label
   wrapping, page geometry, overall composition) still needs inspection in the
   assembled PDF at normal zoom before insertion, per the photo/evidence rule
   above.

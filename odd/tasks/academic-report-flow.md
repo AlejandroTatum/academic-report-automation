@@ -1,0 +1,180 @@
+# academic-report-flow — unify document-workflow and academic-report-builder
+
+Branch: `refactor/academic-report-flow` (stacked on `feat/min-sources-override` @ f034725; main is stale).
+Worktree: `academic-report-automation-worktrees/claude`.
+
+## Goal
+
+One skill, `academic-report-flow`, replaces `document-workflow` and
+`academic-report-builder`: a single entry point (always `doc_status` first, then load
+only the current phase reference) and ONE intake file, so intake rules can no longer
+contradict each other. `research-workflow` and `academic-visual-builder` stay separate.
+
+## Why
+
+Observed 2026-10-01 (exercise 1.5): intake asked route/student/title, skipped the
+guide/rubric, and the two intake files disagree (`document-workflow/references/intake.md:18,44`
+requires the route; `academic-report-builder/references/document-intake.md:11` minimum omits it).
+As-is flow: `docs/diagrams/intake-flow-current.mmd`.
+
+## Constraints
+
+- `.githooks` sync runs on checkout/merge/rewrite only (not commit); the sync script's
+  `SKILLS` list is hardcoded. Never checkout/rebase this branch with a red skill tree.
+- Pi runtime copies are manual (symlink into dotfiles) — runtime install is a separate,
+  user-approved step after merge.
+- New SKILL.md must meet `docs/skill-style-guide.md` (body <= 1000 tokens, section order).
+- `tools/doc_status.py` intake validity (known route, real title/student) stays enforced.
+- Historical `odd/` and `openspec/` entries are not rewritten.
+
+## Tasks
+
+- [x] 1. Record the as-is flow diagram and this plan. (docs)
+- [x] 2. Mechanical merge: create `skills/academic-report-flow/` from both skills (git mv, no
+      rule changes), repoint all contract tests, sibling skills (`research-workflow`,
+      `academic-visual-builder`), `scripts/sync_skills.sh` SKILLS list, tool comments,
+      README; delete the old dirs. Full `tests/skills` + `tools` tests green.
+- [x] 3. Unify intake: merge `intake.md` + `document-intake.md` into one
+      `references/intake.md` (content-first default, full-route confirmations as a
+      section); remove the contradiction. Tests updated.
+- [x] 4. Harden intake (test-first): (a) route derived as `academic` when the request names a
+      subject/teacher/assignment (APE, AA, exercise), asked only when ambiguous; (b) a
+      student identity the user saved as permanent counts as confirmed (still never
+      invented); (c) guide/rubric/teacher-explanation always requested in content-first;
+      (d) PDF/DOCX owned by the `format` phase; (e) triggers include exercise/homework/APE/AA.
+      Keep `doc_status.py` guidance + `test_doc_status_guide.py` consistent.
+- [x] 5. Docs: to-be flow diagram, README, conversation cases.
+- [x] 6. (User decision) Install the unified skill into Claude/Codex/OpenCode/Pi runtimes and
+      remove the two old skill dirs there.
+
+- [x] 7. Fix fresh-request entry gap (found in live test 2026-10-01): a new request with no work folder fell
+      into the standalone full route (asks document type), so content-first never applied. New request ->
+      create `reports/<slug>/` under the content root, then `doc_status` (empty folder -> `next: intake`).
+      Full route only when the work-folder flow is unavailable. Test-first; update to-be diagram.
+
+- [x] 8. (a)(b)(c)(d)(e)(f)(g)(i)(j) done, (h) partly; (f)(i) resolved in task 9.3 (commit below). Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
+      level-1 `#` section headings and math for sub/superscripts, with a mechanical pre-approval check (Unicode
+      sub/superscripts are missing from TeX Gyre Termes; `##`-only bodies number sections 0.1.); (b) verify.md:
+      define the handoff when the executor cannot launch judge subagents (orchestrator runs the judges);
+      (c) routing-loop.md and doc_status research gate text still say "at least 5" under min_sources;
+      (d) build output path is keyed by title slug, so a second folder with the same title overwrites the first
+      folder's working PDF; (e) VISUAL_PASS ownership unclear: the visual inspection ran and passed but nobody
+      granted VISUAL_PASS, so delivery reported "sin VISUAL_PASS"; (f) plan.md has no no-rubric rule;
+      (g) verify_sources.py is silent on failure and false-MISMATCHes LaTeX-escaped titles; (h) draft.md step 4
+      names a content_check mode the CLI lacks; (i) quality-gates.md duplicate step number and stale line ref;
+      (j) existing folder without report.yml undefined; "delivered" definition untested.
+
+- [ ] 9. Simplify to three human decisions (agreed 2026-10-01; target diagram docs/diagrams/report-flow-target.mmd):
+      principle "text guides, tools enforce" - every quality rule is a tool gate before the next human decision.
+      9.1 doc_status: the format question (AA/APE/libre, PDF/DOCX, missing metadata) is asked in the same batch as
+          the draft approval; no separate format stop (test-first).
+          [x] 9.1 done. Evidence: RED 4 failed/1706 passed; GREEN 1710 passed (tools + tests/skills). format now also
+          requires explicit `output:`; approval guidance asks the format batch; format asks only missing fields.
+      [x] 9.2 done (commits 7324d74, 9f8821a, verify_sources commit below). Evidence in the Evidence section.
+      9.2 doc_status refuses to offer approval while `content_check --body-check` fails; fold task 8 (c)(d)(g)(h)(j)
+          into tool gates/fixes (min_sources text, title-keyed output path, verify_sources errors, CLI names,
+          missing report.yml) (test-first).
+      [x] 9.3 done. Evidence in the Evidence section.
+      9.3 Consolidate references by stage (data, content, approval+format, production, delivery + one contract file),
+          from ~14.8k words to ~5k, removing duplicated rules (automation-contract/quality-gates/clean-delivery);
+          task 8 (f)(i) resolved here; contract tests updated, no rule silently dropped.
+      9.4 Target diagram becomes current; README; live re-test on a new exercise.
+- [x] 10. Contract run fixes (business contract, 2026-10-01): (a) `min_sources: 0` allowed only off the academic route
+  (academic rejects it with a clear error): research gate done without sources.bib, `eligible_sources_cited` passes, no
+  references section; (b) `content_check --body-check` now catches bold pseudo-headings via validate_report's own rule.
+
+- [x] 11. (a)(b)(c)(d)(e)(f) done. Efficiency follow-ups from the CataClub contract run (2026-10-01: 3 approvals, 8 judge runs, 3 failed
+      builds for a document that needed 1 approval): (a) Decision 2 shows a preview PDF built with
+      --no-approval-check so layout defects (split signatures, quotes) are seen BEFORE approval; (b) the format
+      batch at approval must also ask `format_spec` when `libre` is chosen (9.1 gap); (c) build converts straight
+      quotes to typographic quotes; (d) business/contract profile: suggest min_sources 0, signature table,
+      optional author/date line under the title; (e) rubric checks default to document-wide unless a section is
+      essential (section-scoped checks broke on a heading restructure); (f) reuse judgments when a body change is
+      proven markup-only (text identical after stripping markup), otherwise re-judge.
+      Done: (a)(b)(e) first; (c)(d)(f) in the follow-up unit (see Evidence).
+
+## Evidence
+
+(commit ids recorded per task)
+
+- Task 1: 9cccd7c
+- Task 2: mechanical merge into skills/academic-report-flow; `tests/skills tools` 1654 passed, 0 failed (RED before moves: 98 failed, 29 errors). SKILL.md body 906 tokens. Commit 993084d. Native review lineage review-a0a5eccf88e1c24d (base feat/min-sources-override, 4 lenses): approved, authority burned.
+  Advisory findings carried into tasks 3-5: conflicting load rules / entry-contract conflict (SKILL.md:15-19),
+  self-delegation leftovers (references/intake.md:7, draft.md:7), dropped decision gates (SKILL.md:46-56),
+  stale test name (test_sync_skills.py:105), preview-guard substring hack (test_document_workflow_contract.py:603),
+  stale old skill dirs remain in runtimes (sync_skills.sh does not delete dropped skills -> task 6).
+- Task 3: references/intake.md + document-intake.md merged into one intake.md (git rm of the latter); advisory findings fixed (entry rule, self-delegation, decision gates, test name, preview guard). RED before skill edit: 2 failed, 1652 passed; GREEN: `tests/skills tools` 1654 passed, 0 failed. Commit recorded in git log.
+- Task 3: 0b34617; native review review-395d42ec4e2ea8e8 approved, authority burned; advisory: intake.md:51-54 confirmation scope (fixed in task 4), minor test-readability suggestions.
+- Task 4: hardened content-first intake (route derived for academic assignments, saved permanent student, guide always requested, format phase owns PDF/DOCX, free-text sanity, assignment triggers). RED before edits: 7 failed, 1657 passed; GREEN: `tests/skills tools` 1664 passed, 0 failed. Commit recorded in git log.
+- Note: `git commit --amend` fires the post-rewrite hook and synced academic-report-flow into ~/.claude/skills and
+  ~/.codex/skills early (old skills still there too). Do not amend/rebase on this branch.
+- Runtime cleanup (user-approved, 2026-10-01): old `document-workflow` and `academic-report-builder` dirs in
+  ~/.claude/skills and ~/.codex/skills verified identical to the repo, then moved to the trash (`trash-put`).
+  Recurrence risk: any checkout/merge in another worktree whose `scripts/sync_skills.sh` still lists the old
+  names re-syncs them until this branch is merged; sync never deletes dropped skills (task 6 follow-up).
+- Task 4 commit cdea392; native review review-80be9859f3850a32 approved, authority burned. Advisory follow-up
+  (next commit, test-first: RED 2 failed -> GREEN 1665 passed): restored "resume or approve report" trigger
+  (description 240 chars), SKILL.md type prohibition now names the content-first route exception, de-garbled the
+  doc_status.py student guidance sentence. Remaining suggestions (test substring strictness, duplicated scope note
+  intake.md:66-73) left as minor follow-ups.
+- Rebased onto origin/main 54c7d01: Task 1 = 8435572, Task 2 = 302cdac, Task 3 = 9203619, Task 4 = 2a28625 + 8a39b50 (review lineages were bound to the pre-rebase trees).
+  Rebase side effect: the rebase's internal checkout of origin/main re-synced the old skills into ~/.claude/skills and ~/.codex/skills; they were trashed again.
+- Task 5: docs/diagrams/intake-flow.mmd (+ .png) to-be flow, as-is diagram marked historical, README "Document workflow" section, conversation case 5 (exercise 1.5 incident). `tests/skills tools` stays green. Commit recorded in git log.
+- Task 6 (user-approved 2026-10-01): Claude/Codex runtimes already match the branch (synced by the rebase hook; old
+  dirs trashed). Pi: `~/.pi/agent/skills/academic-report-flow` installed as a real copy of the branch skill;
+  `academic-visual-builder` and `research-workflow` symlinks (into ~/dotfiles/ai-stack/pi/skills, stale names)
+  replaced by real copies of the branch versions; old Pi `document-workflow` dir and `academic-report-builder`
+  symlink moved to the trash (both were older than origin/main, no unique edits). Dotfiles untouched.
+  `~/.pi/gentle-ai/skill-runtime/course-deliverables/academic-report-builder` left in place (no longer linked).
+  Pi needs `/reload` to pick the change up.
+- Task 7: RED 3 failed / 1682 passed (new entry-rule contract tests); GREEN `tests/skills tools` 1685 passed, 0 failed. SKILL.md body 997 tokens. Commit: see git log (`fix(skills): create the work folder for new requests...`).
+- Task 7 review: review-0364c75be9645648 (1561238 + README 2f1057e) approved, burned. Advisory R3-same-document-criterion
+  fixed next commit (test-first, RED 1 -> GREEN): same-document criterion defined; a delivered match asks one
+  single-choice question (new suffixed version or resume) and never overwrites.
+- Live test (exercise 1.5, folder metodos-numericos-ejercicio-1-5-flow) blocked at validate: validate_ieee_refs rejected
+  distinct claims sharing one citation_key, impossible under min_sources: 1. Fix (test-first, RED 1 -> GREEN):
+  only a repeated claim_id is an error; distinct claims may cite the same source. The existing "Duplicate mapping"
+  test case was narrowed from shared citation_key to repeated claim_id.
+- Live test 2026-10-01 (exercise 1.5, reports/metodos-numericos-ejercicio-1-5-flow): intake 1 batch / 2 questions
+  (route + student derived), research min_sources 1, two verify rounds (4 judges, all cumple), validate failed twice
+  (citation-key tool bug fixed in c0f31a6; missing glyphs + 0.1. headings fixed by an approved body edit), delivered
+  ~/Documents/Academicos/analisis-numerico/solucion-analitica-y-numerica-del-ejercicio-1-5/...-v002.pdf
+  (sha256 d67dd7e4...), v001 untouched. Same numbers as v001.
+- Task 8 (a)(b)(e) (h partly: draft.md now names the real `--body-check` mode): RED 17 failed / 1688 passed (new
+  format-check, `--body-check`, deliver gate and contract tests); GREEN `tests/skills tools` 1705 passed, 0 failed.
+  Format defects ride on the existing `rubric_checks` mechanical entry (marker shape unchanged); deliver_report
+  derives READY_TO_SUBMIT from receipt gates + current final-review. Commit: see git log.
+- Task 8 group 1 commit 26a3b78; review-8c144dcb511274f9 approved, burned. Advisory for the simplification pass:
+  `--body-check` slices mechanical_checks()[:-1] (positional, brittle); format defects ride on the `rubric_checks`
+  entry name (misleading); deliver READY_TO_SUBMIT test coverage thin; body-format check reports only missing H1.
+- Task 9.2 (tools enforce): commit 7324d74 (approval gate): RED 5 failed / 1713 passed (new gate + content_check tests), GREEN
+  1718 passed; doc_status `draft` stays pending (`next: draft`, failing checks named) while the shared
+  `content_check.body_check_results` fails; `--body-check` selects checks by name; body defects are the named `body_format`
+  check (marker keeps four entries, text now `body_format: ...`). A current approval is never re-gated. conftest DEFAULT_BODY now
+  cites the five fixture keys; one draft unit test gained sources/rubric.
+  Commit 9f8821a (task 8 c, d, j + 9.1 advisories): RED 5 failed in tools (legacy validated/delivered PDF, invalid `output:`,
+  guidance minimum, per-folder path); contract-test additions were written together with the doc edits (no observed RED);
+  GREEN 1737 passed. Default build file is `<work-folder-slug>.pdf/.docx` (delivery name unchanged); 6 pinned default-path assertions
+  updated in test_report_config/test_content_root/test_output_location_guard.
+  verify_sources commit (task 8 g): RED 3 failed / 18 passed, GREEN 1737 passed.
+- Task 9.3 (consolidate references): legacy build-path fallback commit 1525c02 (RED 2 failed / 39 passed in test_report_config, GREEN 1739
+  passed). References consolidated by stage: 20 -> 9 reference files (data, content, approval, production, delivery, routing + unl-shell,
+  visual-directions, profile); SKILL.md + stage references 15.5k -> 5.7k words (SKILL body 671 words), unl-shell/visual-directions/profile
+  untouched. Task 8 (f) (no-rubric rule in content.md) and (i) (numbered lists checked 1..n by test) done. `tests/skills tools` 1740 passed,
+  0 failed. Commit: see git log (`refactor(skills): consolidate academic-report-flow references by stage`).
+- Task 9.3 audit follow-up: commit ebe746f (tools): RED 4 failed + 41 errors (approval guard, rubric_plan CLI, folder named `documento`), GREEN 1749 passed;
+  `build_report_auto.py` refuses to build without a current approval.yml (`--no-approval-check` for previews; `--validate-only` exempt),
+  `rubric_plan.py` has a CLI, `work_folder_slug` uses a real emptiness check. Docs commit restores audited rules (7 items) and dead refs;
+  SKILL.md + stage references 5834 words (<= 6000).
+- 9.2 reviewed: review-6961be2cd435760f approved, burned. 9.3: 1525c02 + 44d0d93 (references 20 files/~14.2k words ->
+  9 files/~5.8k); native review impossible (lens_context_budget_exceeded on the consolidation), replaced by an
+  independent read-only rule-preservation audit whose findings were fixed in ebe746f + 12b388d (approval guard at
+  build, rubric_plan CLI, empty-slug fix, restored rules, dead refs); review-2b7394cd51201e2c approved, burned.
+- 9.4 docs: report-flow.mmd/.es.mmd (+png) promoted to the current flow; intake-flow* marked historical; README links.
+  Live re-test pending a new exercise from the user.
+- Task 10 contract run fixes: commits 3cc12de (min_sources 0 off academic; RED 13 failed, GREEN 14 passed) and the
+  body-check bold pseudo-heading fix (RED 4 failed, GREEN 127 passed in test_content_check); `tests/skills tools` all green.
+- Task 10 follow-up: validate_ieee_refs required a Referencias section whenever a bib existed; now only when the body cites (RED 1 -> GREEN). Found by the contract build.
+- Task 11 (a)(b)(e): RED 6 failed, 1771 passed (preview/format_spec guidance, approval.md, rubric scope lint, document-wide rule); GREEN `tests/skills tools` 1777 passed, 0 failed. Generate already rejected a preview older than approval.yml (locked by a new test). Guard test_no_flow_file_mentions_the_removed_preview now exempts approval.md; doc_status approval guidance assertion startswith -> in.
+- Task 11 (c)(d)(f): RED 3 failed quote tests (tools/test_markdown_conversion.py), 3 failed (test_source_count, test_route_defaults), 6 failed (test_content_check reuse); GREEN `tests/skills tools` 1799 passed, 0 failed. Skill + stage references (SKILL.md, approval, content, data, delivery, production, routing) 5999 words (<= 6000), SKILL.md 702 words.
+- Task 11 (c)(d)(f): 0fbef6f + ad7f2aa, review-819d195638c59bd9 approved. Advisory fix: judgment-reuse normalization keeps math spans intact (RED 1 -> GREEN).

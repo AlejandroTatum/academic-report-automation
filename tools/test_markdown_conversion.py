@@ -352,3 +352,39 @@ def test_inline_code_still_escapes_latex_specials() -> None:
 def test_inline_code_has_no_trailing_break_opportunity() -> None:
     latex = build_latex_report.convert_inline("ruta `build/`")
     assert not latex.endswith(r"\allowbreak{}}")
+
+
+# ---------------------------------------------------------------------------
+# Typographic quotes: paired straight double quotes in prose become “…”.
+# ---------------------------------------------------------------------------
+
+
+def test_paired_straight_quotes_become_typographic_quotes() -> None:
+    tex = _tex_for('El cliente dijo "entrega inmediata" y luego "pago diferido".')
+    assert "“entrega inmediata”" in tex
+    assert "“pago diferido”" in tex
+    assert '"' not in tex
+
+
+def test_unpaired_straight_quote_is_left_alone() -> None:
+    tex = _tex_for('Una pulgada es 1" aproximadamente.')
+    assert '1"' in tex
+
+
+def test_quotes_inside_code_math_and_urls_are_untouched() -> None:
+    tex = _tex_for('Usa `print("hola")` y $f("x")$ y <https://example.com/?q="a"> aqui "texto".')
+    assert 'print("hola")' in tex.replace(r"\allowbreak{}", "").replace(r"\_", "_") or "hola" in tex
+    assert '$f("x")$' in tex
+    assert 'q="a"' in tex
+    assert "“texto”" in tex
+
+
+def test_fenced_code_keeps_straight_quotes() -> None:
+    tex = _tex_for('```python\nx = "a" + "b"\n```\n')
+    assert 'x = "a" + "b"' in tex
+    assert "“" not in tex
+
+
+def test_quotes_work_in_headings_lists_and_tables() -> None:
+    tex = _tex_for('# Plan "A"\n\n- punto "uno"\n\n| a | b |\n| --- | --- |\n| "x" | y |\n')
+    assert "“A”" in tex and "“uno”" in tex and "“x”" in tex

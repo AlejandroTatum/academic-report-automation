@@ -492,3 +492,22 @@ def test_doc_status_agrees_with_the_delivered_pair(tmp_path: Path) -> None:
 
     assert phase.state == doc_status.DONE
     assert f"{SLUG}-v001.pdf" in phase.detail
+
+
+def test_inspected_and_reviewed_pdf_reports_visual_pass_and_ready_to_submit(tmp_path: Path, capsys) -> None:
+    folder, pdf = _ready_folder(tmp_path)
+    _validation(folder, pdf=pdf, gates=["BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS"])
+    assert _run(folder, tmp_path / "docs") == 0
+    out = capsys.readouterr().out
+    assert (
+        "gates otorgados: BUILD_PASS, VALIDATION_PASS, VISUAL_PASS, HUMAN_REVIEW, READY_TO_SUBMIT"
+    ) in out
+    assert "sin " not in out
+
+
+def test_ready_to_submit_needs_visual_pass_in_the_receipt(tmp_path: Path, capsys) -> None:
+    folder, pdf = _ready_folder(tmp_path)
+    _validation(folder, pdf=pdf, gates=["BUILD_PASS", "VALIDATION_PASS"])
+    assert _run(folder, tmp_path / "docs") == 0
+    out = capsys.readouterr().out
+    assert "sin VISUAL_PASS, READY_TO_SUBMIT" in out

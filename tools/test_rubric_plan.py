@@ -252,3 +252,27 @@ def test_load_rubric_returns_empty_for_absent_and_malformed(tmp_path: Path) -> N
     (broken / "rubric.yml").write_bytes(b"\xff\xfe")
 
     assert rubric_plan.load_rubric(broken) == []
+
+
+def test_cli_accepts_a_valid_plan(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = tmp_path / "wf"
+    _rubric(folder)
+
+    assert rubric_plan.main([str(folder)]) == 0
+    assert "OK" in capsys.readouterr().out
+
+
+def test_cli_reports_problems_and_fails_on_malformed_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = tmp_path / "wf"
+    folder.mkdir()
+    (folder / "rubric.yml").write_text("schema: nope\ncriteria: []\n", encoding="utf-8")
+
+    assert rubric_plan.main([str(folder)]) == 1
+    assert "rubric" in capsys.readouterr().out.lower()
+
+
+def test_cli_fails_when_the_plan_is_absent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert rubric_plan.main([str(tmp_path)]) == 1
+    assert "rubric.yml" in capsys.readouterr().out

@@ -66,11 +66,11 @@ def test_claim_support_or_reciprocity_failure_blocks_build() -> None:
     )
     assert not any("unused2020" in e for e in justified.errors)
 
-    # Duplicate mapping: two claims share the same citation_key.
+    # Duplicate mapping: the same claim_id recorded twice.
     duplicate = claim_support_and_reciprocity(
-        [claim(claim_id="C-020"), claim(claim_id="C-021")], BIB_OK, BODY_OK
+        [claim(claim_id="C-020"), claim(claim_id="C-020")], BIB_OK, BODY_OK
     )
-    assert any("duplicado" in e and "C-020" in e and "C-021" in e for e in duplicate.errors)
+    assert any("duplicado" in e and "C-020" in e for e in duplicate.errors)
 
     # Malformed rendered entry: BibTeX entry missing author/title.
     malformed_bib = BIB_OK + """
@@ -85,6 +85,16 @@ def test_claim_support_or_reciprocity_failure_blocks_build() -> None:
         body_with_broken,
     )
     assert any("broken2022" in e and "mal formad" in e for e in malformed.errors)
+
+
+def test_distinct_claims_may_share_one_source() -> None:
+    """A single base book (min_sources: 1) legitimately supports several claims."""
+    result = claim_support_and_reciprocity(
+        [claim(claim_id="C-001"), claim(claim_id="C-002"), claim(claim_id="C-003")],
+        BIB_OK,
+        BODY_OK,
+    )
+    assert result.errors == []
 
 
 def test_claim_support_and_reciprocity_rejects_nondict_claim() -> None:
@@ -169,3 +179,93 @@ def test_validate_ieee_blocks_build_on_reciprocity_failure(tmp_path: Path) -> No
     config = load_report_config(tmp_path)
     result = validate_ieee(config)
     assert any("C-099" in e for e in result.errors)
+
+
+def _write_uncited_contract(folder: Path) -> None:
+    data = {
+        "type": "report",
+        "route": "business",
+        "min_sources": 0,
+        "metadata": {"title": "Contrato", "student": "Alejandro Padilla", "date": "2026-10-01"},
+    }
+    (folder / "report.yml").write_text(yaml.dump(data), encoding="utf-8")
+    (folder / "body.md").write_text("# Contrato\n\nTexto sin citas.\n", encoding="utf-8")
+    (folder / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+
+
+def test_uncited_document_needs_no_bibliography_section(tmp_path: Path, monkeypatch) -> None:
+    """A body that cites nothing renders no bibliography, so none is required."""
+    import validate_ieee_refs
+
+    (tmp_path / "outputs").mkdir()
+    _write_uncited_contract(tmp_path)
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: "Contrato. Firmas.")
+    result = validate_ieee(config)
+    assert not any("Bibliograf" in e for e in result.errors)
+
+
+def test_cited_document_still_requires_bibliography_section(tmp_path: Path, monkeypatch) -> None:
+    import validate_ieee_refs
+
+    (tmp_path / "outputs").mkdir()
+    _write_academic_report(tmp_path)
+    (tmp_path / "body.md").write_text(BODY_OK, encoding="utf-8")
+    (tmp_path / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: "Texto [1] sin seccion final.")
+    result = validate_ieee(config)
+    assert any("Bibliograf" in e for e in result.errors)
+
+
+def _write_uncited_bibliography(folder: Path) -> None:
+    _write_academic_report(folder)
+    data = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    data["uncited_bibliography"] = True
+    (folder / "report.yml").write_text(yaml.dump(data), encoding="utf-8")
+    (folder / "body.md").write_text("# Informe\n\nTexto sin citas.\n", encoding="utf-8")
+    (folder / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+    (folder / "outputs").mkdir(exist_ok=True)
+
+
+def _validate_uncited(tmp_path: Path, monkeypatch, rendered: str):
+    import validate_ieee_refs
+
+    _write_uncited_bibliography(tmp_path)
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: rendered)
+    return validate_ieee(config)
+
+
+def test_uncited_bibliography_requires_the_bibliography_section(tmp_path: Path, monkeypatch) -> None:
+    result = _validate_uncited(tmp_path, monkeypatch, "Texto sin seccion final.")
+
+    assert any("Bibliograf" in e for e in result.errors)
+
+
+def test_uncited_bibliography_accepts_a_printed_section(tmp_path: Path, monkeypatch) -> None:
+    result = _validate_uncited(tmp_path, monkeypatch, "Texto.\nBibliografía\n[1] J. Smith, A Study.")
+
+    assert not any("Bibliograf" in e or "no citadas" in e for e in result.errors)
+    assert not any("no citadas" in w for w in result.warnings)
+
+
+def test_uncited_bibliography_skips_reciprocity_unused_error(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "research").mkdir()
+    (tmp_path / "research" / "evidence.yml").write_text(yaml.dump({"claims": []}), encoding="utf-8")
+
+    result = _validate_uncited(tmp_path, monkeypatch, "Bibliografía\n[1] J. Smith.")
+
+    assert not any("no citadas" in e for e in result.errors)
+
+
+def test_reciprocity_still_flags_unused_entries_by_default() -> None:
+    result = claim_support_and_reciprocity([], BIB_OK, "Texto sin citas.\n")
+
+    assert any("no citadas" in e for e in result.errors)

@@ -122,7 +122,7 @@ OVERRIDABLE_SECTIONS = frozenset({"cover"})
 # ---------------------------------------------------------------------------
 #
 # `route:` in report.yml binds a report to one of the five routes defined in
-# skills/academic-report-builder/references/document-routing.md. It is a
+# skills/academic-report-flow/references/routing.md. It is a
 # CONTENT classification and is deliberately independent of `type:`/`backend:`
 # (LATEX_TYPES/VISUAL_TYPES/DOCX_TYPES above are BACKEND classifications: they
 # choose a renderer, they say nothing about whether the document is university
@@ -194,11 +194,15 @@ def versioned_bib_pattern(slug: str) -> re.Pattern[str]:
     return versioned_artifact_pattern(slug, ".bib")
 
 
+def _raw_ascii_slug(value: object) -> str:
+    """ASCII slug of ``value``; empty when it holds no ASCII alphanumerics."""
+    normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+
+
 def ascii_slug(value: object) -> str:
     """Return a stable filesystem-safe ASCII slug for a confirmed identity."""
-    normalized = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
-    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
-    return slug or "documento"
+    return _raw_ascii_slug(value) or "documento"
 
 # Metadata report.yml must carry, per route. Only Route A may demand the
 # academic machinery (`subject`, `teacher`); the other routes are forbidden by
@@ -217,7 +221,7 @@ ROUTE_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
 # is a contract smell, not a build failure — hence a warning.
 ACADEMIC_ONLY_METADATA = ("subject", "teacher")
 
-# Cover defaults derived from the confirmed route (document-routing.md): the
+# Cover defaults derived from the confirmed route (routing.md): the
 # non-academic routes default to no cover, no logo requirement and a body that
 # starts on page 1 — exactly what templates/plain-report.tex renders. These are
 # DEFAULTS, not a rewrite: an explicit `cover:` block in report.yml overrides
@@ -265,6 +269,9 @@ def unknown_route_message(route: str) -> str:
 FORMAT_KEY = "format"
 FORMAT_HINT_KEY = "format_hint"
 MIN_SOURCES_KEY = "min_sources"
+UNCITED_BIBLIOGRAPHY_KEY = "uncited_bibliography"
+FIGURE_PLACEMENT_KEY = "figure_placement"
+FIGURE_PLACEMENTS = ("float", "here")
 DEFAULT_STUDENT = "Alejandro Padilla"
 
 # Metadata report.yml must carry, per chosen format. `aa` demands exactly what
@@ -441,18 +448,65 @@ class ReportConfig:
         """Per-report academic source minimum (``min_sources:``), or ``None``.
 
         ``None`` means the key is absent and the shared default applies (see
-        ``source_count.effective_min_sources``). Only a positive YAML integer
-        is accepted -- booleans, strings, floats, null and values below 1 raise
-        ValueError rather than silently falling back to the default.
+        ``source_count.effective_min_sources``). Only an integer is accepted --
+        booleans, strings, floats, null and negatives raise ValueError rather
+        than silently falling back to the default. ``0`` (no bibliography) is
+        allowed only on a known non-academic route; the academic route keeps a
+        minimum of at least 1.
         """
         if MIN_SOURCES_KEY not in self.raw:
             return None
         value = self.raw[MIN_SOURCES_KEY]
+        if type(value) is int and value == 0:
+            if self.route_is_known and self.route != DEFAULT_ROUTE:
+                return 0
+            raise ValueError(
+                f"{MIN_SOURCES_KEY}: 0 solo se permite fuera de la ruta academic; "
+                "la ruta academic exige al menos 1 fuente en report.yml"
+            )
         if type(value) is not int or value < 1:
             raise ValueError(
                 f"{MIN_SOURCES_KEY} debe ser un entero positivo en report.yml (recibido: {value!r})"
             )
         return value
+
+    @property
+    def figure_placement(self) -> str:
+        """Where figures sit: ``float`` (default, LaTeX decides) or ``here``.
+
+        ``here`` pins each figure right after the text that introduces it.
+        Any other value raises ValueError.
+        """
+        value = self.raw.get(FIGURE_PLACEMENT_KEY, "float")
+        if not isinstance(value, str) or value not in FIGURE_PLACEMENTS:
+            raise ValueError(
+                f"{FIGURE_PLACEMENT_KEY} debe ser uno de {', '.join(FIGURE_PLACEMENTS)} "
+                f"en report.yml (recibido: {value!r})"
+            )
+        return value
+
+    @property
+    def uncited_bibliography(self) -> bool:
+        """Whether the report prints its bibliography without in-text citations.
+
+        Strict boolean in report.yml (``uncited_bibliography: true``), default
+        ``False``. The opt-in is explicit and narrow: academic route only, a
+        bibliography file must exist (every entry in it is printed), and it is
+        mutually exclusive with ``min_sources``. Violations raise ValueError.
+        """
+        enabled = strict_bool(self.raw.get(UNCITED_BIBLIOGRAPHY_KEY, False), UNCITED_BIBLIOGRAPHY_KEY)
+        if not enabled:
+            return False
+        if self.route != DEFAULT_ROUTE:
+            raise ValueError(f"{UNCITED_BIBLIOGRAPHY_KEY}: solo se permite en la ruta academic")
+        if MIN_SOURCES_KEY in self.raw:
+            raise ValueError(f"{UNCITED_BIBLIOGRAPHY_KEY}: no se puede combinar con {MIN_SOURCES_KEY}")
+        if self.bib_path is None:
+            raise ValueError(
+                f"{UNCITED_BIBLIOGRAPHY_KEY}: la bibliografía declarada no existe; "
+                "crea el archivo .bib que se imprimirá completo"
+            )
+        return True
 
     @property
     def backend(self) -> str:
@@ -640,18 +694,39 @@ class ReportConfig:
         return slug or ascii_slug(self.publication_category)
 
     @property
+    def work_folder_slug(self) -> str:
+        """Unique name of the default working build file.
+
+        Keyed by the work folder, not the title: two folders whose titles share
+        a slug must not overwrite each other's build. A folder name with no
+        ASCII content falls back to the title slug. The delivery file name
+        stays ``document_slug``-based.
+        """
+        name = self.folder.resolve().name
+        return _raw_ascii_slug(name) or self.document_slug
+
+    def _default_build_path(self, suffix: str) -> Path:
+        """Default build file; keeps a legacy ``<title-slug>`` build that exists."""
+        directory = GLOBAL_OUTPUTS / self.output_folder_slug
+        current = directory / f"{self.work_folder_slug}{suffix}"
+        legacy = directory / f"{self.document_slug}{suffix}"
+        if not current.exists() and legacy.exists():
+            return legacy
+        return current
+
+    @property
     def pdf_path(self) -> Path:
         value = self.raw.get("pdf") or self.raw.get("output_pdf")
         if value:
             return resolve_in_folder(self.folder, value)
-        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.document_slug}.pdf"
+        return self._default_build_path(".pdf")
 
     @property
     def docx_path(self) -> Path:
         value = self.raw.get("docx") or self.raw.get("output_docx")
         if value:
             return resolve_in_folder(self.folder, value)
-        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.document_slug}.docx"
+        return self._default_build_path(".docx")
 
     @property
     def log_path(self) -> Path:
@@ -935,6 +1010,8 @@ def load_report_config(folder: Path) -> ReportConfig:
         _ = config.validators
         _ = config.deliver_bibliography
         _ = config.min_sources
+        _ = config.uncited_bibliography
+        _ = config.figure_placement
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

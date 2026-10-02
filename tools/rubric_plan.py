@@ -17,6 +17,7 @@ report, never a crash and never something this module "repairs".
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from report_config import read_yaml
@@ -166,3 +167,28 @@ def load_rubric(report_dir: Path) -> list[dict]:
         return []
     criteria = data.get("criteria")
     return [criterion for criterion in criteria if isinstance(criterion, dict)]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: validate ``<folder>/rubric.yml``; print problems, exit 1 on failure."""
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 1:
+        print("usage: rubric_plan.py <report-folder>")
+        return 2
+    path = Path(args[0]) / RUBRIC_NAME
+    if not path.is_file():
+        print(f"{RUBRIC_NAME} missing in {args[0]}")
+        return 1
+    try:
+        problems = validate_rubric(read_yaml(path))
+    except Exception as exc:
+        problems = [f"{RUBRIC_NAME} unreadable: {exc}"]
+    if problems:
+        print("rubric_malformed:\n- " + "\n- ".join(problems))
+        return 1
+    print(f"{RUBRIC_NAME} OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

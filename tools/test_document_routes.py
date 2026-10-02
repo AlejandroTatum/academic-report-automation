@@ -1,7 +1,7 @@
 """Tests for route-aware metadata requirements.
 
-The document-routing contract
-(``skills/academic-report-builder/references/document-routing.md``) says only
+The document routing contract
+(``skills/academic-report-flow/references/routing.md``) says only
 Route A may activate academic machinery — teacher, subject, institutional
 cover. Every other route MUST NOT be forced to carry that metadata. These tests
 pin the ``route:`` key in report.yml to that contract.

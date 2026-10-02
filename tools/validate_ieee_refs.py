@@ -110,6 +110,7 @@ def claim_support_and_reciprocity(
     bib_text: str,
     source_text: str,
     justified_unused: set[str] | None = None,
+    uncited_bibliography: bool = False,
 ) -> ValidationResult:
     """#11 R15/R16: claim support and citation/bibliography reciprocity.
 
@@ -149,12 +150,18 @@ def claim_support_and_reciprocity(
     keys = bib_keys(bib_text)
     cited = cited_keys(source_text)
 
-    seen_citation_keys: dict[str, str] = {}
+    # One source may support many claims (e.g. a single base book under
+    # min_sources: 1); only the same claim recorded twice is an error.
+    seen_claim_ids: set[str] = set()
     for claim in claims:
         if not isinstance(claim, dict):
             result.errors.append("cada claim debe ser un mapeo")
             continue
         claim_id = str(claim.get("claim_id") or "<sin id>")
+        if claim.get("claim_id"):
+            if claim_id in seen_claim_ids:
+                result.errors.append(f"claim_id duplicado: '{claim_id}'")
+            seen_claim_ids.add(claim_id)
         use_type = str(claim.get("use_type") or "").strip().lower()
         justified_common_knowledge = use_type == "common_knowledge" and str(
             claim.get("justification") or ""
@@ -165,12 +172,6 @@ def claim_support_and_reciprocity(
                 continue
             result.errors.append(f"Claim {claim_id}: sin citation_key (unsupported)")
             continue
-        if citation_key in seen_citation_keys:
-            result.errors.append(
-                f"citation_key duplicado entre claims: '{citation_key}' "
-                f"({seen_citation_keys[citation_key]} y {claim_id})"
-            )
-        seen_citation_keys[citation_key] = claim_id
         if citation_key not in cited:
             result.errors.append(
                 f"Claim {claim_id}: citation_key '{citation_key}' no aparece citado en el cuerpo"
@@ -185,7 +186,9 @@ def claim_support_and_reciprocity(
         result.errors.append("Citas sin entrada BibTeX: " + ", ".join(missing))
 
     unused = sorted(keys - cited - justified_unused)
-    if unused:
+    # ``uncited_bibliography: true`` prints every entry by design (\nocite{*}),
+    # so an uncited entry is the intended state, not a defect.
+    if unused and not uncited_bibliography:
         result.errors.append(
             "Entradas de bibliografía no citadas y sin justificación: " + ", ".join(unused)
         )
@@ -223,7 +226,9 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
         claims = claims if isinstance(claims, list) else []
         raw_justifications = config.raw.get("bibliography_justifications")
         justified_unused = set(raw_justifications) if isinstance(raw_justifications, list) else set()
-        reciprocity = claim_support_and_reciprocity(claims, bib_text, source_text, justified_unused)
+        reciprocity = claim_support_and_reciprocity(
+            claims, bib_text, source_text, justified_unused, config.uncited_bibliography
+        )
         result.errors.extend(reciprocity.errors)
 
     keys = bib_keys(bib_text)
@@ -236,7 +241,10 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
         if unused:
             result.warnings.append("Entradas BibTeX no citadas: " + ", ".join(unused))
 
-    if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and config.bib_path and config.pdf_path.exists():
+    # Sources are "used" only when the body cites them: an uncited body (e.g. a
+    # contract under min_sources: 0) renders no bibliography and needs none.
+    # ``uncited_bibliography: true`` always prints it, so the section is required.
+    if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and config.bib_path and (cited or config.uncited_bibliography) and config.pdf_path.exists():
         if not re.search(r"\b(Bibliograf[ií]a|Referencias|References)\b", rendered, re.I):
             result.errors.append("El PDF no muestra sección de Bibliografía/Referencias")
         if cited and not re.search(r"\[[0-9]+\]", rendered):

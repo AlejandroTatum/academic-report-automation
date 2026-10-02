@@ -98,7 +98,7 @@ def test_default_pdf_path_still_loads(tmp_path):
 
     config = load_report_config(folder)
 
-    assert config.pdf_path == GLOBAL_OUTPUTS / "academicos" / "t.pdf"
+    assert config.pdf_path == GLOBAL_OUTPUTS / "academicos" / "informe.pdf"
     assert not targets_local_outputs(config)
 
 

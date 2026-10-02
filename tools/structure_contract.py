@@ -75,9 +75,8 @@ def combine_assignment_sources(sources: list[dict[str, Any]]) -> dict[str, Any]:
     conflict and excluded from the combined limits, so confirmation cannot
     proceed until a human resolves it (spec: "contradictions block
     confirmation pending resolution"). The relative ORDER two sources imply
-    for their shared sections is a contradiction too (document-intake.md:
-    "a section required by one and forbidden or reordered by another blocks
-    confirmation") — the combined order keeps first-seen-source precedence,
+    for their shared sections is a contradiction too (data.md:
+    "a contradiction between sources blocks confirmation") — the combined order keeps first-seen-source precedence,
     but a later source that disagrees with it is recorded as its own
     ``"order"`` conflict rather than silently overruled.
     """

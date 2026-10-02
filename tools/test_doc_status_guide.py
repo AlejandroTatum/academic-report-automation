@@ -12,6 +12,19 @@ def test_intake_suggests_but_does_not_fill_student(tmp_path: Path):
     assert "student" not in config.raw["metadata"]
 
 
+def test_intake_guidance_honours_a_saved_permanent_student_and_never_invents(tmp_path: Path):
+    config = ReportConfig(tmp_path, {"metadata": {"title": "Example"}})
+    guidance = _guidance("intake", tmp_path, config)
+    assert "saved as permanent" in guidance
+    assert "record it without asking" in guidance
+    assert "otherwise" in guidance and "never invent" in guidance
+
+
+def test_intake_guidance_skips_the_student_suggestion_once_recorded(tmp_path: Path):
+    config = ReportConfig(tmp_path, {"metadata": {"student": "Ana Perez"}})
+    assert "Alejandro Padilla" not in _guidance("intake", tmp_path, config)
+
+
 def test_format_guidance_discloses_facts_and_remaining_gaps(tmp_path: Path):
     (tmp_path / "guide.txt").write_text("APE Semana 1. Entrega grupal (4 horas)", encoding="utf-8")
     config = ReportConfig(tmp_path, {"guide": "guide.txt", "format_hint": "ape"})
