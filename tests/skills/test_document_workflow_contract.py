@@ -1026,3 +1026,10 @@ def test_rubric_checks_default_to_document_wide() -> None:
     """Task 11(e): section-scoped checks only when the property must live in that section."""
     content = _flat(CONTENT_MD)
     assert "document-wide" in content and "only when the property must live in that section" in content
+
+
+def test_approval_gate_requires_fresh_preview_and_clickable_links() -> None:
+    """#59/#60: the gate needs a rebuilt preview and absolute file:// links to it and body.md."""
+    approval = _flat(APPROVAL_MD)
+    for token in ("records the sha256", "rebuild the draft pdf", "clickable markdown links", "absolute file:// urls", "never present the gate without them", "rebuild the preview pdf"):
+        assert token in approval, f"approval.md must require a fresh preview and links: {token}"

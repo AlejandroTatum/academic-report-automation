@@ -642,5 +642,22 @@ class TestApprovalGuard:
     def test_no_approval_check_flag_skips_the_guard(self, tmp_path: Path) -> None:
         self._run(tmp_path, ["--no-approval-check"]).assert_called_once()
 
+    def test_no_approval_check_records_the_rendered_body_hash(self, tmp_path: Path) -> None:
+        from approval_marker import draft_record_path, sha256_file
+
+        body = tmp_path / "body.md"
+        body.write_text("# A\n", encoding="utf-8")
+        self._run(tmp_path, ["--no-approval-check"])
+        record = draft_record_path(tmp_path / "outputs" / "report.pdf")
+        assert record.read_text(encoding="utf-8").strip() == sha256_file(body)
+
+    def test_final_build_does_not_write_a_draft_record(self, tmp_path: Path) -> None:
+        from approval_marker import draft_record_path
+        from conftest import _approval
+
+        _approval(tmp_path)
+        self._run(tmp_path)
+        assert not draft_record_path(tmp_path / "outputs" / "report.pdf").exists()
+
     def test_validate_only_does_not_need_approval(self, tmp_path: Path) -> None:
         self._run(tmp_path, ["--validate-only"]).assert_not_called()

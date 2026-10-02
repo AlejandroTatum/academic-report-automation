@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from approval_marker import approval_state, sha256_file
+from approval_marker import approval_state, sha256_file, write_draft_record
 from report_config import load_report_config
 from validate_report import validate
 
@@ -108,6 +108,11 @@ def main() -> None:
 
     # Build step — skipped when --validate-only
     if not args.validate_only:
+        # A draft build records the body.md bytes it renders so doc_status can
+        # tell a fresh draft PDF from one that predates the latest edit.
+        draft_body = config.folder / "body.md"
+        if args.no_approval_check and draft_body.is_file():
+            write_draft_record(config.pdf_path, draft_body)
         build_backend(config, args)
 
     if args.tex_only:

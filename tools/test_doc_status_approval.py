@@ -85,6 +85,17 @@ from conftest import (
 )
 
 
+def _fresh_draft(folder: Path) -> Path:
+    """Write a draft PDF plus the record of the body.md bytes it rendered."""
+    from approval_marker import draft_record_path, sha256_file
+
+    pdf = _config(folder).pdf_path
+    pdf.parent.mkdir(parents=True, exist_ok=True)
+    pdf.write_bytes(b"%PDF-draft")
+    draft_record_path(pdf).write_text(sha256_file(folder / "body.md") + "\n", encoding="utf-8")
+    return pdf
+
+
 def test_approval_absent_is_pending_not_blocked(tmp_path: Path) -> None:
     """A missing marker is ordinary progress, so later phases wait, not abort."""
     folder = tmp_path / "wf"
@@ -266,6 +277,8 @@ def test_format_without_output_is_pending_and_names_only_output(tmp_path: Path) 
 def test_approval_guidance_asks_the_format_batch(tmp_path: Path) -> None:
     folder = tmp_path / "wf"
     _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
 
     guidance = doc_status._guidance("approval", folder)
 
@@ -284,10 +297,12 @@ def test_approval_guidance_previews_the_pdf_before_asking(tmp_path: Path) -> Non
     """Task 11(a): build and inspect a preview first, then show its path with body.md."""
     folder = tmp_path / "wf"
     _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
 
     guidance = doc_status._guidance("approval", folder)
 
-    for token in ("--no-approval-check", "preview", "inspect", "before asking", "path"):
+    for token in ("--no-approval-check", "preview", "inspect", "before asking", "file://"):
         assert token in guidance
     assert "never the final" in guidance
     assert str(folder) in guidance
@@ -297,9 +312,52 @@ def test_approval_guidance_asks_format_spec_when_libre(tmp_path: Path) -> None:
     """Task 11(b): choosing libre needs format_spec in the same batch, as a structured choice."""
     folder = tmp_path / "wf"
     _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
 
     guidance = doc_status._guidance("approval", folder)
 
     assert "format_spec" in guidance
     assert "libre" in guidance
     assert "sin portada" in guidance and "con portada" in guidance
+
+
+def test_approval_gate_demands_a_rebuild_when_no_draft_record_exists(tmp_path: Path) -> None:
+    """#59: no record of a rendered draft means the gate must not be presented."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "rebuild the draft PDF" in guidance
+    assert "--no-approval-check" in guidance
+    assert "ask_user_choice" not in guidance
+
+
+def test_approval_gate_demands_a_rebuild_when_body_changed_after_the_draft(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    _body(folder, "# Informe\n\nEditado despues del PDF.\n")
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "rebuild the draft PDF" in guidance
+    assert "ask_user_choice" not in guidance
+
+
+def test_approval_gate_with_a_fresh_draft_lists_absolute_paths(tmp_path: Path) -> None:
+    """#60: the matching record unlocks the prompt, which names both files."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    pdf = _fresh_draft(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "rebuild the draft PDF" not in guidance
+    assert "ask_user_choice" in guidance
+    assert str(pdf) in guidance
+    assert str(folder / "body.md") in guidance

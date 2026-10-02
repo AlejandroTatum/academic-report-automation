@@ -17,7 +17,7 @@ The gate prompt is lossless and blocking: complete decision, consequences and ex
 
 ## Preview before asking
 
-Before asking, build a preview with `build_report_auto.py <folder> --no-approval-check`, render every page and inspect it against the blocking-defect list in `production.md`. Fix layout defects in `body.md` first (re-run the body check), then show the preview PDF path together with `body.md`. The preview is never the final artifact: it predates `approval.yml`, so generate stays `pending` and the final build runs after approval.
+Before asking, build a preview with `build_report_auto.py <folder> --no-approval-check` (it records the sha256 of the `body.md` it rendered next to the PDF; `doc_status` keeps the gate closed with "rebuild the draft PDF" while that record is missing or differs from the current `body.md`), render every page and inspect it against the blocking-defect list in `production.md`. Fix layout defects in `body.md` first (re-run the body check), then rebuild. The message immediately before the approval `ask_user_choice` lists clickable Markdown links with absolute `file://` URLs to the preview PDF and to `body.md` (and to the editable DOCX draft when the user edits in DOCX); never present the gate without them. The preview is never the final artifact: it predates `approval.yml`, so generate stays `pending` and the final build runs after approval.
 
 ## One batch: approval plus format
 
@@ -25,7 +25,7 @@ Ask in ONE batch, the same batch for approval and format, through `ask_user_choi
 
 ## Review loop - literal edit orders
 
-The user answers with literal edit orders ("in paragraph X replace '...' with '...'", "delete section Y", "move this paragraph before that one"). Apply the user's text verbatim: never polish, rephrase or improve user-authored text; polishing forges authorship. Batch all literal edit orders from one reading into one round: apply them all verbatim, and only then ask for re-approval. Every edit changes `body.md`, so the approval goes stale and the route returns to `approval` as `pending`; present the gate again for the new bytes. Each re-approval re-runs verify (fresh independent judge), generate and validate before final review. The loop repeats until the user explicitly approves.
+The user answers with literal edit orders ("in paragraph X replace '...' with '...'", "delete section Y", "move this paragraph before that one"). Apply the user's text verbatim: never polish, rephrase or improve user-authored text; polishing forges authorship. Batch all literal edit orders from one reading into one round: apply them all verbatim, rebuild the preview PDF, and only then ask for re-approval with the same links. Every edit changes `body.md`, so the approval goes stale and the route returns to `approval` as `pending`; present the gate again for the new bytes. Each re-approval re-runs verify (fresh independent judge), generate and validate before final review. The loop repeats until the user explicitly approves.
 
 ## Format (phase `format`, artifact `reports/<wf>/report.yml`)
 

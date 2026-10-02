@@ -33,7 +33,7 @@ import content_check
 import final_review_marker
 import rubric_plan
 from guide_facts import load_guide_facts
-from approval_marker import approval_state, bound_file_names, sha256_file
+from approval_marker import approval_state, bound_file_names, draft_is_fresh, sha256_file
 from publish_pdf import PublicationError, matching_delivered_version
 from report_config import (
     ROOT,
@@ -84,7 +84,9 @@ _GUIDANCE = {
     "draft": "draft {body}, then re-run doc_status",
     "approval": (
         "before asking, build a preview PDF with {build_command} --no-approval-check, render and "
-        "inspect every page, fix layout defects in {body}, and show the preview path with {body}; "
+        "inspect every page, fix layout defects in {body}, and rebuild; the message right before "
+        "the prompt lists clickable Markdown links with absolute file:// URLs to the draft PDF "
+        "({pdf}) and {body}; "
         "the preview is never the final artifact; "
         "generation runs only after you approve {body}; in the same batch use ask_user_choice "
         "(suggested options, never free text) for the document format AA, APE or libre (libre also "
@@ -616,6 +618,12 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     folder = Path(work_folder)
     if config is None:
         config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    if phase_name == "approval" and not draft_is_fresh(config.pdf_path, folder / "body.md"):
+        template = (
+            "rebuild the draft PDF: {build_command} --no-approval-check (the draft PDF is missing "
+            "or does not match the current {body}); do not present the approval prompt until it "
+            "is rebuilt, then re-run doc_status; generation runs only after you approve {body}"
+        )
     if phase_name == "verify" and blocked_reason == "content_check_stale":
         template = "launch TWO independent judges for {body}, then run {check_command} --judgments a.yml --judgments b.yml"
     if phase_name == "verify" and blocked_reason == "content_check_malformed":
