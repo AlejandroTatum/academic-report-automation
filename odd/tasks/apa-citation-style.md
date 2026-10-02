@@ -28,3 +28,4 @@ renaming `validate_ieee` or the `ieee` validator key.
 - Task 2 `1b6a290`: RED 12 failed/4 passed (tools/test_citation_style_latex.py), GREEN 16 passed; tools/ suite 1754 passed.
 - Task 3 `f1f0c65`: RED 4 failed (test_apa_* in tools/test_validate_ieee_refs.py), GREEN 19 passed.
 - Task 4 `74e4941`: RED test_apa_citation_style_is_rejected_in_docx_output (built silently), GREEN tools/test_build_docx_report.py 47 passed.
+- Task 5 `80c53f4`: RED test_judge_brief_names_apa_when_opted_in + test_citation_style_opt_in_is_documented_in_every_reference, GREEN tools/test_content_check.py + tests/skills 320 passed.
