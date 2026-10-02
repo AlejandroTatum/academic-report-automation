@@ -270,6 +270,8 @@ FORMAT_KEY = "format"
 FORMAT_HINT_KEY = "format_hint"
 MIN_SOURCES_KEY = "min_sources"
 UNCITED_BIBLIOGRAPHY_KEY = "uncited_bibliography"
+FIGURE_PLACEMENT_KEY = "figure_placement"
+FIGURE_PLACEMENTS = ("float", "here")
 DEFAULT_STUDENT = "Alejandro Padilla"
 
 # Metadata report.yml must carry, per chosen format. `aa` demands exactly what
@@ -465,6 +467,21 @@ class ReportConfig:
         if type(value) is not int or value < 1:
             raise ValueError(
                 f"{MIN_SOURCES_KEY} debe ser un entero positivo en report.yml (recibido: {value!r})"
+            )
+        return value
+
+    @property
+    def figure_placement(self) -> str:
+        """Where figures sit: ``float`` (default, LaTeX decides) or ``here``.
+
+        ``here`` pins each figure right after the text that introduces it.
+        Any other value raises ValueError.
+        """
+        value = self.raw.get(FIGURE_PLACEMENT_KEY, "float")
+        if not isinstance(value, str) or value not in FIGURE_PLACEMENTS:
+            raise ValueError(
+                f"{FIGURE_PLACEMENT_KEY} debe ser uno de {', '.join(FIGURE_PLACEMENTS)} "
+                f"en report.yml (recibido: {value!r})"
             )
         return value
 
@@ -994,6 +1011,7 @@ def load_report_config(folder: Path) -> ReportConfig:
         _ = config.deliver_bibliography
         _ = config.min_sources
         _ = config.uncited_bibliography
+        _ = config.figure_placement
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

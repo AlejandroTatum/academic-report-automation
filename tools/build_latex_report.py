@@ -432,6 +432,7 @@ def markdown_to_latex(
     suppress_bibliography_heading: bool = False,
     build_dir: Path | None = None,
     table_styles: TableStylesContext | None = None,
+    figure_placement: str = "tbp",
 ) -> str:
     lines = markdown.splitlines()
     output: list[str] = []
@@ -697,7 +698,7 @@ def markdown_to_latex(
             options = figure_includegraphics_options(resolved)
             output.extend([
                 r"\Needspace{6\baselineskip}",
-                r"\begin{figure}[tbp]",
+                rf"\begin{{figure}}[{figure_placement}]",
                 r"\centering",
                 rf"\includegraphics[{options}]{{{src}}}",
                 rf"\caption{{{caption}}}",
@@ -926,7 +927,10 @@ def render_tex(config: ReportConfig) -> str:
     main_source, annex_source = markdown_source, None
     if template_key in APE_TEMPLATE_KEYS:
         main_source, annex_source = split_annexes_markdown(markdown_source)
-    body = markdown_to_latex(main_source, build_dir=build_dir, table_styles=table_styles)
+    figure_spec = "H" if config.figure_placement == "here" else "tbp"
+    body = markdown_to_latex(
+        main_source, build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
+    )
     # Emission detection reads the MAIN body: the annex chunk follows the
     # bibliography by construction, so its citations (if any) cannot decide
     # whether the bibliography prints before them.
@@ -935,7 +939,7 @@ def render_tex(config: ReportConfig) -> str:
     if emit_bibliography:
         body = markdown_to_latex(
             main_source, suppress_bibliography_heading=True, build_dir=build_dir,
-            table_styles=table_styles,
+            table_styles=table_styles, figure_placement=figure_spec,
         )
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.
@@ -1024,7 +1028,7 @@ def render_tex(config: ReportConfig) -> str:
     if annex_source is not None:
         annex_body = markdown_to_latex(
             annex_source, suppress_bibliography_heading=emit_bibliography,
-            build_dir=build_dir, table_styles=table_styles,
+            build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
         )
         after_bibliography_latex = f"{annex_body}\n{after_bibliography_latex}".strip() + "\n"
     bib_file = config.bib_path.name if config.bib_path else ""
