@@ -26,3 +26,4 @@ renaming `validate_ieee` or the `ieee` validator key.
 ## Evidence log
 - Task 1 `a282bc7`: RED 9 failed (test_citation_style_*), GREEN tools/test_report_config.py 73 passed.
 - Task 2 `1b6a290`: RED 12 failed/4 passed (tools/test_citation_style_latex.py), GREEN 16 passed; tools/ suite 1754 passed.
+- Task 3 `f1f0c65`: RED 4 failed (test_apa_* in tools/test_validate_ieee_refs.py), GREEN 19 passed.
