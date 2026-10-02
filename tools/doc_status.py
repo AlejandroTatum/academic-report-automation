@@ -234,7 +234,23 @@ def _phase_draft(folder: Path, _config: ReportConfig, _documents_root: Path | No
         return PhaseState("draft", BLOCKED, "body.md unreadable", "draft_unreadable")
     if not text.strip():
         return PhaseState("draft", PENDING, "body.md empty")
-    return PhaseState("draft", DONE, "body.md present")
+    # Tools enforce the quality rules before the human decision: while the same
+    # body check `content_check.py --body-check` runs would fail, approval is
+    # not offered. A current approval marker is never re-gated (the user already
+    # approved those exact bytes).
+    if approval_state(folder).state != "current":
+        try:
+            failed = [c for c in content_check.body_check_results(folder) if not c["ok"]]
+        except (OSError, ValueError, TypeError) as exc:
+            return PhaseState("draft", PENDING, f"body check could not run: {exc}", "body_check_failed")
+        if failed:
+            return PhaseState(
+                "draft",
+                PENDING,
+                "body check fails: " + "; ".join(f"{c['check']}: {c['detail']}" for c in failed),
+                "body_check_failed",
+            )
+    return PhaseState("draft", DONE, "body.md present and passes the body check")
 
 
 def _phase_approval(folder: Path, _config: ReportConfig, _documents_root: Path | None) -> PhaseState:
@@ -566,6 +582,8 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     if phase_name == "verify" and blocked_reason == "content_check_failed":
         template = ("fix findings in {body} through the user's literal edit orders, "
                     "then re-approve the draft and re-run the independent judge")
+    if phase_name == "draft" and blocked_reason == "body_check_failed":
+        template = "fix {body} until {check_command} --body-check passes, then re-run doc_status"
     if phase_name == "intake" and not config.metadata.get("student"):
         template += (
             "; a student name the user saved as permanent for all future sessions "

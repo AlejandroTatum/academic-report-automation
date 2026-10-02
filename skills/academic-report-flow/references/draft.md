@@ -51,7 +51,8 @@ the body changes only through the user's literal edit orders (see
    mechanical part of `content_check.py` against the draft before presenting it:
    `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --body-check`
    (format rules above, citations resolve, rubric checks; no judgments, writes
-   nothing, exits 1 on any FAIL). Fix failed checks in the draft, without writing semantic judgments or an
+   nothing, exits 1 on any FAIL). `doc_status` runs the same check and keeps `next: draft`
+   (naming the failing checks) until it passes, so approval is never offered early. Fix failed checks in the draft, without writing semantic judgments or an
    approval marker.
 5. Re-run `doc_status` and report the new current phase.
 

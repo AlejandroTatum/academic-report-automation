@@ -22,7 +22,7 @@ from pathlib import Path
 
 from report_config import ReportConfig, read_yaml
 
-DEFAULT_BODY = "# Informe\n\nCuerpo del documento.\n"
+DEFAULT_BODY = "# Informe\n\nCuerpo del documento con fuentes [@key1], [@key2], [@key3], [@key4] y [@key5].\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"
 APPROVAL_SCHEMA = "academic.doc-approval/v1"
 FINAL_REVIEW_SCHEMA = "academic.doc-final-review/v1"

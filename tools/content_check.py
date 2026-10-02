@@ -546,7 +546,7 @@ def run_check(
     # The format defects ride on the deterministic body check so the marker
     # keeps its fixed set of mechanical entries.
     if format_problems:
-        detail = "; ".join([*([detail] if failed else []), *(f"body format: {p}" for p in format_problems)])
+        detail = "; ".join([*([detail] if failed else []), *(f"body_format: {p}" for p in format_problems)])
     checks.append({"check": "rubric_checks", "ok": not failed and not format_problems, "detail": detail})
     mechanical_ok = all(check["ok"] for check in checks)
     criteria_ok = all(judgment["status"] == "cumple" for judgment in judgments)
@@ -696,27 +696,53 @@ def content_check_state(report_dir: Path) -> str:
     return "pass" if criteria_ok and mechanical_ok and ids_match else "fail"
 
 
+_BODY_CHECK_MECHANICAL = ("citations_resolve", "eligible_sources_cited")
+
+
+def body_check_results(folder: Path) -> list[dict]:
+    """The judgment-free draft checks as ``check``/``ok``/``detail`` entries.
+
+    One source of truth for ``--body-check`` and for ``doc_status``'s approval
+    gate. Raises ``OSError``/``ValueError``/``TypeError`` when an input
+    (body, rubric, report.yml, bib) is unreadable or invalid.
+    """
+    folder = Path(folder)
+    body_text = (folder / BODY_NAME).read_text(encoding="utf-8")
+    criteria = rubric_plan.load_rubric(folder)
+    config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
+    min_sources = effective_min_sources(config)
+    mechanical = mechanical_checks(body_text, _read_bib(config), criteria, [], min_sources)
+    results = [check for check in mechanical if check["check"] in _BODY_CHECK_MECHANICAL]
+    format_problems = body_format_problems(body_text)
+    results.append(
+        {
+            "check": "body_format",
+            "ok": not format_problems,
+            "detail": "; ".join(format_problems) or "level-1 headings present, no Unicode sub/superscripts",
+        }
+    )
+    failed_rubric = [item for item in rubric_checks.run_checks(folder, criteria, body_text) if not item.ok]
+    results.append(
+        {
+            "check": "rubric_checks",
+            "ok": not failed_rubric,
+            "detail": "; ".join(f"{i.criterion_id} ({i.type}): {i.detail}" for i in failed_rubric)
+            or "all rubric checks pass",
+        }
+    )
+    return results
+
+
 def run_body_check(folder: Path) -> int:
     """Run the judgment-free mechanical checks on a draft; print, never write."""
-    folder = Path(folder)
     try:
-        body_text = (folder / BODY_NAME).read_text(encoding="utf-8")
-        criteria = rubric_plan.load_rubric(folder)
-        config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
-        min_sources = effective_min_sources(config)
-        bib_text = _read_bib(config)
+        results = body_check_results(folder)
     except (OSError, ValueError, TypeError) as exc:
         print(f"content check input error: {exc}", file=sys.stderr)
         return 2
-    lines = []
-    for check in mechanical_checks(body_text, bib_text, criteria, [], min_sources)[:-1]:
-        lines.append((check["ok"], f"{check['check']}: {check['detail']}"))
-    lines.extend((False, f"body_format: {problem}") for problem in body_format_problems(body_text))
-    failed_rubric = [i for i in rubric_checks.run_checks(folder, criteria, body_text) if not i.ok]
-    lines.extend((False, f"rubric_checks: {i.criterion_id} ({i.type}): {i.detail}") for i in failed_rubric)
-    for ok, text in lines:
-        print(f"  [{'ok' if ok else 'FAIL'}] {text}")
-    return 0 if all(ok for ok, _ in lines) else 1
+    for check in results:
+        print(f"  [{'ok' if check['ok'] else 'FAIL'}] {check['check']}: {check['detail']}")
+    return 0 if all(check["ok"] for check in results) else 1
 
 
 def main(argv: list[str] | None = None) -> int:

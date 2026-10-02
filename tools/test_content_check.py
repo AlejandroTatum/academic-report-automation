@@ -1282,3 +1282,36 @@ def test_body_check_mode_passes_a_clean_draft(tmp_path: Path) -> None:
     folder = _verify_folder(tmp_path / "wf")
     assert content_check.main([str(folder), "--body-check"]) == 0
     assert not (folder / "content-check.yml").exists()
+
+
+def test_body_check_results_select_checks_by_name_and_name_format_defects(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    results = {item["check"]: item for item in content_check.body_check_results(folder)}
+
+    assert {"citations_resolve", "eligible_sources_cited", "body_format"} <= set(results)
+    assert "judgments_match_rubric" not in results
+    assert not results["body_format"]["ok"] and "level-1" in results["body_format"]["detail"]
+    assert results["citations_resolve"]["ok"]
+
+
+def test_body_check_output_labels_body_format_defects(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    assert content_check.main([str(folder), "--body-check"]) == 1
+
+    assert "[FAIL] body_format:" in capsys.readouterr().out
+
+
+def test_marker_keeps_four_mechanical_entries_with_unambiguous_format_text(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    (folder / "body.md").write_text("## Informe\n\nTexto con [@key1].\n", encoding="utf-8")
+
+    assert _run(folder) == 1
+
+    marker = _marker(folder)
+    assert [c["check"] for c in marker["mechanical"]][-1] == "rubric_checks"
+    assert len(marker["mechanical"]) == 4
+    assert "body_format: no level-1 heading" in marker["mechanical"][-1]["detail"]
