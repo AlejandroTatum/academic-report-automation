@@ -193,8 +193,12 @@ def test_ape_template_heading_color_and_size(ape_template: str) -> None:
     assert "14" in ape_template, "level-1 headings are 14pt"
 
 
-def test_ape_template_keeps_ieee_citations(ape_template: str) -> None:
-    assert "style=ieee" in ape_template, "every format cites IEEE"
+def test_ape_template_keeps_ieee_citations(ape_template: str, tmp_path: Path) -> None:
+    assert "{{BIBLATEX_OPTIONS}}" in ape_template, "the citation style is filled by the renderer"
+    rendered = build_latex_report.render_tex(
+        make_render_config(tmp_path, metadata=full_ape_metadata())
+    )
+    assert "style=ieee" in rendered, "every format cites IEEE by default"
 
 
 # ---------------------------------------------------------------------------

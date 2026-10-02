@@ -17,7 +17,7 @@ renaming `validate_ieee` or the `ieee` validator key.
 ## Tasks
 
 - [x] 1. `report_config`: `citation_style` strict enum (`ieee` default, `apa`), load-time check, tests.
-- [ ] 2. LaTeX build: `{{BIBLATEX_OPTIONS}}` placeholder in the four templates; APA uses `style=apa`, `sorting=nyt`, `\parencite`, Spanish APA mapping; tests.
+- [x] 2. LaTeX build: `{{BIBLATEX_OPTIONS}}` placeholder in the four templates; APA uses `style=apa`, `sorting=nyt`, `\parencite`, Spanish APA mapping; tests.
 - [ ] 3. `validate_ieee_refs`: APA branch (author-year citations required, numeric `[n]` checks skipped, `s. f.` allowed); tests.
 - [ ] 4. DOCX builder: reject `citation_style: apa` with a clear error; test.
 - [ ] 5. Skill docs + contract test + `content_check` wording: document the opt-in.

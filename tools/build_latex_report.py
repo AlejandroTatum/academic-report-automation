@@ -227,6 +227,22 @@ def inline_code(value: str) -> str:
     return r"\texttt{" + "".join(pieces) + "}"
 
 
+# biblatex package options and trailing setup per `citation_style`. IEEE is
+# the default and must render exactly as before; APA needs the Spanish mapping
+# (csquotes, which biblatex-apa requires, is already loaded by every template).
+BIBLATEX_OPTIONS = {
+    "ieee": "backend=biber,style=ieee,sorting=none,hyperref=true",
+    "apa": "backend=biber,style=apa,sorting=nyt,hyperref=true",
+}
+BIBLATEX_SETUP = {
+    "ieee": "",
+    "apa": (
+        r"\DeclareLanguageMapping{spanish}{spanish-apa}"
+        r"\ExecuteBibliographyOptions{language=spanish}"
+    ),
+}
+
+
 def convert_inline(text: str) -> str:
     placeholders: list[tuple[str, str]] = []
 
@@ -1050,6 +1066,8 @@ def render_tex(config: ReportConfig) -> str:
         "{{APE_LOGO_PATH}}": latex_escape(APE_LOGO_FILENAME),
         "{{APE_TITLE}}": latex_escape(ape_report_title(meta)),
         "{{IDENTIFICATION_TABLE}}": ape_identification_table(meta),
+        "{{BIBLATEX_OPTIONS}}": BIBLATEX_OPTIONS[config.citation_style],
+        "{{BIBLATEX_SETUP}}": BIBLATEX_SETUP[config.citation_style],
         "{{BIB_FILE}}": latex_escape(bib_file),
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
@@ -1081,6 +1099,9 @@ def render_tex(config: ReportConfig) -> str:
     }
     for key, value in replacements.items():
         template = template.replace(key, value)
+    if config.citation_style == "apa":
+        # Author-year in-text citations; the converter emits \cite for IEEE.
+        template = template.replace(r"\cite{", r"\parencite{")
     if template_key in UNL_TEMPLATE_KEYS:
         template = _apply_cover_sentinels(
             template,
