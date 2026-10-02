@@ -254,8 +254,8 @@ def unknown_route_message(route: str) -> str:
 # `format:` in report.yml is the ONE format choice the user makes per document,
 # after content approval. It is a presentation classification, deliberately
 # independent of `route:` (the content classification): every format keeps IEEE
-# citations (biblatex style=ieee) and always builds a PDF through the existing
-# LaTeX pipeline.
+# citations (biblatex style=ieee) unless report.yml opts into `citation_style: apa`,
+# and always builds a PDF through the existing LaTeX pipeline.
 #
 #     format: ape     the teacher's Word replica (templates/ape-report.tex)
 #     format: aa      the current academic look (unl-report.tex), unchanged
@@ -272,6 +272,8 @@ MIN_SOURCES_KEY = "min_sources"
 UNCITED_BIBLIOGRAPHY_KEY = "uncited_bibliography"
 FIGURE_PLACEMENT_KEY = "figure_placement"
 FIGURE_PLACEMENTS = ("float", "here")
+CITATION_STYLE_KEY = "citation_style"
+CITATION_STYLES = ("ieee", "apa")
 DEFAULT_STUDENT = "Alejandro Padilla"
 
 # Metadata report.yml must carry, per chosen format. `aa` demands exactly what
@@ -481,6 +483,20 @@ class ReportConfig:
         if not isinstance(value, str) or value not in FIGURE_PLACEMENTS:
             raise ValueError(
                 f"{FIGURE_PLACEMENT_KEY} debe ser uno de {', '.join(FIGURE_PLACEMENTS)} "
+                f"en report.yml (recibido: {value!r})"
+            )
+        return value
+
+    @property
+    def citation_style(self) -> str:
+        """Citation style: ``ieee`` (default) or ``apa`` (opt-in, any route).
+
+        Any other value raises ValueError.
+        """
+        value = self.raw.get(CITATION_STYLE_KEY, "ieee")
+        if not isinstance(value, str) or value not in CITATION_STYLES:
+            raise ValueError(
+                f"{CITATION_STYLE_KEY} debe ser uno de {', '.join(CITATION_STYLES)} "
                 f"en report.yml (recibido: {value!r})"
             )
         return value
@@ -1037,6 +1053,7 @@ def load_report_config(folder: Path) -> ReportConfig:
         _ = config.min_sources
         _ = config.uncited_bibliography
         _ = config.figure_placement
+        _ = config.citation_style
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
