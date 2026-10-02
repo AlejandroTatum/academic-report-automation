@@ -30,7 +30,7 @@ approval rounds. Also closes #59 and #60.
 - [x] 3. Judges: brief carries an exact quoted YAML example; parser accepts finding mappings.
 - [x] 4. `report.yml` delivery folder override for the publisher, keeping the version register.
 - [x] 5. Simulación course profile (Guamán) applied by intake on subject match.
-- [ ] 6. DOCX draft round-trip: export with native equations, import with diff, refuse locked files.
+- [x] 6. DOCX draft round-trip: export with native equations, import with diff, refuse locked files.
 - [x] 7. Approval gate: fresh preview required (#59) and clickable links before the prompt (#60).
 - [x] 8. `sync_skills.sh` also syncs `~/.pi/agent/skills`.
 - [x] 9. Rubric checks are document-wide unless a section is explicitly bound.
@@ -44,3 +44,4 @@ approval rounds. Also closes #59 and #60.
 - Task 9 (document-wide rubric checks): see commit subject 'fix(tools): run rubric checks over the whole document unless bound' — test_rubric_checks.py + test_rubric_plan.py + test_content_check.py + tests/skills green (RED: 2 failed before implementation).
 - Task 5 (Simulación profile): see commit subject 'feat(skill): add Simulación course profile applied on subject match' — tools/test_course_profile.py 9 passed (RED: collection error, module missing) + tests/skills green.
 - Task 7 (approval gate, closes #59/#60): see commit subject 'fix(skill): require a fresh rendered draft and links at the approval gate' — test_doc_status_approval.py + test_build_report_auto.py + test_approval_marker.py + tests/skills green (RED: 6 tool tests failed before implementation, 1 contract test before the docs edit).
+- Task 6 (DOCX draft round-trip): see commit subject 'feat(tools): add DOCX draft export and import for paraphrasing' — tools/test_draft_docx.py 7 passed (RED: collection error, module missing) + tests/skills green.
