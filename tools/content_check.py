@@ -152,6 +152,31 @@ def _already_run_checks_section(folder: Path, criteria: list[dict], body_text: s
     return "\n".join(lines) + "\n"
 
 
+_QUOTE_STYLES = str.maketrans({"“": '"', "”": '"', "«": '"', "»": '"'})
+
+
+def normalize_body_text(text: str) -> str:
+    """The body's words with Markdown markup and quote style stripped.
+
+    Heading markers, list markers, block quotes, emphasis, code ticks, table
+    pipes/separator rows, curly versus straight quotes and whitespace do not
+    count; any other character does.
+    """
+    lines = []
+    for line in text.translate(_QUOTE_STYLES).splitlines():
+        if re.fullmatch(r"\s*\|?(?:\s*:?-{3,}:?\s*\|?)+\s*", line):
+            continue
+        line = re.sub(r"^\s*(?:#{1,6}\s+|>+\s*|[-*+]\s+|\d+[.)]\s+)", "", line)
+        line = line.replace("|", " ").replace("*", "").replace("`", "")
+        line = re.sub(r"(?<!\w)_+|_+(?!\w)", "", line)
+        lines.append(line)
+    return re.sub(r"\s+", " ", " ".join(lines)).strip()
+
+
+def body_text_sha256(text: str) -> str:
+    return hashlib.sha256(normalize_body_text(text).encode("utf-8")).hexdigest()
+
+
 def judge_brief(folder: Path) -> str:
     """A self-contained, read-only assignment with hashes for the current draft.
 
@@ -180,6 +205,7 @@ def judge_brief(folder: Path) -> str:
         "judge": {"role": "independent", "inputs": inputs},
         "body_sha256": hashlib.sha256(body_bytes).hexdigest(),
         "rubric_sha256": sha256_file(folder / rubric_plan.RUBRIC_NAME),
+        "body_text_sha256": body_text_sha256(body_text),
         "criteria": [{"id": "<rubric criterion id>", "status": "cumple|flojo|falta",
                       "where": "<quoted location in body.md>", "note": "<reason>"}],
         "findings": [],
@@ -255,6 +281,15 @@ def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, 
         errors.append(f"{name} findings must be a list of strings")
         findings = []
     return judgments, findings, data.get("judge"), data.get("body_sha256"), data.get("rubric_sha256"), errors
+
+
+def _judged_text_hash(path: Path) -> str:
+    """The ``body_text_sha256`` a judgments file recorded, or ``""``."""
+    try:
+        value = yaml.safe_load(Path(path).read_text(encoding="utf-8")).get("body_text_sha256")
+    except Exception:
+        return ""
+    return value.strip().lower() if isinstance(value, str) else ""
 
 
 # A single-quoted ``where`` fragment (T14). The opening quote may not sit
@@ -501,15 +536,22 @@ def run_check(
     if not criteria:
         return CheckOutcome("", {}, ("rubric.yml missing or malformed",))
     names = [Path(path).name for path in judgments_path]
-    for name, (_, _, judge, judged_body, judged_rubric, _) in zip(names, parsed):
+    reused = False
+    for name, path, (_, _, judge, judged_body, judged_rubric, _) in zip(names, judgments_path, parsed):
         if not isinstance(judge, dict) or judge.get("role") != "independent":
             errors.append(f"{name}: judge.role must be independent")
         elif judge.get("inputs") != expected_inputs:
             errors.append(f"{name}: judge.inputs must list exactly: {', '.join(expected_inputs)}")
         if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
             errors.append(f"{name}: body_sha256 and rubric_sha256 are required")
-        elif judged_body != sha256_file(body_path) or judged_rubric != rubric_hash:
+        elif judged_rubric != rubric_hash:
             errors.append(f"{name}: judgments are for a different draft; re-run the judge")
+        elif judged_body != sha256_file(body_path):
+            # Stale body hash: still valid when only markup changed (same words).
+            if _judged_text_hash(path) == body_text_sha256(body_text):
+                reused = True
+            else:
+                errors.append(f"{name}: judgments are for a different draft; re-run the judge")
     if parsed[0][3:5] != parsed[1][3:5]:
         errors.append(f"{names[0]} and {names[1]} must bind the same body_sha256 and rubric_sha256")
     if errors:
@@ -541,6 +583,8 @@ def run_check(
     judges = [item[2] for item in parsed]
     individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources)[-1] for item in parsed]
     checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources)
+    if reused and checks[-1]["ok"]:
+        checks[-1]["detail"] += "; judgments reused: markup-only change"
     if not all(check["ok"] for check in individual_checks):
         checks[-1] = {"check": "judgments_match_rubric", "ok": False,
                       "detail": "; ".join(check["detail"] for check in individual_checks if not check["ok"])}

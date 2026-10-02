@@ -1,19 +1,19 @@
 # Production - verify, generate, validate, quality gates
 
-Tools enforce quality between Decision 2 and 3: run each, report findings, never fix by silent polishing. Roots and interpreter: `routing.md`.
+Tools enforce quality between Decisions 2 and 3: run each, report findings, never polish silently. Roots and interpreter: `routing.md`.
 
 ## Verify (artifact `reports/<wf>/content-check.yml`)
 
-Runs only after `approval` is `done`: the check judges the approved draft.
+Runs only after `approval` is `done`, judging the approved draft.
 
 1. `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --judge-brief`. Do not pass the drafting conversation to a judge.
 2. Give its exact output to two independent read-only judge subagents in parallel with the same brief; they must not coordinate and return the YAML the brief specifies (per criterion `cumple|flojo|falta`).
 3. Save the YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; the drafting agent never writes judgments. Run `content_check.py <folder> --judgments judgments-a.yml --judgments judgments-b.yml`.
-4. The tool validates both files, adds the mechanical checks (citations resolve; at least 5, or the report's `min_sources:`, eligible sources cited), the strictest verdict wins per criterion (`falta` > `flojo` > `cumple`), and writes `content-check.yml` bound by hash to body, rubric and bib. A stale marker means re-run the independent judges on the current inputs, never reuse old judgments.
+4. The tool validates both files, adds the mechanical checks (citations resolve; at least 5, or the report's `min_sources:`, eligible sources cited), the strictest verdict wins per criterion (`falta` > `flojo` > `cumple`), and writes `content-check.yml` bound by hash to body, rubric and bib. A stale marker means re-run the independent judges on current inputs; old judgments are reused only when the body change is markup-only (same `body_text_sha256`, same rubric).
 
 When the executor cannot launch subagents, it stops at verify and reports the judges pending; the orchestrator runs the two judges exactly as above (brief verbatim, two independent read-only subagents, YAML saved unchanged) and the executor never stands in for a judge.
 
-The check only reports (per-criterion status, citation problems, confusing paragraphs, figures that serve no criterion). It never rewrites `body.md`; never add judgments for criteria the plan does not name or soften `falta` to `flojo`. Report every finding verbatim and collect literal edit orders (`approval.md`); a recorded `fail` blocks the route (`content_check_failed`) until fixed, and an edited draft stales the marker so the check reruns.
+The check only reports (per-criterion status, citation problems, confusing paragraphs, figures that serve no criterion). It never rewrites `body.md`; never add judgments for criteria the plan does not name or soften `falta` to `flojo`. Report every finding verbatim and collect literal edit orders (`approval.md`); a recorded `fail` blocks the route (`content_check_failed`) until fixed; an edited draft stales the marker and reruns the check.
 
 ## Generate (artifact: the final PDF under `outputs/<materia>/`)
 

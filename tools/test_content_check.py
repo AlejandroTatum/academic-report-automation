@@ -1369,3 +1369,95 @@ def test_body_check_surfaces_a_section_scope_warning_without_failing(tmp_path: P
     assert scope["ok"] and "Seccion inexistente" in scope["detail"] and "warning" in scope["detail"].lower()
     content_check.main([str(folder), "--body-check"])
     assert "rubric_scope" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Judgment reuse for markup-only body changes (task 11 f)
+# ---------------------------------------------------------------------------
+
+PLAIN_BODY = (
+    "# Informe\n\nEl cliente dijo \"entrega inmediata\" con fuentes [@key1], [@key2], "
+    "[@key3], [@key4] y [@key5].\n\n- primer punto\n- segundo punto\n\n"
+    "| a | b |\n| --- | --- |\n| uno | dos |\n"
+)
+MARKUP_BODY = (
+    "# **Informe**\n\nEl cliente dijo “**entrega inmediata**” con fuentes [@key1], [@key2], "
+    "[@key3], [@key4] y [@key5].\n\n* primer punto\n* _segundo_ punto\n\n"
+    "| a  | b  |\n|:---|:---|\n| uno | dos |\n"
+)
+
+
+def _judged_pair(folder: Path) -> list[str]:
+    """Two judgments files bound to the current body, carrying ``body_text_sha256``."""
+    import yaml
+
+    brief = yaml.safe_load(content_check.judge_brief(folder).split("Return only judgments YAML using this schema.")[1].split("\n", 1)[1])
+    paths = []
+    for name, finding in (("a.yml", "first"), ("b.yml", "second")):
+        path = _judgments(folder, name=name, findings=[finding])
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["body_text_sha256"] = brief["body_text_sha256"]
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        paths.append(str(path))
+    return ["--judgments", paths[0], "--judgments", paths[1]]
+
+
+def _reuse_folder(folder: Path) -> list[str]:
+    _verify_folder(folder)
+    _body(folder, PLAIN_BODY)
+    return _judged_pair(folder)
+
+
+def test_judge_brief_carries_the_normalized_text_hash(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, PLAIN_BODY)
+    assert f"body_text_sha256: {content_check.body_text_sha256(PLAIN_BODY)}" in content_check.judge_brief(folder)
+    assert content_check.body_text_sha256(PLAIN_BODY) == content_check.body_text_sha256(MARKUP_BODY)
+
+
+def test_markup_only_edit_reuses_judgments(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY)
+    assert content_check.main([str(folder), *args]) == 0
+    marker = _marker(folder)
+    assert "judgments reused: markup-only change" in _mechanical(marker, "judgments_match_rubric")["detail"]
+    assert content_check.content_check_state(folder) == "pass"
+
+
+def test_unchanged_body_has_no_reuse_note(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    assert content_check.main([str(folder), *args]) == 0
+    assert "reused" not in _mechanical(_marker(folder), "judgments_match_rubric")["detail"]
+
+
+def test_one_word_edit_still_needs_new_judgments(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY.replace("primer", "tercer"))
+    assert content_check.main([str(folder), *args]) == 2
+    assert "judgments are for a different draft; re-run the judge" in capsys.readouterr().err
+
+
+def test_added_character_still_needs_new_judgments(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY.replace("dos |", "dos. |"))
+    assert content_check.main([str(folder), *args]) == 2
+
+
+def test_rubric_change_blocks_reuse_even_for_markup_only_edit(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    args = _reuse_folder(folder)
+    _body(folder, MARKUP_BODY)
+    _rubric(folder, source="otra guia")
+    assert content_check.main([str(folder), *args]) == 2
+
+
+def test_stale_judgments_without_text_hash_are_not_reused(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, PLAIN_BODY)
+    first, second = _judgments(folder, name="a.yml"), _judgments(folder, name="b.yml", findings=["x"])
+    _body(folder, MARKUP_BODY)
+    assert content_check.main([str(folder), "--judgments", str(first), "--judgments", str(second)]) == 2
