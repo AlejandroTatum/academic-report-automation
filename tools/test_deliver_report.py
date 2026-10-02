@@ -511,3 +511,54 @@ def test_ready_to_submit_needs_visual_pass_in_the_receipt(tmp_path: Path, capsys
     assert _run(folder, tmp_path / "docs") == 0
     out = capsys.readouterr().out
     assert "sin VISUAL_PASS, READY_TO_SUBMIT" in out
+
+
+# -- delivery_dir override ------------------------------------------------------
+
+
+def _set_delivery_dir(folder: Path, value: str) -> None:
+    report = folder / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + f"delivery_dir: {value}\n", encoding="utf-8")
+
+
+def test_delivery_dir_override_receives_the_versioned_pdf(tmp_path: Path) -> None:
+    folder, pdf = _ready_folder(tmp_path)
+    target = tmp_path / "course" / "unidad-1" / "ape-1" / "documento"
+    _set_delivery_dir(folder, str(target))
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) == 0
+    assert _run(folder, documents_root) == 0  # idempotent: same bytes reuse v001
+
+    assert [p.name for p in target.iterdir()] == [f"{SLUG}-v001.pdf"]
+    assert _sha256(target / f"{SLUG}-v001.pdf") == _sha256(pdf)
+    assert not documents_root.exists()
+
+
+def test_delivery_dir_override_increments_versions_in_its_folder(tmp_path: Path) -> None:
+    folder, pdf = _ready_folder(tmp_path)
+    target = tmp_path / "course" / "documento"
+    _set_delivery_dir(folder, str(target))
+    assert _run(folder, tmp_path / "docs") == 0
+
+    pdf.write_bytes(pdf.read_bytes() + b"\n% changed\n")
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    assert _run(folder, tmp_path / "docs") == 0
+
+    assert sorted(p.name for p in target.iterdir()) == [f"{SLUG}-v001.pdf", f"{SLUG}-v002.pdf"]
+
+
+def test_delivery_dir_invalid_value_refuses_delivery(tmp_path: Path) -> None:
+    folder, _pdf_path = _ready_folder(tmp_path)
+    _set_delivery_dir(folder, "''")
+    documents_root = tmp_path / "docs"
+
+    assert _run(folder, documents_root) != 0
+    assert not documents_root.exists()
+
+
+def test_without_delivery_dir_the_default_folder_is_unchanged(tmp_path: Path) -> None:
+    folder, _pdf_path = _ready_folder(tmp_path)
+    assert _run(folder, tmp_path / "docs") == 0
+    assert (tmp_path / "docs" / CATEGORY / "fisica" / SLUG / f"{SLUG}-v001.pdf").is_file()

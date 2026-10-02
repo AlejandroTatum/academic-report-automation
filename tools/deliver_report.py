@@ -17,7 +17,8 @@ with the named missing evidence, and a rerun after fixing it is the only exit.
 The destination is the report's shared delivery folder (``config.delivery_folder``):
 the academic route is scoped by the confirmed subject's canonical slug
 (``Academicos/<subject-slug>/<document-slug>/``); every other route keeps the flat
-``<category>/<document-slug>/`` layout. The publisher and ``doc_status`` both ask
+``<category>/<document-slug>/`` layout; ``delivery_dir:`` in report.yml replaces
+either with an explicit folder. The publisher and ``doc_status`` both ask
 ``ReportConfig``, so they cannot disagree about the location.
 """
 from __future__ import annotations
@@ -142,6 +143,7 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
         category = config.publication_category
         slug = config.document_slug
         subject = config.delivery_subject_slug
+        destination = config.delivery_dir
     except (KeyError, ValueError):
         return _refuse("identidad de publicación (categoría/slug) no disponible en report.yml.")
 
@@ -155,6 +157,7 @@ def deliver(folder: Path, documents_root: Path | None = None) -> int:
             expected_sha256=pdf_hash,
             subject=subject,
             bibliography=bibliography,
+            destination=destination,
         )
     except PublicationError as exc:
         return _refuse(str(exc))

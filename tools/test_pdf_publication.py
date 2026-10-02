@@ -705,3 +705,33 @@ def test_concurrent_pair_claim_retries_without_overwriting(
     assert (folder / "informe-v002.pdf").read_bytes() == b"%PDF-1.7\nconcurrent publisher\n"
     assert not (folder / "informe-v002.bib").exists(), "the lost racer never claimed a bib"
     assert (folder / "informe-v003.bib").read_bytes() == bib.read_bytes()
+
+
+def test_destination_override_publishes_into_exactly_that_folder(
+    tmp_path: Path, _approved_work_folder: Path
+) -> None:
+    """An explicit destination replaces the Documents layout and keeps the register."""
+    source = _validated_pdf(tmp_path)
+    documents = tmp_path / "Documents"
+    target = tmp_path / "course" / "unidad-1" / "ape-1" / "documento"
+
+    first = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, subject="fisica", destination=target,
+    )
+    reused = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, destination=target,
+    )
+    assert first.path == target / "informe-v001.pdf" and first.created is True
+    assert reused.path == first.path and reused.created is False
+
+    source.write_bytes(b"%PDF-1.7\nsecond\n")
+    _final_review(_approved_work_folder, pdf=source)
+    second = publish_pdf.publish_validated_pdf(
+        source, "Academicos", "informe", documents,
+        work_folder=_approved_work_folder, destination=target,
+    )
+    assert second.path == target / "informe-v002.pdf"
+    assert {p.name for p in target.iterdir()} == {"informe-v001.pdf", "informe-v002.pdf"}
+    assert not documents.exists()

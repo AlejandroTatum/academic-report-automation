@@ -168,6 +168,7 @@ def publish_validated_pdf(
     expected_sha256: str | None = None,
     subject: str | None = None,
     bibliography: Path | None = None,
+    destination: Path | None = None,
 ) -> Publication:
     """Atomically publish a validated PDF, reusing identical hashes by version.
 
@@ -183,7 +184,9 @@ def publish_validated_pdf(
     The destination is ``<root>/<category>/<slug>/``; passing the optional
     canonical ``subject`` slug (academic route) inserts the course level:
     ``<root>/<category>/<subject>/<slug>/``. Omitting it keeps the flat
-    category layout, so direct publisher callers keep working unchanged.
+    category layout, so direct publisher callers keep working unchanged. An
+    explicit ``destination`` (report.yml ``delivery_dir``) replaces that whole
+    layout; the version register, hashing and locking are unchanged.
 
     A declared ``bibliography`` (a regular ``.bib`` file) publishes as the
     same-version pair ``<slug>-vNNN.pdf`` + ``<slug>-vNNN.bib``. Reuse compares
@@ -218,10 +221,13 @@ def publish_validated_pdf(
             message = f"{message} Detalle: {review.detail}."
         raise PublicationError(message)
 
-    root = resolve_documents_root(documents_root)
-    folder = root / category / slug
-    if subject:
-        folder = root / category / subject / slug
+    if destination is not None:
+        folder = Path(destination)
+    else:
+        root = resolve_documents_root(documents_root)
+        folder = root / category / slug
+        if subject:
+            folder = root / category / subject / slug
     source_hash = sha256_file(source)
     if expected_sha256 is not None and source_hash != expected_sha256:
         raise PublicationError("El PDF cambió desde la validación técnica")
