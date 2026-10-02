@@ -349,3 +349,29 @@ def test_body_sentinel_lookalike_does_not_confuse_cover_stripping(tmp_path):
     assert r"\fbox{" not in tex
     assert "DOCENTE" not in tex
     assert "% COVER_ACADEMIC_BOX:END" in tex
+
+
+def _plain_tex(tmp_path: Path, route: str, extra_metadata: dict | None = None) -> str:
+    raw = {"route": route, "metadata": {"title": "Contrato", "student": "Ana Autora",
+                                       "date": "1 de octubre de 2026", **(extra_metadata or {})}}
+    return build_latex_report.render_tex(make_render_config(tmp_path, raw, False))
+
+
+def test_business_title_block_omits_author_and_date_line(tmp_path):
+    body = _plain_tex(tmp_path, "business").split(r"\begin{document}")[1]
+    assert "Contrato" in body
+    assert r"\reportstudent" not in body and r"\reportdate" not in body
+
+
+def test_business_show_author_restores_the_line(tmp_path):
+    body = _plain_tex(tmp_path, "business", {"show_author": True}).split(r"\begin{document}")[1]
+    assert r"\reportstudent" in body and r"\reportdate" in body
+
+
+def test_technical_title_block_keeps_author_and_date_line(tmp_path):
+    body = _plain_tex(tmp_path, "technical").split(r"\begin{document}")[1]
+    assert r"\reportstudent" in body and r"\reportdate" in body
+
+
+def test_author_line_constant_matches_the_plain_template():
+    assert build_latex_report.AUTHOR_LINE_TEX in build_latex_report.PLAIN_TEMPLATE.read_text(encoding="utf-8")

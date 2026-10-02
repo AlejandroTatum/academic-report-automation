@@ -42,11 +42,16 @@ MIN_ACADEMIC_SOURCES = 5
 def effective_min_sources(config: ReportConfig) -> int:
     """Minimum eligible sources for a report: ``min_sources:`` or the default.
 
+    The default is 0 on the business route (contracts cite no literature) and
+    ``MIN_ACADEMIC_SOURCES`` elsewhere; an explicit ``min_sources:`` always wins.
+
     Shared by the research gate and ``content_check`` so both apply the same
     number. Raises ValueError for an invalid ``min_sources:`` value.
     """
     override = config.min_sources
-    return MIN_ACADEMIC_SOURCES if override is None else override
+    if override is not None:
+        return override
+    return 0 if config.route == "business" else MIN_ACADEMIC_SOURCES
 
 
 # The declared name mirrors ReportConfig.bib_path's own default, so a reason

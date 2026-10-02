@@ -244,6 +244,9 @@ def convert_inline(text: str) -> str:
     keep(r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
          lambda m: r"\href{" + m.group(2) + "}{" + latex_escape(m.group(1)) + "}")
     keep(r"<(https?://[^\s>]+)>", lambda m: r"\url{" + m.group(1) + "}")
+    # Paired straight quotes become “…”; code, math, URLs and cites are already
+    # placeholders, and an unpaired quote has nothing to pair with.
+    text = re.sub(r'"([^"\s](?:[^"]*[^"\s])?)"', "“\\1”", text)
     escaped = latex_escape(text)
     escaped = re.sub(r"\*\*([^*]+)\*\*", lambda m: r"\textbf{" + m.group(1) + "}", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", lambda m: r"\emph{" + m.group(1) + "}", escaped)
@@ -883,6 +886,18 @@ def _apply_cover_sentinels(
     return template[: match.start()] + section + template[match.end() :]
 
 
+# The author/date line of the plain template's title block (templates/plain-report.tex).
+AUTHOR_LINE_TEX = (
+    "\\noindent{\\sffamily\\small \\reportstudent\n"
+    "  \\ifthenelse{\\equal{\\reportdate}{}}{}{\\enskip\\textbullet\\enskip\\reportdate}\\par}\n"
+)
+
+
+def hides_author_line(config: ReportConfig) -> bool:
+    """A business document omits the author/date line unless ``metadata.show_author: true``."""
+    return config.route == "business" and config.metadata.get("show_author") is not True
+
+
 def render_tex(config: ReportConfig) -> str:
     template_key = normalize_template_key(template_key_for(config))
     template_path = resolve_template(template_key)
@@ -891,6 +906,8 @@ def render_tex(config: ReportConfig) -> str:
     if not config.body_path.exists():
         raise SystemExit(f"No existe body.md: {config.body_path}")
     template = template_path.read_text(encoding="utf-8")
+    if hides_author_line(config):
+        template = template.replace(AUTHOR_LINE_TEX, "")
     markdown_source = config.body_path.read_text(encoding="utf-8")
     # Bibliography emission is decided by the body's ACTUAL rendered citations
     # -- not by the mere presence of the .bib file (#26). A raw-Markdown regex

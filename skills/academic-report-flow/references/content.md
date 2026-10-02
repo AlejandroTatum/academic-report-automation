@@ -8,8 +8,8 @@ Research is mandatory: at least 5 (or the report's `min_sources:`) eligible entr
 
 - Every entry is real and verifiable (author, title, year, publisher/venue): never invent a source, locator, quotation, date, author or finding. Citations are IEEE (biblatex `style=ieee`); no other style exists in this route.
 - Protocol: `research-workflow` (`references/research-protocol.md`). Its `research/evidence-matrix.md` (and `evidence.yml`) is pre-document evidence: it never satisfies the phase or chooses type, structure, style or prose.
-- Local inspected sources feed the bibliography: `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/source_library.py" pack --only-inspected <query>` over `$REPORT_CONTENT_ROOT/academic-sources/manifest.yml`. Only `inspected: true` entries are eligible; an uninspected local source stays a `lead` and never enters `sources.bib`.
-- After writing `sources.bib`, run `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/verify_sources.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`. Finish only when every entry is VERIFIED or VERIFIED_WITH_WARNINGS: fix or replace MISMATCH and NOT_FOUND, give NO_IDENTIFIER entries a DOI or ISBN and verify again.
+- Local inspected sources feed the bibliography: `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/source_library.py" pack --only-inspected <query>` over `$REPORT_CONTENT_ROOT/academic-sources/manifest.yml`. Only `inspected: true` entries are eligible; an uninspected source stays a `lead`, never in `sources.bib`.
+- After writing `sources.bib`, run `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/verify_sources.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`. Finish only when every entry is VERIFIED or VERIFIED_WITH_WARNINGS; fix or replace MISMATCH and NOT_FOUND, give NO_IDENTIFIER entries a DOI or ISBN and verify again.
 
 ## Plan (artifact `reports/<wf>/rubric.yml`, schema `academic.rubric/v1`)
 

@@ -32,7 +32,7 @@ Every command is absolute and cwd-independent. Run first:
 | review | `delivery.md` | human gate, no executor | `reports/<wf>/final-review.yml` |
 | deliver | `delivery.md` | academic-report-flow | `~/Documents/<category>/[<subject-slug>/]<slug>/<slug>-vNNN.pdf` |
 
-Each phase produces exactly one artifact. Research is mandatory (at least 5 book or paper sources, or the report's `min_sources:`; `0` only off the academic route).
+Each phase produces one artifact. Research is mandatory (at least 5 book or paper sources, or the report's `min_sources:`; `0` only off the academic route; `business` defaults to 0).
 
 ## Work folders
 
@@ -84,6 +84,6 @@ The only route that may activate institutional machinery (UNL shell, teacher, su
 | D Technical document | `technical` / `d` | purpose, scope, concepts, architecture, contracts, procedures, examples, errors, observability, verification, references | academic cover, rubric language, executive persuasion, marketing copy |
 | E Other | `other` / `e` | built with the user before generating: sections, forbidden content, format sources, reading priorities | never fall silently back to academic or any other route; an incomplete contract stops the run; reuse fragments of other routes only when the user confirms each |
 
-B to E require metadata `title`, `student`, `date`; `subject`/`teacher` there warn.
+B to E require metadata `title`, `student`, `date`; `subject`/`teacher` there warn. Business omits the author/date line unless `metadata.show_author: true`; put signature blocks in one table (Por X | Por Y) so they never split.
 
 Rendering defaults derive from the route at build time and an explicit `template:`, `cover:` or `section_numbering:` always wins: academic = `unl` template, cover on page 1 with logo, body from page 2, numbered headings; other routes = `plain` template, no institutional cover, unnumbered headings (B, C, D forbid numbering).

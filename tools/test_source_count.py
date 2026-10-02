@@ -209,3 +209,21 @@ def test_invalid_min_sources_fails_closed(tmp_path: Path, bad: object) -> None:
     result = source_count.source_gate(tmp_path, config)
     assert result.ok is False
     assert "min_sources" in result.reason
+
+
+def test_business_route_defaults_min_sources_to_zero(tmp_path: Path) -> None:
+    config = _config(tmp_path, {"route": "business"})
+
+    assert source_count.effective_min_sources(config) == 0
+    assert source_count.source_gate(tmp_path, config).ok is True
+
+
+def test_explicit_min_sources_wins_on_business_route(tmp_path: Path) -> None:
+    assert source_count.effective_min_sources(_config(tmp_path, {"route": "business", "min_sources": 3})) == 3
+
+
+@pytest.mark.parametrize("route", [None, "academic", "technical", "project"])
+def test_other_routes_keep_the_academic_default(tmp_path: Path, route: str | None) -> None:
+    raw = {} if route is None else {"route": route}
+
+    assert source_count.effective_min_sources(_config(tmp_path, raw)) == 5

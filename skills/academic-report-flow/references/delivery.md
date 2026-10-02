@@ -1,6 +1,6 @@
 # Delivery - Decision 3 (final review) and publication
 
-Phases `review` (human gate) and `deliver`. Generation never publishes: the build ends at the validated PDF under `outputs/<materia-slug>/` and writes nothing into `~/Documents`.
+Phases `review` (human gate) and `deliver`. Generation never publishes: the build ends at the validated PDF under `outputs/<materia-slug>/`, writing nothing into `~/Documents`.
 
 ## Review (`next: review`, artifact `reports/<wf>/final-review.yml`)
 
