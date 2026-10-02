@@ -418,3 +418,28 @@ def test_explicit_pdf_wins_over_the_work_folder_default(tmp_path: Path) -> None:
     )
 
     assert load_report_config(folder).pdf_path == folder.resolve() / "build" / "informe.pdf"
+
+
+def test_default_build_path_falls_back_to_the_legacy_title_slug_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import report_config
+
+    monkeypatch.setattr(report_config, "GLOBAL_OUTPUTS", tmp_path / "outputs")
+    folder = _write_report(tmp_path / "primero", "technical", "Informe Tecnico")
+    config = load_report_config(folder)
+    legacy = config.pdf_path.parent / "informe-tecnico.pdf"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_bytes(b"%PDF-1.4\n")
+
+    assert config.pdf_path == legacy
+
+    config.pdf_path.with_name("primero.pdf").write_bytes(b"%PDF-1.4\n")
+    assert load_report_config(folder).pdf_path.name == "primero.pdf"
+
+
+def test_empty_work_folder_slug_falls_back_to_the_title_slug(tmp_path: Path) -> None:
+    config = load_report_config(_write_report(tmp_path / "___", "technical", "Informe Tecnico"))
+
+    assert config.pdf_path.name == "informe-tecnico.pdf"
+    assert config.docx_path.name == "informe-tecnico.docx"
