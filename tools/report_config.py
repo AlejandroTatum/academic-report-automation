@@ -445,13 +445,22 @@ class ReportConfig:
         """Per-report academic source minimum (``min_sources:``), or ``None``.
 
         ``None`` means the key is absent and the shared default applies (see
-        ``source_count.effective_min_sources``). Only a positive YAML integer
-        is accepted -- booleans, strings, floats, null and values below 1 raise
-        ValueError rather than silently falling back to the default.
+        ``source_count.effective_min_sources``). Only an integer is accepted --
+        booleans, strings, floats, null and negatives raise ValueError rather
+        than silently falling back to the default. ``0`` (no bibliography) is
+        allowed only on a known non-academic route; the academic route keeps a
+        minimum of at least 1.
         """
         if MIN_SOURCES_KEY not in self.raw:
             return None
         value = self.raw[MIN_SOURCES_KEY]
+        if type(value) is int and value == 0:
+            if self.route_is_known and self.route != DEFAULT_ROUTE:
+                return 0
+            raise ValueError(
+                f"{MIN_SOURCES_KEY}: 0 solo se permite fuera de la ruta academic; "
+                "la ruta academic exige al menos 1 fuente en report.yml"
+            )
         if type(value) is not int or value < 1:
             raise ValueError(
                 f"{MIN_SOURCES_KEY} debe ser un entero positivo en report.yml (recibido: {value!r})"

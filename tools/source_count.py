@@ -95,6 +95,10 @@ def source_gate(folder: Path, config: ReportConfig) -> SourceCount:
         minimum = effective_min_sources(config)
     except ValueError as exc:
         return SourceCount(0, (), False, str(exc))
+    if minimum == 0:
+        # Only a non-academic route can declare ``min_sources: 0``: no research
+        # artifact is required, so a missing or unreadable bib is not a gap.
+        return SourceCount(0, (), True, "min_sources: 0, no bibliography required")
     bib = config.bib_path
     declared = str(config.raw.get("bibliography") or config.raw.get("bib") or _DEFAULT_BIB)
     if bib is None:

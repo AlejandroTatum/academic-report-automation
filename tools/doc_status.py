@@ -647,6 +647,8 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             handoff = "present PDF to the user (never screenshots):\nbrave '" + quoted + "'"
             if phase_name == "review":
                 template += "; " + handoff
+    if phase_name == "research" and _effective_min_sources(config) == 0:
+        template = "no sources are required (min_sources: 0); re-run doc_status"
     return template.format(
         folder=folder,
         report_yml=folder / "report.yml",

@@ -32,7 +32,7 @@ Every command is absolute and cwd-independent. Run first:
 | review | `delivery.md` | human gate, no executor | `reports/<wf>/final-review.yml` |
 | deliver | `delivery.md` | academic-report-flow | `~/Documents/<category>/[<subject-slug>/]<slug>/<slug>-vNNN.pdf` |
 
-Each phase produces exactly one artifact. Research is mandatory (at least 5 book or paper sources, or the report's `min_sources:`).
+Each phase produces exactly one artifact. Research is mandatory (at least 5 book or paper sources, or the report's `min_sources:`; `0` only off the academic route).
 
 ## Work folders
 
