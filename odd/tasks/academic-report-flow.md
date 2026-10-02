@@ -153,3 +153,9 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   `build_report_auto.py` refuses to build without a current approval.yml (`--no-approval-check` for previews; `--validate-only` exempt),
   `rubric_plan.py` has a CLI, `work_folder_slug` uses a real emptiness check. Docs commit restores audited rules (7 items) and dead refs;
   SKILL.md + stage references 5834 words (<= 6000).
+- 9.2 reviewed: review-6961be2cd435760f approved, burned. 9.3: 1525c02 + 44d0d93 (references 20 files/~14.2k words ->
+  9 files/~5.8k); native review impossible (lens_context_budget_exceeded on the consolidation), replaced by an
+  independent read-only rule-preservation audit whose findings were fixed in ebe746f + 12b388d (approval guard at
+  build, rubric_plan CLI, empty-slug fix, restored rules, dead refs); review-2b7394cd51201e2c approved, burned.
+- 9.4 docs: report-flow.mmd/.es.mmd (+png) promoted to the current flow; intake-flow* marked historical; README links.
+  Live re-test pending a new exercise from the user.

@@ -226,10 +226,10 @@ research, plan, draft, approval, verify, format, generate, validate, review, del
 - **Guide:** the teacher's guide, rubric and explanation are always requested, in one compact question batch, then the run stops.
 - **Three decisions:** (1) intake data, (2) draft approval plus format (APE, AA or libre; PDF or DOCX) asked in one batch, (3) final review. Intake never asks formatting questions.
 
-Diagrams: [`docs/diagrams/intake-flow.mmd`](docs/diagrams/intake-flow.mmd)
-(rendered: [`intake-flow.png`](docs/diagrams/intake-flow.png)) and the older
-[`new-report-flow.es.svg`](docs/diagrams/new-report-flow.es.svg)
-(rendered: [`new-report-flow.es.png`](docs/diagrams/new-report-flow.es.png)).
+Flow diagram: [`docs/diagrams/report-flow.mmd`](docs/diagrams/report-flow.mmd)
+(rendered: [`report-flow.png`](docs/diagrams/report-flow.png); Spanish:
+[`report-flow.es.png`](docs/diagrams/report-flow.es.png)). Older diagrams in `docs/diagrams/`
+(`intake-flow*`, `new-report-flow.es.*`) are historical.
 
 ### Syncing automatically on pull
 
