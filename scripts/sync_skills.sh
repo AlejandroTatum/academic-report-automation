@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync skills from this repo (source of truth) to both agent runtimes.
+# Sync skills from this repo (source of truth) to every agent runtime.
 #
 #   ./scripts/sync_skills.sh          # show what would change
 #   ./scripts/sync_skills.sh --apply  # write the changes
@@ -16,6 +16,7 @@ TARGETS=(
   "$HOME/.config/opencode/skills"
   "$HOME/.claude/skills"
   "$HOME/.codex/skills"
+  "$HOME/.pi/agent/skills"
 )
 
 SKILLS=(

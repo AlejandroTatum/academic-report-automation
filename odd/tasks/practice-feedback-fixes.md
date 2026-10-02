@@ -32,7 +32,7 @@ approval rounds. Also closes #59 and #60.
 - [ ] 5. Simulación course profile (Guamán) applied by intake on subject match.
 - [ ] 6. DOCX draft round-trip: export with native equations, import with diff, refuse locked files.
 - [ ] 7. Approval gate: fresh preview required (#59) and clickable links before the prompt (#60).
-- [ ] 8. `sync_skills.sh` also syncs `~/.pi/agent/skills`.
+- [x] 8. `sync_skills.sh` also syncs `~/.pi/agent/skills`.
 - [ ] 9. Rubric checks are document-wide unless a section is explicitly bound.
 
 ## Evidence log
@@ -40,3 +40,4 @@ approval rounds. Also closes #59 and #60.
 - Task 2 (APE headings in body check): see commit subject 'fix(tools): check fixed APE headings at draft time' — test_content_check.py 142 passed (RED: 2 failed before); with test_guide_facts, test_validate_report_connector_wiring, test_ape_template: 194 passed.
 - Task 3 (robust judges): see commit subject 'fix(tools): accept structured judge findings and show a quoted example' — tools/test_content_check.py 147 passed (RED: 2 failed before implementation).
 - Task 4 (delivery_dir override): see commit subject 'feat(tools): let report.yml set the delivery folder' — test_report_config.py + test_pdf_publication.py + test_deliver_report.py 123 passed (RED: 15 failed before implementation).
+- Task 8 (sync to Pi): see commit subject 'fix(scripts): sync skills into the Pi runtime too' — tests/skills/test_sync_skills.py 4 passed (RED: 2 failed before implementation).
