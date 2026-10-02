@@ -52,7 +52,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       create `reports/<slug>/` under the content root, then `doc_status` (empty folder -> `next: intake`).
       Full route only when the work-folder flow is unavailable. Test-first; update to-be diagram.
 
-- [ ] 8. (a), (b), (e) done; (c)(d)(f)(g)(h)(i)(j) open. Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
+- [ ] 8. (a)(b)(c)(d)(e)(g)(j) done, (h) partly; (f)(i) open (task 9.3). Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
       level-1 `#` section headings and math for sub/superscripts, with a mechanical pre-approval check (Unicode
       sub/superscripts are missing from TeX Gyre Termes; `##`-only bodies number sections 0.1.); (b) verify.md:
       define the handoff when the executor cannot launch judge subagents (orchestrator runs the judges);
@@ -70,6 +70,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
           the draft approval; no separate format stop (test-first).
           [x] 9.1 done. Evidence: RED 4 failed/1706 passed; GREEN 1710 passed (tools + tests/skills). format now also
           requires explicit `output:`; approval guidance asks the format batch; format asks only missing fields.
+      [x] 9.2 done (commits 7324d74, 9f8821a, verify_sources commit below). Evidence in the Evidence section.
       9.2 doc_status refuses to offer approval while `content_check --body-check` fails; fold task 8 (c)(d)(g)(h)(j)
           into tool gates/fixes (min_sources text, title-keyed output path, verify_sources errors, CLI names,
           missing report.yml) (test-first).
@@ -132,3 +133,13 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
 - Task 8 group 1 commit 26a3b78; review-8c144dcb511274f9 approved, burned. Advisory for the simplification pass:
   `--body-check` slices mechanical_checks()[:-1] (positional, brittle); format defects ride on the `rubric_checks`
   entry name (misleading); deliver READY_TO_SUBMIT test coverage thin; body-format check reports only missing H1.
+- Task 9.2 (tools enforce): commit 7324d74 (approval gate): RED 5 failed / 1713 passed (new gate + content_check tests), GREEN
+  1718 passed; doc_status `draft` stays pending (`next: draft`, failing checks named) while the shared
+  `content_check.body_check_results` fails; `--body-check` selects checks by name; body defects are the named `body_format`
+  check (marker keeps four entries, text now `body_format: ...`). A current approval is never re-gated. conftest DEFAULT_BODY now
+  cites the five fixture keys; one draft unit test gained sources/rubric.
+  Commit 9f8821a (task 8 c, d, j + 9.1 advisories): RED 5 failed in tools (legacy validated/delivered PDF, invalid `output:`,
+  guidance minimum, per-folder path); contract-test additions were written together with the doc edits (no observed RED);
+  GREEN 1737 passed. Default build file is `<work-folder-slug>.pdf/.docx` (delivery name unchanged); 6 pinned default-path assertions
+  updated in test_report_config/test_content_root/test_output_location_guard.
+  verify_sources commit (task 8 g): RED 3 failed / 18 passed, GREEN 1737 passed.

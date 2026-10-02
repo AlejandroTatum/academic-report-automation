@@ -47,7 +47,27 @@ def entries(text: str):
         yield header.group(2), fields
 
 
+_LATEX_ACCENTS = {"`": "\u0300", "'": "\u0301", "^": "\u0302", "~": "\u0303", "=": "\u0304",
+                  ".": "\u0307", '"': "\u0308", "u": "\u0306", "v": "\u030c", "H": "\u030b",
+                  "c": "\u0327", "k": "\u0328"}
+_LATEX_ACCENT_RE = re.compile(r"\\([`'^~=.\"]|[uvHck](?=\s*\{|\s+[A-Za-z]))\s*(?:\{\s*(\\?[A-Za-z])\s*\}|([A-Za-z]))")
+_LATEX_LETTERS = {"\\i": "i", "\\j": "j", "\\ss": "ss", "\\o": "o", "\\ae": "ae", "\\l": "l"}
+
+
+def unescape_latex(value: str) -> str:
+    """Turn BibTeX accent escapes (``M{\\'e}todos``, ``{\\~n}``) into plain Unicode."""
+    def accent(match: re.Match) -> str:
+        letter = match.group(2) or match.group(3)
+        letter = _LATEX_LETTERS.get(letter, letter)
+        return unicodedata.normalize("NFC", letter + _LATEX_ACCENTS[match.group(1)])
+
+    value = _LATEX_ACCENT_RE.sub(accent, value)
+    value = re.sub(r"\\(ss|ae|oe|[ijol])(?![A-Za-z])", lambda m: _LATEX_LETTERS.get("\\" + m.group(1), m.group(1)), value)
+    return value.replace("{", "").replace("}", "")
+
+
 def normalized(value: str) -> str:
+    value = unescape_latex(value)
     return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
 
 
@@ -144,6 +164,14 @@ def default_fetch(request: Request, timeout: int):
         return json.load(response)
 
 
+def _summary_line(row: dict) -> str:
+    """One line per entry: ``key: STATUS`` plus the reason for anything not verified."""
+    reasons = [row["detail"]] if row.get("detail") else []
+    for kind in ("mismatches", "warnings"):
+        reasons += [f"{field}: expected {v['expected']!r}, found {v['found']!r}" for field, v in row.get(kind, {}).items()]
+    return f"{row['key'] or '(bibliography)'}: {row['status']}" + (f" ({'; '.join(reasons)})" if reasons else "")
+
+
 def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
     folder = Path(folder)
     if not (folder / "report.yml").is_file():
@@ -196,7 +224,12 @@ def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
     destination = folder / "research" / "sources-verification.yml"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(yaml.safe_dump(output, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return 0 if all(row["status"] in {"VERIFIED", "VERIFIED_WITH_WARNINGS"} for row in results) else 1
+    for row in results:
+        print(_summary_line(row))
+    failed = [row for row in results if row["status"] not in {"VERIFIED", "VERIFIED_WITH_WARNINGS"}]
+    if failed:
+        print(f"verify_sources: {len(failed)} of {len(results)} entries failed; details in {destination}")
+    return 1 if failed else 0
 
 
 def main(argv=None, fetch=None) -> int:
