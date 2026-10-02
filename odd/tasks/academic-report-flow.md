@@ -149,3 +149,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   visual-directions, profile); SKILL.md + stage references 15.5k -> 5.7k words (SKILL body 671 words), unl-shell/visual-directions/profile
   untouched. Task 8 (f) (no-rubric rule in content.md) and (i) (numbered lists checked 1..n by test) done. `tests/skills tools` 1740 passed,
   0 failed. Commit: see git log (`refactor(skills): consolidate academic-report-flow references by stage`).
+- Task 9.3 audit follow-up: commit ebe746f (tools): RED 4 failed + 41 errors (approval guard, rubric_plan CLI, folder named `documento`), GREEN 1749 passed;
+  `build_report_auto.py` refuses to build without a current approval.yml (`--no-approval-check` for previews; `--validate-only` exempt),
+  `rubric_plan.py` has a CLI, `work_folder_slug` uses a real emptiness check. Docs commit restores audited rules (7 items) and dead refs;
+  SKILL.md + stage references 5834 words (<= 6000).

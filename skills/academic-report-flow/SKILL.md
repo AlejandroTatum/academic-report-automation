@@ -32,8 +32,8 @@ Tools enforce quality (`doc_status`, `content_check --body-check`, judges, `vali
 - No script, validator, or auditor ever grants `VISUAL_PASS`; `visual_pdf_auditor.py` PASS is only `AUDITOR_PRECHECK` evidence. Only independent semantic inspection of the assembled report grants it; `HUMAN_REVIEW` against immutable hashes precedes `READY_TO_SUBMIT`.
 - Never ghostwrite a final submission. Preserve privacy, provenance, citations, and consent boundaries.
 - Use `academic-visual-builder` for figures and inspect them again in the assembled report; the visual direction changes hierarchy and composition, not only decoration.
-- When supplied a research-workflow evidence package, preserve claim-to-source traceability; do not treat the package as confirmed document intake: this skill owns intake, citation style, composition, and document creation.
-- Route A only: load `references/unl-shell.md` and matching `references/profiles/`; default to IEEE unless the teacher requires another style. Rendering defaults are derived from the confirmed `route:`; an explicit `report.yml` option wins (`references/routing.md`).
+- When supplied a research-workflow evidence package, preserve claim-to-source traceability, limitations and unresolved questions; do not treat the package as confirmed document intake: this skill owns intake, composition, and document creation.
+- Route A only: load `references/unl-shell.md` and matching `references/profiles/`. Rendering defaults are derived from the confirmed `route:`; an explicit `report.yml` option wins (`references/routing.md`).
 
 ## Decision Gates
 

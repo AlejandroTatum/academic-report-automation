@@ -13,7 +13,7 @@ Research is mandatory: at least 5 (or the report's `min_sources:`) eligible entr
 
 ## Plan (artifact `reports/<wf>/rubric.yml`, schema `academic.rubric/v1`)
 
-The plan mirrors the teacher's rubric: one criterion per rubric item (`id`, `title`, optional `weight`), each mapped to the body section that satisfies it. A rubric item no section can satisfy is a gap to raise with the user, never a criterion to drop, merge or invent.
+A confirmed teacher template is mirrored too: its sections, order and formatting. The plan mirrors the teacher's rubric: one criterion per rubric item (`id`, `title`, optional `weight`), each mapped to the body section that satisfies it. A rubric item no section can satisfy is a gap to raise with the user, never a criterion to drop, merge or invent.
 
 - No teacher rubric: criteria come only from the guide's explicit demands (sections, questions, deliverables it states); never from the agent's idea of a good report. With neither rubric nor explicit demands, ask the user instead of inventing criteria.
 - `format_hint: ape`: map criteria and checks to the fixed APE sections (Objetivo(s), Materiales, Procedimiento, Resultados, Preguntas de Control, Conclusiones, Recomendaciones, Bibliografía/Referencias, Anexos); the hint guides planning, never chooses the format.

@@ -224,7 +224,7 @@ research, plan, draft, approval, verify, format, generate, validate, review, del
 - **Route:** an academic assignment (subject, teacher, APE, AA, exercise, homework) records `route: academic` without asking; the route is asked only when signals are absent or conflicting.
 - **Identity:** a student name the user saved as permanent counts as confirmed; otherwise it is a single-choice suggestion, never auto-filled. A title holding commentary gets a one-line confirmation.
 - **Guide:** the teacher's guide, rubric and explanation are always requested, in one compact question batch, then the run stops.
-- **Formatting:** APE, AA or libre and PDF or DOCX are asked only by the `format` phase, after the content is approved.
+- **Three decisions:** (1) intake data, (2) draft approval plus format (APE, AA or libre; PDF or DOCX) asked in one batch, (3) final review. Intake never asks formatting questions.
 
 Diagrams: [`docs/diagrams/intake-flow.mmd`](docs/diagrams/intake-flow.mmd)
 (rendered: [`intake-flow.png`](docs/diagrams/intake-flow.png)) and the older

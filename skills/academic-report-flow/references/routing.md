@@ -42,6 +42,7 @@ A new request creates the work folder `$REPORT_CONTENT_ROOT/reports/<slug>/` fir
 - Delivered: delivered means a current final-review.yml plus a published version. When the same document is already delivered, ask one single-choice question: start a new version in a suffixed folder, or resume the delivered one; never overwrite a delivered folder.
 - A folder that exists without a report.yml is an unfinished intake of that document: `doc_status` returns `next: intake`.
 - The standalone full route (`data.md`) applies only when the work-folder flow is unavailable (no content root, or the user asks for a one-off document outside the reports flow).
+- Backend (`type:`): `latex` for long textual or mixed documents, a visual backend for maps and infographics, `docx` only for editable delivery or a mandatory DOCX template.
 - Default build file: `<work-folder-slug>.pdf/.docx` under `outputs/<materia>/` or `outputs/<route category>/` (legacy `<title-slug>` builds are kept); `pdf:`/`docx:` in `report.yml` win.
 
 ## Status block
@@ -79,7 +80,7 @@ The only route that may activate institutional machinery (UNL shell, teacher, su
 | Route | `route:` | Sections in order | Forbidden |
 |---|---|---|---|
 | B Project documentation | `project` / `b` | name and version, objective, audience, scope, modules, requirements, flows, architecture, decisions, risks, traceability, pending | UNL cover, teacher, subject, motto, academic footer or numbering, "university submission" language |
-| C Professional/business | `business` / `c` | executive summary, problem, evidence, analysis, impact, options, recommendation, risks, next steps (decidable from page 1) | academic cover and metadata table, rubric alignment, required IEEE bibliography, implementation appendices |
+| C Professional/business | `business` / `c` | executive summary, problem, evidence, analysis, impact, options, recommendation, risks, next steps (decidable from page 1) | academic cover and metadata table, rubric alignment, required IEEE bibliography; implementation-level technical appendices in the main flow (technical depth moves to annexes) |
 | D Technical document | `technical` / `d` | purpose, scope, concepts, architecture, contracts, procedures, examples, errors, observability, verification, references | academic cover, rubric language, executive persuasion, marketing copy |
 | E Other | `other` / `e` | built with the user before generating: sections, forbidden content, format sources, reading priorities | never fall silently back to academic or any other route; an incomplete contract stops the run; reuse fragments of other routes only when the user confirms each |
 
