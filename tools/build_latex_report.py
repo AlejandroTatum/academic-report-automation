@@ -67,7 +67,7 @@ def resolve_template(key: str | None) -> Path:
     return template_path
 
 
-# Default template per confirmed route (document-routing.md): only Route A may
+# Default template per confirmed route (routing.md): only Route A may
 # activate the UNL institutional shell; Routes B–E derive the plain template.
 # This is a DEFAULT for an absent `template:` key — an explicit key always
 # wins, in either direction, and report.yml is never rewritten.
@@ -107,7 +107,7 @@ def template_key_for(config: ReportConfig) -> str | None:
 
 
 # report.yml key that turns academic section numbering on or off for one
-# report. `document-routing.md` forbids auto-included academic section
+# report. `routing.md` forbids auto-included academic section
 # numbering on Routes B, C and D, but the templates numbered unconditionally.
 #
 # The DEFAULT is derived from the confirmed route (#23): academic reports
@@ -800,7 +800,7 @@ def markdown_to_latex(
 
 
 # Sentinel comment markers in unl-report.tex bracket the cover fields that
-# document-routing.md reserves for the academic route: subject, activity,
+# routing.md reserves for the academic route: subject, activity,
 # parallel (the framed box) and teacher (the DOCENTE block). The markers keep
 # the template itself route-agnostic -- render_tex() below decides, per
 # report, whether to strip just the marker lines (keeping the block
@@ -1032,7 +1032,7 @@ def render_tex(config: ReportConfig) -> str:
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
         "{{SECTION_NUMBERING}}": "true" if section_numbering_enabled(config.raw) else "false",
-        # Academic preliminary pages are Route A machinery (document-routing.md):
+        # Academic preliminary pages are Route A machinery (routing.md):
         # only the academic route auto-receives the list-of-figures page, and
         # only when the body actually has figures. Non-academic routes render
         # their figures without the academic prelim page, and no explicit

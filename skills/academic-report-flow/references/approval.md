@@ -1,85 +1,35 @@
-# Approval phase - the human gate on the draft
+# Approval - Decision 2 (draft approval + format batch)
 
-Artifact: `reports/<wf>/approval.yml`
+Phases `approval` (human gate) and `format`. No executor is delegated to the gate: the orchestrator presents the prompt and only the human's explicit answer may produce the marker. `doc_status` offers it only once the body check passes (`content.md`).
 
-Load this reference only when `doc_status` returns `next: approval`. This phase is the
-human gate: no executor is delegated, the orchestrator presents the lossless prompt,
-and only the human's explicit answer may produce the marker. This skill never decides
-for the human and never writes the marker on an inferred answer.
+## Marker
 
-## Contract
-
-Approval exists to bind the exact bytes of `body.md` to a named human decision before
-any build. The phase produces exactly one artifact: `reports/<wf>/approval.yml`, the
-approval marker, with this schema:
+Artifact `reports/<wf>/approval.yml`, binding the exact bytes of `body.md` to a named human decision:
 
     schema: academic.doc-approval/v1
     body_sha256: <64 lowercase hex of the exact body.md bytes>
-    approved_at: <ISO-8601 UTC, e.g. 2026-09-10T14:03:11Z>
+    approved_at: <ISO-8601 UTC>
     approved_by: <non-empty human identity>
 
-The marker is the only record of consent. Silence, an inferred yes, a restated plan,
-or an agent decision never produce `approval.yml`; a decline writes nothing. Approval
-happens only after an explicit human answer to the lossless gate prompt, and this
-skill's own judgement is never that answer.
+Silence, an inferred yes, a restated plan, or an agent decision never produces `approval.yml`; a decline writes nothing. Done = marker exists and `body_sha256` matches the current `body.md`; absent or stale is `pending`, malformed is `blocked` (`approval_marker_malformed`). Never create, repair or refresh a marker except from a fresh explicit approval. Approval grants no build or delivery.
 
-The gate prompt is lossless and blocking: it states the complete decision, its
-consequences, and the exact allowed answers, with no silent default. The approver
-reads `body.md` in full, so the orchestrator must present or point to the complete
-body, never a summary. It says plainly that generation happens only after this
-approval, and it never proceeds on silence, a non-answer, or an agent-invented yes.
+The gate prompt is lossless and blocking: complete decision, consequences and exact allowed answers, no silent default. The approver reads `body.md` in full: point to the complete body, never a summary, and say that generation happens only after this approval.
 
 ## One batch: approval plus format
 
-The gate is the only human stop before generation, so it asks in ONE batch, through
-`ask_user_choice` with suggested options and no free text: (1) approve `body.md`
-(exact bytes), and (2) the format decisions - document format AA, APE or libre
-(`format_hint:` first when present), delivery format PDF or DOCX (`output:`), and
-any metadata the chosen format still requires (subject, teacher, APE identification
-fields, group members). Never infer an answer and offer no default. When the user
-approves, write `approval.yml` and record the answers in `report.yml` at the same
-time; a decline or edit order records nothing. Approval still binds only `body.md`
-bytes; the format answers are plain `report.yml` data. The `format` phase then
-turns `done` on its own and asks only for what is still missing.
+Ask in ONE batch, the same batch for approval and format, through `ask_user_choice` with suggested options, no free text: (1) approve `body.md` (exact bytes); (2) document format AA, APE or libre (`format_hint:` first when present), delivery format PDF or DOCX (`output:`), and the metadata the chosen format still requires (subject, teacher, APE identification fields, group members). Never infer an answer and offer no default. On approval write `approval.yml` and record the answers in `report.yml` at the same time; a decline or edit order records nothing. Approval binds only `body.md` bytes; the format answers are plain `report.yml` data.
 
-## The review loop - literal edit orders
+## Review loop - literal edit orders
 
-Between drafts the user answers with literal edit orders: "in paragraph X replace
-'...' with '...'", "delete section Y", "move this paragraph before that one". Apply
-the user's text VERBATIM: never polish, never rephrase, and never improve
-user-authored text - the wording is theirs, and polishing it forges authorship.
-Batch all literal edit orders from one reading into one round: collect them all,
-apply them verbatim, and only then ask for re-approval. Each re-approval re-runs
-verify (with a fresh independent judge), generate and validate before final review.
-Every applied edit changes `body.md`, which stales the approval and returns the
-route to `approval` as `pending`; present the gate again for the new bytes. That
-loop is the normal review cycle, not a failure, and it repeats until the user
-explicitly approves.
+The user answers with literal edit orders ("in paragraph X replace '...' with '...'", "delete section Y", "move this paragraph before that one"). Apply the user's text verbatim: never polish, rephrase or improve user-authored text; polishing forges authorship. Batch all literal edit orders from one reading into one round: apply them all verbatim, and only then ask for re-approval. Every edit changes `body.md`, so the approval goes stale and the route returns to `approval` as `pending`; present the gate again for the new bytes. Each re-approval re-runs verify (fresh independent judge), generate and validate before final review. The loop repeats until the user explicitly approves.
 
-Done means `approval.yml` exists and its `body_sha256` matches the current
-`body.md`. An absent marker is `pending`; a body that changed after approval is
-`pending` again - the review loop - and the one gate is presented again for the new
-bytes; a malformed marker is `blocked` (`approval_marker_malformed`).
+## Format (phase `format`, artifact `reports/<wf>/report.yml`)
 
-## Steps
+Normally `done` without a stop because the batch already answered it. It is a completeness check plus fallback: when `report.yml` lacks a known `format:`, `output:` or that format's required metadata, ask only the missing fields `doc_status` names and never re-ask what `report.yml` records.
 
-1. Present the lossless gate prompt with the complete decision and the exact allowed
-   answers, pointing the approver to the complete `body.md`.
-2. Between answers, apply the user's literal edit orders verbatim and re-present the
-   gate for the edited bytes.
-3. Write `reports/<wf>/approval.yml` only on the human's explicit affirmative answer,
-   recording `body_sha256`, `approved_at`, and `approved_by`, and record the format
-   answers of the same batch in `reports/<wf>/report.yml`.
-4. On any other answer, write nothing and report approval as `pending`.
-5. Re-run `doc_status` and report the new current phase.
-
-## Never
-
-- Do not infer consent from silence, a restated plan, a prior answer, or your own
-  judgement: none of these ever produce `approval.yml`.
-- Do not polish, rephrase, or otherwise improve user-authored text while applying
-  edit orders: the user's words go in exactly as given.
-- Do not create, repair, or refresh the marker on an absent, stale, or malformed
-  state; only a fresh explicit human approval produces a new one.
-- Do not build, publish, or validate anything: approval produces exactly one artifact
-  and grants no build or delivery.
+- One question for format selection through `ask_user_choice`: APE, AA, libre (hint first; the hint is not a choice, wait for the answer before recording `format:`). Metadata gaps are separate `ask_user_choice` prompts, never free text and never a second format-selection question.
+- Delivery format PDF or DOCX is asked in the same format step, has no default, and is never inferred from the request or material; record it as `output:`.
+- `ape`: practical-experimental technical report. Fixed sections: Objetivo(s), Materiales, Procedimiento (steps as a list), Resultados, Preguntas de Control, Conclusiones (tied to the objective), Recomendaciones, Bibliografía/Referencias IEEE, Anexos. Extract its identification fields (cycle, unit, learning outcome, practice number and type, schedule, place, planned time) from the teacher's guide; the user only confirms or fills gaps. When `practice_type` is Grupal, record `metadata.members`.
+- `aa`: the UNL academic template (`unl-report.tex`), look unchanged.
+- `libre`: wait for the user's own specification and record it verbatim as `format_spec:`; the plain template applies by default.
+- Every format cites with IEEE; `ape` and `aa` map to the academic route, `libre` to the plain template. Missing metadata keeps the phase `pending`; an unrecognised value is `blocked`, never a silent fallback. Never fill identification fields on the user's behalf.

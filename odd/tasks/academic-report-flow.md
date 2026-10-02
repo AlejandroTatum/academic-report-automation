@@ -52,7 +52,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       create `reports/<slug>/` under the content root, then `doc_status` (empty folder -> `next: intake`).
       Full route only when the work-folder flow is unavailable. Test-first; update to-be diagram.
 
-- [ ] 8. (a)(b)(c)(d)(e)(g)(j) done, (h) partly; (f)(i) open (task 9.3). Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
+- [x] 8. (a)(b)(c)(d)(e)(f)(g)(i)(j) done, (h) partly; (f)(i) resolved in task 9.3 (commit below). Live-test follow-ups (exercise 1.5 run, delivered as v002 on 2026-10-01): (a) draft.md must require
       level-1 `#` section headings and math for sub/superscripts, with a mechanical pre-approval check (Unicode
       sub/superscripts are missing from TeX Gyre Termes; `##`-only bodies number sections 0.1.); (b) verify.md:
       define the handoff when the executor cannot launch judge subagents (orchestrator runs the judges);
@@ -74,6 +74,7 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
       9.2 doc_status refuses to offer approval while `content_check --body-check` fails; fold task 8 (c)(d)(g)(h)(j)
           into tool gates/fixes (min_sources text, title-keyed output path, verify_sources errors, CLI names,
           missing report.yml) (test-first).
+      [x] 9.3 done. Evidence in the Evidence section.
       9.3 Consolidate references by stage (data, content, approval+format, production, delivery + one contract file),
           from ~14.8k words to ~5k, removing duplicated rules (automation-contract/quality-gates/clean-delivery);
           task 8 (f)(i) resolved here; contract tests updated, no rule silently dropped.
@@ -143,3 +144,8 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   GREEN 1737 passed. Default build file is `<work-folder-slug>.pdf/.docx` (delivery name unchanged); 6 pinned default-path assertions
   updated in test_report_config/test_content_root/test_output_location_guard.
   verify_sources commit (task 8 g): RED 3 failed / 18 passed, GREEN 1737 passed.
+- Task 9.3 (consolidate references): legacy build-path fallback commit 1525c02 (RED 2 failed / 39 passed in test_report_config, GREEN 1739
+  passed). References consolidated by stage: 20 -> 9 reference files (data, content, approval, production, delivery, routing + unl-shell,
+  visual-directions, profile); SKILL.md + stage references 15.5k -> 5.7k words (SKILL body 671 words), unl-shell/visual-directions/profile
+  untouched. Task 8 (f) (no-rubric rule in content.md) and (i) (numbered lists checked 1..n by test) done. `tests/skills tools` 1740 passed,
+  0 failed. Commit: see git log (`refactor(skills): consolidate academic-report-flow references by stage`).

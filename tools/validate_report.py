@@ -798,7 +798,7 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
             result.errors.append("La portada parece mezclada con el cuerpo; el cuerpo debe iniciar en página 2")
         # The marker vocabulary is academic Spanish (#23's numbering contract).
         # Non-academic routes render unnumbered, route-specific headings by
-        # contract (document-routing.md, routes B-D), so requiring one of
+        # contract (routing.md, routes B-D), so requiring one of
         # these words there is a false positive, not a real signal.
         if (
             config.route == DEFAULT_ROUTE

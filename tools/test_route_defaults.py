@@ -1,6 +1,6 @@
 """Route-derived rendering defaults (#23).
 
-``document-routing.md`` says only Route A may activate academic machinery.
+``routing.md`` says only Route A may activate academic machinery.
 Before this fix every route silently received the academic defaults: the UNL
 institutional template, a required academic cover, an UNL logo check,
 numbered academic headings and a body that must start on page 2 — so a
@@ -243,7 +243,7 @@ def test_render_never_rewrites_report_yml(tmp_path):
 
 # ---------------------------------------------------------------------------
 # UNL cover on non-academic routes: the shell stays, the academic-only
-# fields (subject/activity/parallel box, DOCENTE) do not (document-routing.md
+# fields (subject/activity/parallel box, DOCENTE) do not (routing.md
 # forbids auto-including teacher, subject, parallel or "university submission"
 # language on Routes B-E).
 # ---------------------------------------------------------------------------

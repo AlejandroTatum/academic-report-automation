@@ -116,8 +116,8 @@ def test_intake_combines_supplied_assignment_sources() -> None:
 
 def test_intake_combine_surfaces_order_conflict() -> None:
     """A source that orders shared sections differently is a conflict too
-    (intake.md: "a section required by one and forbidden or
-    reordered by another blocks confirmation"), not a silently-resolved
+    (data.md: "a contradiction between sources blocks
+    confirmation"), not a silently-resolved
     first-source-wins pick."""
     rubric = {
         "kind": "rubric",

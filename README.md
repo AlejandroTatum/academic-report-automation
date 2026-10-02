@@ -34,7 +34,7 @@ There are two Markdown pipelines and they are not interchangeable.
 
 **`build_report_auto.py` is canonical for anything you intend to submit or
 ship.** It is the pipeline the agent skill mandates
-(`skills/academic-report-flow/references/automation-contract.md`), and it is
+(`skills/academic-report-flow/references/routing.md` and `production.md`), and it is
 the only one that renders BibTeX citations, institutional covers and the
 validation gates.
 

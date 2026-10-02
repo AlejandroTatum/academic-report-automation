@@ -1,6 +1,6 @@
 """Tests for the per-report academic section numbering switch.
 
-`skills/academic-report-flow/references/document-routing.md` lists
+`skills/academic-report-flow/references/routing.md` lists
 "academic section numbering" among the things Route B (project documentation)
 MUST NOT auto-include, and Routes C and D forbid academic furniture too. The
 plain template numbered sections unconditionally, so a technical document came

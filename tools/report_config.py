@@ -122,7 +122,7 @@ OVERRIDABLE_SECTIONS = frozenset({"cover"})
 # ---------------------------------------------------------------------------
 #
 # `route:` in report.yml binds a report to one of the five routes defined in
-# skills/academic-report-flow/references/document-routing.md. It is a
+# skills/academic-report-flow/references/routing.md. It is a
 # CONTENT classification and is deliberately independent of `type:`/`backend:`
 # (LATEX_TYPES/VISUAL_TYPES/DOCX_TYPES above are BACKEND classifications: they
 # choose a renderer, they say nothing about whether the document is university
@@ -217,7 +217,7 @@ ROUTE_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
 # is a contract smell, not a build failure — hence a warning.
 ACADEMIC_ONLY_METADATA = ("subject", "teacher")
 
-# Cover defaults derived from the confirmed route (document-routing.md): the
+# Cover defaults derived from the confirmed route (routing.md): the
 # non-academic routes default to no cover, no logo requirement and a body that
 # starts on page 1 — exactly what templates/plain-report.tex renders. These are
 # DEFAULTS, not a rewrite: an explicit `cover:` block in report.yml overrides
