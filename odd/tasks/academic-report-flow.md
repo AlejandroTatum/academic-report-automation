@@ -164,3 +164,4 @@ As-is flow: `docs/diagrams/intake-flow-current.mmd`.
   Live re-test pending a new exercise from the user.
 - Task 10 contract run fixes: commits 3cc12de (min_sources 0 off academic; RED 13 failed, GREEN 14 passed) and the
   body-check bold pseudo-heading fix (RED 4 failed, GREEN 127 passed in test_content_check); `tests/skills tools` all green.
+- Task 10 follow-up: validate_ieee_refs required a Referencias section whenever a bib existed; now only when the body cites (RED 1 -> GREEN). Found by the contract build.

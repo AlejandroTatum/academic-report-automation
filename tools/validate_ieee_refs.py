@@ -236,7 +236,9 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
         if unused:
             result.warnings.append("Entradas BibTeX no citadas: " + ", ".join(unused))
 
-    if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and config.bib_path and config.pdf_path.exists():
+    # Sources are "used" only when the body cites them: an uncited body (e.g. a
+    # contract under min_sources: 0) renders no bibliography and needs none.
+    if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and config.bib_path and cited and config.pdf_path.exists():
         if not re.search(r"\b(Bibliograf[ií]a|Referencias|References)\b", rendered, re.I):
             result.errors.append("El PDF no muestra sección de Bibliografía/Referencias")
         if cited and not re.search(r"\[[0-9]+\]", rendered):

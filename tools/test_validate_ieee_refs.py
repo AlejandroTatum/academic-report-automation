@@ -179,3 +179,44 @@ def test_validate_ieee_blocks_build_on_reciprocity_failure(tmp_path: Path) -> No
     config = load_report_config(tmp_path)
     result = validate_ieee(config)
     assert any("C-099" in e for e in result.errors)
+
+
+def _write_uncited_contract(folder: Path) -> None:
+    data = {
+        "type": "report",
+        "route": "business",
+        "min_sources": 0,
+        "metadata": {"title": "Contrato", "student": "Alejandro Padilla", "date": "2026-10-01"},
+    }
+    (folder / "report.yml").write_text(yaml.dump(data), encoding="utf-8")
+    (folder / "body.md").write_text("# Contrato\n\nTexto sin citas.\n", encoding="utf-8")
+    (folder / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+
+
+def test_uncited_document_needs_no_bibliography_section(tmp_path: Path, monkeypatch) -> None:
+    """A body that cites nothing renders no bibliography, so none is required."""
+    import validate_ieee_refs
+
+    (tmp_path / "outputs").mkdir()
+    _write_uncited_contract(tmp_path)
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: "Contrato. Firmas.")
+    result = validate_ieee(config)
+    assert not any("Bibliograf" in e for e in result.errors)
+
+
+def test_cited_document_still_requires_bibliography_section(tmp_path: Path, monkeypatch) -> None:
+    import validate_ieee_refs
+
+    (tmp_path / "outputs").mkdir()
+    _write_academic_report(tmp_path)
+    (tmp_path / "body.md").write_text(BODY_OK, encoding="utf-8")
+    (tmp_path / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: "Texto [1] sin seccion final.")
+    result = validate_ieee(config)
+    assert any("Bibliograf" in e for e in result.errors)
