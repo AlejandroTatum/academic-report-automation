@@ -167,9 +167,12 @@ def normalize_body_text(text: str) -> str:
         if re.fullmatch(r"\s*\|?(?:\s*:?-{3,}:?\s*\|?)+\s*", line):
             continue
         line = re.sub(r"^\s*(?:#{1,6}\s+|>+\s*|[-*+]\s+|\d+[.)]\s+)", "", line)
-        line = line.replace("|", " ").replace("*", "").replace("`", "")
-        line = re.sub(r"(?<!\w)_+|_+(?!\w)", "", line)
-        lines.append(line)
+        # Math spans are content: their operators never count as markup.
+        parts = re.split(r"(\$[^$]*\$)", line)
+        for i in range(0, len(parts), 2):
+            text_part = parts[i].replace("|", " ").replace("*", "").replace("`", "")
+            parts[i] = re.sub(r"(?<!\w)_+|_+(?!\w)", "", text_part)
+        lines.append("".join(parts))
     return re.sub(r"\s+", " ", " ".join(lines)).strip()
 
 

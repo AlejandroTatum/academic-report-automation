@@ -1461,3 +1461,12 @@ def test_stale_judgments_without_text_hash_are_not_reused(tmp_path: Path) -> Non
     first, second = _judgments(folder, name="a.yml"), _judgments(folder, name="b.yml", findings=["x"])
     _body(folder, MARKUP_BODY)
     assert content_check.main([str(folder), "--judgments", str(first), "--judgments", str(second)]) == 2
+
+
+def test_normalize_body_text_keeps_math_operators() -> None:
+    """A change inside math is a content change: judgments must not be reused."""
+    from content_check import body_text_sha256
+
+    assert body_text_sha256("La masa es $a*b$.") != body_text_sha256("La masa es $ab$.")
+    assert body_text_sha256("Vale $x^_$.") != body_text_sha256("Vale $x^$.")
+    assert body_text_sha256("**Nota:** $x_1$") == body_text_sha256("Nota: $x_1$")
