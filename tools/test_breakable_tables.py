@@ -193,3 +193,19 @@ def test_template_declares_xltabular_after_tabularx(template_name: str) -> None:
     assert xltabular_idx > tabularx_idx, (
         f"{template_name}: xltabular must be declared after tabularx"
     )
+
+
+# GFM escaped pipe: `\|` inside a cell is a literal "|", never a column break.
+ESCAPED_PIPE_MD = """\
+| Linea en C | Instruccion | Ciclos |
+| --- | --- | --- |
+| `PORTB \\|= (1 << PORTB5);` | SBI | 2 |
+"""
+
+
+def test_escaped_pipe_stays_inside_its_cell() -> None:
+    tex = _tex_for(ESCAPED_PIPE_MD)
+    row = next(line for line in tex.splitlines() if "PORTB" in line)
+    assert row.count("&") == 2
+    assert "SBI" in row
+    assert "\\textbar" in row or "|" in row.split("&")[0]

@@ -466,8 +466,9 @@ def markdown_to_latex(
     list_stack: list[tuple[int, str]] = []
 
     def split_table_row(row: str) -> list[str]:
-        stripped = row.strip().strip("|")
-        return [cell.strip() for cell in stripped.split("|")]
+        # GFM: `\|` is a literal pipe inside a cell, never a column break.
+        stripped = re.sub(r"(?<!\\)\|$", "", row.strip()).lstrip("|")
+        return [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", stripped)]
 
     def is_table_separator(row: str) -> bool:
         cells = split_table_row(row)
