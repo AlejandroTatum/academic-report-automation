@@ -81,12 +81,20 @@ def _write_defaults(text: str, top: dict[str, Any], nested: dict[str, dict[str, 
     return text, skipped
 
 
+def _number(value: Any) -> str | None:
+    """Bare number in a unit or practice label ("U1: Intro" -> "1", "01" -> "1")."""
+    found = re.search(r"\d+", str(value or ""))
+    return str(int(found.group())) if found else None
+
+
 def _resolve_template(template: str, config: Any, folder: Path) -> tuple[str | None, list[str]]:
     meta = config.metadata
     facts = {"slug": config.document_slug}
     if not meta.get("practice_number"):
         facts["practice_number"] = load_guide_facts(folder, config).get("practice_number", "")
-    values = {"unit": meta.get("unit"), "practice_number": meta.get("practice_number") or facts.get("practice_number"), "slug": facts["slug"]}
+    values = {"unit": _number(meta.get("unit")),
+              "practice_number": _number(meta.get("practice_number") or facts.get("practice_number")),
+              "slug": facts["slug"]}
     missing = [n for n in dict.fromkeys(_PLACEHOLDER.findall(template)) if not values.get(n)]
     if missing:
         return None, missing

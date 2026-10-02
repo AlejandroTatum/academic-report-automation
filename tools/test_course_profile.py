@@ -61,6 +61,15 @@ def test_applies_defaults_and_delivery_dir_preserving_comments(tmp_path, capsys)
     assert "format" in capsys.readouterr().out
 
 
+def test_numeric_placeholders_use_the_bare_number(tmp_path):
+    report = REPORT.replace('unit: "2"', 'unit: "U1: Introducción a la Simulación"').replace(
+        'practice_number: "3"', 'practice_number: "01"')
+    folder = _folder(tmp_path, report)
+    assert _run(folder, _profiles(tmp_path, PROFILE)) == 0
+    data = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    assert data["delivery_dir"] == "/tmp/sim/unidad-1/ape-1-modelo-de-colas/documento/"
+
+
 def test_explicit_report_values_win(tmp_path):
     folder = _folder(tmp_path, REPORT + "format: libre\ncover:\n  required: true\ndelivery_dir: /x\n")
     assert _run(folder, _profiles(tmp_path, PROFILE)) == 0
