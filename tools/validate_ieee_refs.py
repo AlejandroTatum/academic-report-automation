@@ -202,8 +202,18 @@ def claim_support_and_reciprocity(
     return result
 
 
+APA_CITATION_RE = re.compile(r"\([^()]*(\d{4}[a-z]?|s\. f\.)\)")
+
+
 def validate_ieee(config: ReportConfig) -> ValidationResult:
+    """Citation/bibliography validator (name and ``ieee`` key kept for both styles).
+
+    ``citation_style: apa`` swaps the numeric ``[n]`` checks for an author-year
+    one and drops the IEEE-only wording rules.
+    """
     result = ValidationResult()
+    apa = config.citation_style == "apa"
+    style_label = "APA" if apa else "IEEE"
     body_text = read_text(config.body_path)
     tex_text = read_text(config.tex_path)
     bib_text = read_text(config.bib_path)
@@ -247,28 +257,33 @@ def validate_ieee(config: ReportConfig) -> ValidationResult:
     if config.academic_value("citations", "require_bibliography_when_sources_used", default=True) and config.bib_path and (cited or config.uncited_bibliography) and config.pdf_path.exists():
         if not re.search(r"\b(Bibliograf[ií]a|Referencias|References)\b", rendered, re.I):
             result.errors.append("El PDF no muestra sección de Bibliografía/Referencias")
-        if cited and not re.search(r"\[[0-9]+\]", rendered):
+        if cited and apa and not APA_CITATION_RE.search(rendered):
+            result.errors.append("El PDF no muestra citas autor-año APA tipo (Autor, 2024)")
+        elif cited and not apa and not re.search(r"\[[0-9]+\]", rendered):
             result.errors.append("El PDF no muestra citas/referencias numéricas IEEE tipo [1]")
 
     banned_rendered = config.academic_value("citations", "banned_rendered_terms", default=["date of publication", "s. f.", "sin fecha"])
+    if apa:
+        # APA prints undated works as (Autor, s. f.); only IEEE rejects them.
+        banned_rendered = [item for item in banned_rendered if item not in {"s. f.", "sin fecha"}]
     lower_rendered = rendered.lower()
     found_banned = [item for item in banned_rendered if item in lower_rendered]
     if found_banned:
-        result.errors.append("Texto no deseado en bibliografía IEEE renderizada: " + ", ".join(found_banned))
+        result.errors.append(f"Texto no deseado en bibliografía {style_label} renderizada: " + ", ".join(found_banned))
 
     if re.search(r"\bpp\.\s*\d{1,3}\s\d{3}\b", rendered):
-        result.errors.append("Posible rango de páginas con separador de miles en IEEE; usar pp. 73005–73014, no pp. 73 005")
+        result.errors.append(f"Posible rango de páginas con separador de miles en {style_label}; usar pp. 73005–73014, no pp. 73 005")
 
-    if re.search(r"\bin\s+referenc(?:e|ia)\s+\[[0-9]+\]", rendered, re.I):
+    if not apa and re.search(r"\bin\s+referenc(?:e|ia)\s+\[[0-9]+\]", rendered, re.I):
         result.errors.append("IEEE: evitar 'en referencia [n]'; escribir 'en [n]' o reformular")
 
-    if re.search(r"(Fig\.|figura|ecuaci[oó]n|equation).*referenc(?:e|ia)\s+\[[0-9]+\]", rendered, re.I):
+    if not apa and re.search(r"(Fig\.|figura|ecuaci[oó]n|equation).*referenc(?:e|ia)\s+\[[0-9]+\]", rendered, re.I):
         result.errors.append("IEEE: para partes específicas usar [n, Fig. x], [n, eq. (x)], [n, Sec. x]")
 
     if keys and rendered:
         doi_keys = [key for key in cited if has_bib_doi(bib_text, key)]
         if doi_keys and "doi" not in lower_rendered:
-            result.warnings.append("Hay DOI en BibTeX, pero el PDF no parece renderizar DOI; revisar estilo IEEE")
+            result.warnings.append(f"Hay DOI en BibTeX, pero el PDF no parece renderizar DOI; revisar estilo {style_label}")
 
     if config.academic_value("citations", "clickable_citations", default=True) and config.backend == "latex":
         if "hyperref" not in tex_text:

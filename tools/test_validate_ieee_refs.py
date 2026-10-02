@@ -269,3 +269,58 @@ def test_reciprocity_still_flags_unused_entries_by_default() -> None:
     result = claim_support_and_reciprocity([], BIB_OK, "Texto sin citas.\n")
 
     assert any("no citadas" in e for e in result.errors)
+
+
+def _validate_cited(tmp_path: Path, monkeypatch, rendered: str, citation_style: str):
+    import validate_ieee_refs
+
+    (tmp_path / "outputs").mkdir()
+    _write_academic_report(tmp_path)
+    report = tmp_path / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + f"citation_style: {citation_style}\n", encoding="utf-8")
+    (tmp_path / "body.md").write_text(BODY_OK, encoding="utf-8")
+    (tmp_path / "sources.bib").write_text(BIB_OK, encoding="utf-8")
+    config = load_report_config(tmp_path)
+    config.pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    config.pdf_path.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(validate_ieee_refs, "pdf_text", lambda _path: rendered)
+    result = validate_ieee(config)
+    # The fixture writes no .tex, so the hyperref gate is unrelated noise here.
+    result.errors = [e for e in result.errors if "hyperref" not in e]
+    return result
+
+
+def test_apa_accepts_author_year_citations_without_numeric_markers(tmp_path: Path, monkeypatch) -> None:
+    rendered = "Latency dropped (Smith, 2024).\nReferencias\nSmith, J. (2024). A Study of Latency."
+    result = _validate_cited(tmp_path, monkeypatch, rendered, "apa")
+    assert not any("IEEE" in e or "numéric" in e for e in result.errors), result.errors
+
+
+def test_apa_requires_an_author_year_parenthetical(tmp_path: Path, monkeypatch) -> None:
+    rendered = "Latency dropped.\nReferencias\nSmith, J. 2024. A Study of Latency."
+    result = _validate_cited(tmp_path, monkeypatch, rendered, "apa")
+    assert any("autor-año" in e for e in result.errors)
+
+
+def test_apa_allows_undated_citations(tmp_path: Path, monkeypatch) -> None:
+    rendered = "Latency dropped (Smith, s. f.).\nReferencias\nSmith, J. (s. f.). A Study."
+    result = _validate_cited(tmp_path, monkeypatch, rendered, "apa")
+    assert result.errors == []
+
+
+def test_apa_skips_ieee_specific_wording_checks(tmp_path: Path, monkeypatch) -> None:
+    rendered = "Ver la figura en referencia [2] (Smith, 2024).\nReferencias\nSmith (2024)."
+    result = _validate_cited(tmp_path, monkeypatch, rendered, "apa")
+    assert result.errors == []
+
+
+def test_ieee_still_requires_numeric_citations(tmp_path: Path, monkeypatch) -> None:
+    rendered = "Latency dropped (Smith, 2024).\nReferencias\nSmith, J. (2024)."
+    result = _validate_cited(tmp_path, monkeypatch, rendered, "ieee")
+    assert any("numéricas IEEE" in e for e in result.errors)
+
+
+def test_ieee_still_bans_undated_text(tmp_path: Path, monkeypatch) -> None:
+    rendered = "Latency [1].\nReferencias\n[1] Smith, s. f."
+    result = _validate_cited(tmp_path, monkeypatch, rendered, "ieee")
+    assert any("s. f." in e for e in result.errors)
