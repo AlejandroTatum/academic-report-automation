@@ -29,7 +29,7 @@ approval rounds. Also closes #59 and #60.
 - [x] 2. Body check enforces the fixed APE headings when `format: ape`.
 - [x] 3. Judges: brief carries an exact quoted YAML example; parser accepts finding mappings.
 - [x] 4. `report.yml` delivery folder override for the publisher, keeping the version register.
-- [ ] 5. Simulación course profile (Guamán) applied by intake on subject match.
+- [x] 5. Simulación course profile (Guamán) applied by intake on subject match.
 - [ ] 6. DOCX draft round-trip: export with native equations, import with diff, refuse locked files.
 - [ ] 7. Approval gate: fresh preview required (#59) and clickable links before the prompt (#60).
 - [x] 8. `sync_skills.sh` also syncs `~/.pi/agent/skills`.
@@ -42,3 +42,4 @@ approval rounds. Also closes #59 and #60.
 - Task 4 (delivery_dir override): see commit subject 'feat(tools): let report.yml set the delivery folder' — test_report_config.py + test_pdf_publication.py + test_deliver_report.py 123 passed (RED: 15 failed before implementation).
 - Task 8 (sync to Pi): see commit subject 'fix(scripts): sync skills into the Pi runtime too' — tests/skills/test_sync_skills.py 4 passed (RED: 2 failed before implementation).
 - Task 9 (document-wide rubric checks): see commit subject 'fix(tools): run rubric checks over the whole document unless bound' — test_rubric_checks.py + test_rubric_plan.py + test_content_check.py + tests/skills green (RED: 2 failed before implementation).
+- Task 5 (Simulación profile): see commit subject 'feat(skill): add Simulación course profile applied on subject match' — tools/test_course_profile.py 9 passed (RED: collection error, module missing) + tests/skills green.

@@ -33,7 +33,7 @@ Tools enforce quality (`doc_status`, `content_check --body-check`, judges, `vali
 - Never ghostwrite a final submission. Preserve privacy, provenance, citations, and consent boundaries.
 - Use `academic-visual-builder` for figures and inspect them again in the assembled report; the visual direction changes hierarchy and composition, not only decoration.
 - When supplied a research-workflow evidence package, preserve claim-to-source traceability, limitations and unresolved questions; do not treat the package as confirmed document intake: this skill owns intake, composition, and document creation.
-- Route A only: load `references/unl-shell.md` and matching `references/profiles/`. Rendering defaults are derived from the confirmed `route:`; an explicit `report.yml` option wins (`references/routing.md`).
+- Route A only: load `references/unl-shell.md` and the `references/profiles/` file whose front-matter `match:` fits the subject (`tools/course_profile.py`). Rendering defaults are derived from the confirmed `route:`; an explicit `report.yml` option wins (`references/routing.md`).
 
 ## Decision Gates
 
