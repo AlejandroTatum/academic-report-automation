@@ -23,17 +23,17 @@ def extract_guide_facts(text: str) -> dict:
                 facts[key] = unique[0]
 
         record("family", [value for pattern, value in (
-            (r"\bape\b|\bpractico[\s-]+experimental\b", "ape"),
+            (r"\bape\b|\bpractico[\s-]+experimental(?:es)?\b", "ape"),
             (r"\baprendizaje\s+autonomo\b", "aa"),
         ) if re.search(pattern, normalized)])
-        record("practice_number", re.findall(
-            r"\b(?:semana|practica)\s+(?:nro\.?\s*)?(\d+)\b", normalized))
+        record("practice_number", [value.lstrip("0") or "0" for value in re.findall(
+            r"\b(?:semana|practica)\s+(?:nro\.?\s*)?(\d+)\b", normalized)])
         record("practice_type", [value for pattern, value in (
             (r"\bindividual\b", "Individual"),
             (r"\bgrupal\b|\ben\s+grupo\b", "Grupal"),
         ) if re.search(pattern, normalized)])
         record("planned_time", [f"{value} horas" for value in re.findall(
-            r"\b(\d+)\s+horas\b", normalized)])
+            r"\btiempo\s+planificado(?:\s+en\s+el\s+silabo)?\s*:?\s*(\d+)(?:\s+horas)?\b", normalized)])
         if conflicts:
             facts["conflicts"] = conflicts
         return facts
