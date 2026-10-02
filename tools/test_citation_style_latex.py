@@ -70,3 +70,10 @@ def test_apa_renders_apa_options_and_parencite(tmp_path: Path, template: str) ->
     assert "style=ieee" not in tex
     assert r"\DeclareLanguageMapping{spanish}{spanish-apa}" in tex
     assert r"\usepackage{csquotes}" in tex
+
+
+@pytest.mark.parametrize("template", TEMPLATES)
+def test_apa_titles_the_reference_list_referencias(tmp_path: Path, template: str) -> None:
+    # APA 7 (Spanish) names the list "Referencias", whatever the template's default.
+    tex = render(tmp_path, template, citation_style="apa")
+    assert r"\printbibliography[title={Referencias}]" in tex

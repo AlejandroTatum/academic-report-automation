@@ -346,6 +346,16 @@ BIBLIOGRAPHY_HEADINGS = {"bibliografia", "referencias", "references", "bibliogra
 # Title each template's \printbibliography prints, keyed by normalized template
 # key. The renderer owns the emission decision (#26); the template owns the
 # heading wording.
+# APA 7 (Spanish) names the list "Referencias" regardless of the template.
+APA_BIBLIOGRAPHY_TITLE = "Referencias"
+
+
+def bibliography_title(config: ReportConfig, template_key: str) -> str:
+    if config.citation_style == "apa":
+        return APA_BIBLIOGRAPHY_TITLE
+    return BIBLIOGRAPHY_TITLES[template_key]
+
+
 BIBLIOGRAPHY_TITLES = {
     "default": "Bibliografía",
     "unl": "Bibliografía",
@@ -1092,7 +1102,7 @@ def render_tex(config: ReportConfig) -> str:
         # the .bib file prints the bibliography (and its template title).
         "{{PRINT_BIBLIOGRAPHY}}": (
             (r"\nocite{*}" + "\n" if config.uncited_bibliography else "")
-            + rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
+            + rf"\printbibliography[title={{{bibliography_title(config, template_key)}}}]"
             if emit_bibliography
             else "% Bibliography omitted: the body cites nothing from the .bib file (#26)."
         ),

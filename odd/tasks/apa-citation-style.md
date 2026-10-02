@@ -21,7 +21,7 @@ renaming `validate_ieee` or the `ieee` validator key.
 - [x] 3. `validate_ieee_refs`: APA branch (author-year citations required, numeric `[n]` checks skipped, `s. f.` allowed); tests.
 - [x] 4. DOCX builder: reject `citation_style: apa` with a clear error; test.
 - [x] 5. Skill docs + contract test + `content_check` wording: document the opt-in.
-- [ ] 6. Real build check: compile a sample report with `citation_style: apa` in Docker and inspect the PDF.
+- [x] 6. Real build check: compile a sample report with `citation_style: apa` in Docker and inspect the PDF.
 
 ## Evidence log
 - Task 1 `a282bc7`: RED 9 failed (test_citation_style_*), GREEN tools/test_report_config.py 73 passed.
@@ -29,3 +29,4 @@ renaming `validate_ieee` or the `ieee` validator key.
 - Task 3 `f1f0c65`: RED 4 failed (test_apa_* in tools/test_validate_ieee_refs.py), GREEN 19 passed.
 - Task 4 `74e4941`: RED test_apa_citation_style_is_rejected_in_docx_output (built silently), GREEN tools/test_build_docx_report.py 47 passed.
 - Task 5 `80c53f4`: RED test_judge_brief_names_apa_when_opted_in + test_citation_style_opt_in_is_documented_in_every_reference, GREEN tools/test_content_check.py + tests/skills 320 passed.
+- Task 6: real Docker build of `sistemas-digitales-ape-1-avr-registros` with `citation_style: apa` — clean log, 22 `\parencite`, 0 `\cite{`, in-text `(Freire Sánchez, 2023)`, alphabetical Spanish APA list with `s.f.`, 0 numeric `[n]`. Found the list titled "Bibliografía": RED `test_apa_titles_the_reference_list_referencias` (3 failed), GREEN 82 passed after APA forces "Referencias".
