@@ -640,18 +640,28 @@ class ReportConfig:
         return slug or ascii_slug(self.publication_category)
 
     @property
+    def work_folder_slug(self) -> str:
+        """Unique name of the default working build file.
+
+        Keyed by the work folder, not the title: two folders whose titles share
+        a slug must not overwrite each other's build. The delivery file name
+        stays ``document_slug``-based.
+        """
+        return ascii_slug(self.folder.resolve().name)
+
+    @property
     def pdf_path(self) -> Path:
         value = self.raw.get("pdf") or self.raw.get("output_pdf")
         if value:
             return resolve_in_folder(self.folder, value)
-        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.document_slug}.pdf"
+        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.work_folder_slug}.pdf"
 
     @property
     def docx_path(self) -> Path:
         value = self.raw.get("docx") or self.raw.get("output_docx")
         if value:
             return resolve_in_folder(self.folder, value)
-        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.document_slug}.docx"
+        return GLOBAL_OUTPUTS / self.output_folder_slug / f"{self.work_folder_slug}.docx"
 
     @property
     def log_path(self) -> Path:

@@ -12,7 +12,7 @@ its `report.yml` names the same assignment (same `metadata.title`, or the same e
 guide). The same document still in progress is resumed, never recreated. When the same
 document is already delivered, ask one single-choice question: start a new version in a
 suffixed folder, or resume the delivered one; never overwrite a delivered folder.
-Delivered means a current `final-review.yml` plus a published version. The standalone full route applies only when the
+Delivered means a current `final-review.yml` plus a published version. A folder that exists without a `report.yml` is an unfinished intake of that document: `doc_status` returns `next: intake` for it. The standalone full route applies only when the
 work-folder flow is unavailable (no content root, or the user explicitly asks for a
 one-off document outside the reports flow).
 
@@ -46,7 +46,7 @@ The phase/reference/executor routing table is the whole routing logic:
 - Never build before approval is `done`; never publish without a current marker.
 - Never present the approval gate before `draft` is `done`.
 - Content-first: intake asks only the minimum and never formatting questions;
-  research is mandatory (at least 5 book or paper sources, IEEE, never invented);
+  research is mandatory (at least 5 book or paper sources, or the report's `min_sources:`; IEEE, never invented);
   the plan mirrors the teacher's rubric; the user's text is applied verbatim; the
   content check only reports findings; the format questions (APE, AA or libre,
   PDF or DOCX) ride on the approval batch and `format` asks only what is missing.

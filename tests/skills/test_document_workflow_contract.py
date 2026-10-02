@@ -959,3 +959,22 @@ def test_approval_batches_the_format_questions_and_format_asks_only_missing() ->
 
     fmt = re.sub(r"\s+", " ", read(SKILL_ROOT / "references" / "format.md")).lower()
     assert "only the missing" in fmt and "never re-ask" in fmt
+
+
+def test_source_minimum_is_always_stated_as_the_effective_one() -> None:
+    """Task 8(c): a bare "at least 5" would contradict a report's min_sources override."""
+    for name in ("routing-loop.md", "research.md", "verify.md"):
+        text = _flat(SKILL_ROOT / "references" / name)
+        for match in re.finditer(r"at least (5|five)\b", text):
+            assert "min_sources" in text[match.start() : match.start() + 160], name
+
+
+def test_folder_without_report_yml_is_an_unfinished_intake() -> None:
+    """Task 8(j): doc_status answers next: intake and the routing loop says so."""
+    routing = _flat(ROUTING_MD)
+    assert "without a report.yml" in routing and "unfinished intake" in routing
+
+
+def test_delivered_definition_names_both_conditions() -> None:
+    routing = _flat(ROUTING_MD)
+    assert "delivered means a current final-review.yml plus a published version" in routing

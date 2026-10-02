@@ -44,7 +44,7 @@ from report_config import (
     versioned_pdf_pattern,
 )
 from evidence_contract import evidence_gate_engaged, load_evidence_package, validate_evidence_package
-from source_count import source_gate
+from source_count import MIN_ACADEMIC_SOURCES, effective_min_sources, source_gate
 from structure_contract import structure_confirmation_state, structure_gate_engaged
 
 # new-report-flow T5: the content-first route. The preview phase is gone (the
@@ -77,7 +77,7 @@ SCHEMA_VERSION = 1
 _GUIDANCE = {
     "intake": "complete {report_yml}, then re-run doc_status",
     "research": (
-        "write at least 5 book or paper sources to {sources}, "
+        "write at least {min_sources} book or paper sources to {sources}, "
         "then re-run doc_status"
     ),
     "plan": "record the teacher's rubric in {rubric}, then re-run doc_status",
@@ -310,16 +310,28 @@ def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | N
     return PhaseState("verify", BLOCKED, "content-check.yml malformed", "content_check_malformed")
 
 
-def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
+def _has_legacy_pdf(folder: Path, config: ReportConfig, documents_root: Path | None) -> bool:
+    """A report from before explicit ``output:`` answers: its PDF already exists
+    and was validated or delivered, so it is treated as ``output: pdf``. A merely
+    generated PDF (possibly another folder's) never waives the answer."""
+    if not config.pdf_path.is_file():
+        return False
+    if (folder / "validation.yml").is_file():
+        return True
+    return _phase_deliver(folder, config, documents_root).state == DONE
+
+
+def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
     """Map the chosen format and its metadata onto one phase state (T4/T5).
 
     The answers normally arrive with the approval batch (task 9.1), so this is a
     completeness check: an absent ``format:`` is ordinary progress (ask APE, AA
     or libre). A chosen format needs its required metadata present and
     placeholder-free, ``libre`` a ``format_spec:``, and every format an explicit
-    ``output:`` (PDF or DOCX has no default) -- an incomplete choice stays
-    ``pending`` with only the missing keys named. An unrecognised format is ``blocked`` (intake
-    already blocks it; this handler stays defensive).
+    ``output:`` (PDF or DOCX has no default, except for a legacy report whose PDF is
+    already validated or delivered) -- an incomplete choice stays
+    ``pending`` with only the missing keys named. An unrecognised format or ``output:``
+    value is ``blocked`` and named (intake already blocks the format; this handler stays defensive).
     """
     chosen = config.format
     if chosen is None:
@@ -333,10 +345,18 @@ def _phase_format(folder: Path, config: ReportConfig, _documents_root: Path | No
     ]
     if chosen == "libre" and not config.format_spec:
         missing.append("format_spec")
-    if str(config.raw.get("output") or "").strip().lower() not in ("pdf", "docx"):
+    output = str(config.raw.get("output") or "").strip()
+    if output and output.lower() not in ("pdf", "docx"):
+        return PhaseState(
+            "format", BLOCKED, f"output={output} not recognized: use pdf or docx", "unknown_output"
+        )
+    legacy_pdf = not output and _has_legacy_pdf(folder, config, documents_root)
+    if not output and not legacy_pdf:
         missing.append("output")
     if missing:
         return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
+    if legacy_pdf:
+        return PhaseState("format", DONE, f"format={chosen}, output pdf (legacy report), metadata complete")
     return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
 
 
@@ -559,6 +579,15 @@ def _tool_command(script: str, work_folder: Path) -> str:
     return shlex.join([sys.executable, str(ROOT / "tools" / script), str(work_folder)])
 
 
+def _effective_min_sources(config: ReportConfig) -> int:
+    """The source minimum the research gate applies; the default if ``min_sources:`` is invalid
+    (the gate itself reports the invalid value)."""
+    try:
+        return effective_min_sources(config)
+    except ValueError:
+        return MIN_ACADEMIC_SOURCES
+
+
 def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None, blocked_reason: str = "") -> str:
     """Action sentence for ``phase_name``, bound to the real work-folder path.
 
@@ -621,6 +650,7 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     return template.format(
         folder=folder,
         report_yml=folder / "report.yml",
+        min_sources=_effective_min_sources(config),
         sources=folder / "sources.bib",
         rubric=folder / "rubric.yml",
         body=folder / "body.md",

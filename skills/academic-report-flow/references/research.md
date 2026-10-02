@@ -9,14 +9,14 @@ performs research, and `research-workflow` never creates or formats the report.
 
 ## Contract
 
-Research is mandatory: every document needs at least 5 academic sources, and the
+Research is mandatory: every document needs at least 5 academic sources (or the report's `min_sources:`), and the
 phase artifact is the document's own BibTeX file, `reports/<wf>/sources.bib`
 (or the `bibliography:`/`bib:` path declared in `report.yml`). The phase is done
-only when that file carries at least 5 eligible entries -- `book`, `inbook`,
+only when that file carries at least 5 (or `min_sources:`) eligible entries -- `book`, `inbook`,
 `incollection`, `article`, `inproceedings`, `conference`, `phdthesis`,
 `mastersthesis`, or `techreport`. Web-only types such as `@misc` and `@online`
 never count toward the gate, and a report can no longer record its way past
-research: `doc_status` keeps the phase `pending` until the file holds the five
+research: `doc_status` keeps the phase `pending` until the file holds the required
 sources.
 
 The minimum is 5 unless `report.yml` carries a top-level positive integer
@@ -54,7 +54,7 @@ source stays a `lead` and is never written into `sources.bib`.
 1. Define the research question, scope, and inclusion/exclusion criteria.
 2. Collect, inspect, and assess sources; retain stable locators and provenance.
 3. Write the document's `sources.bib` with every eligible book or paper entry
-   (at least 5), each one verifiable and IEEE-ready, plus the claim-level
+   (at least 5, or `min_sources:`), each one verifiable and IEEE-ready, plus the claim-level
    matrix, separating quotations from paraphrases.
 4. After writing `sources.bib`, run
    `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/verify_sources.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`.

@@ -329,14 +329,14 @@ def _write_academic_report(folder: Path, title: str, subject: str) -> Path:
 def test_technical_route_without_pdf_derives_under_its_route_category(tmp_path: Path) -> None:
     config = load_report_config(_write_report(tmp_path / "report", "technical", "Informe Tecnico"))
 
-    assert config.pdf_path == GLOBAL_OUTPUTS / "tecnicos" / "informe-tecnico.pdf"
+    assert config.pdf_path == GLOBAL_OUTPUTS / "tecnicos" / "report.pdf"
     assert not targets_local_outputs(config)
 
 
 def test_technical_route_without_docx_derives_under_its_route_category(tmp_path: Path) -> None:
     config = load_report_config(_write_report(tmp_path / "report", "technical", "Informe Tecnico"))
 
-    assert config.docx_path == GLOBAL_OUTPUTS / "tecnicos" / "informe-tecnico.docx"
+    assert config.docx_path == GLOBAL_OUTPUTS / "tecnicos" / "report.docx"
 
 
 def test_academic_route_without_pdf_derives_under_the_known_subject(tmp_path: Path) -> None:
@@ -346,7 +346,7 @@ def test_academic_route_without_pdf_derives_under_the_known_subject(tmp_path: Pa
 
     expected_slug = subject_slug("Sistemas Operativos")
     assert expected_slug == "sistemas-operativos"
-    assert config.pdf_path == GLOBAL_OUTPUTS / expected_slug / "informe-so.pdf"
+    assert config.pdf_path == GLOBAL_OUTPUTS / expected_slug / "report.pdf"
 
 
 def test_academic_route_without_docx_derives_under_the_known_subject(tmp_path: Path) -> None:
@@ -354,7 +354,7 @@ def test_academic_route_without_docx_derives_under_the_known_subject(tmp_path: P
 
     config = load_report_config(folder)
 
-    assert config.docx_path == GLOBAL_OUTPUTS / "sistemas-operativos" / "informe-so.docx"
+    assert config.docx_path == GLOBAL_OUTPUTS / "sistemas-operativos" / "report.docx"
 
 
 def test_explicit_pdf_path_keeps_resolving_relative_to_the_folder(tmp_path: Path) -> None:
@@ -399,3 +399,22 @@ def test_load_report_config_rejects_invalid_min_sources(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="min_sources"):
         load_report_config(folder)
+
+
+def test_default_build_path_is_unique_per_work_folder(tmp_path: Path) -> None:
+    first = load_report_config(_write_report(tmp_path / "primero", "technical", "Informe Tecnico"))
+    second = load_report_config(_write_report(tmp_path / "segundo", "technical", "Informe Tecnico"))
+
+    assert first.document_slug == second.document_slug == "informe-tecnico"
+    assert first.pdf_path != second.pdf_path
+    assert first.pdf_path.name == "primero.pdf" and second.pdf_path.name == "segundo.pdf"
+    assert first.docx_path.name == "primero.docx"
+
+
+def test_explicit_pdf_wins_over_the_work_folder_default(tmp_path: Path) -> None:
+    folder = _write_report(tmp_path / "primero", "technical", "Informe Tecnico")
+    (folder / "report.yml").write_text(
+        (folder / "report.yml").read_text(encoding="utf-8") + "pdf: build/informe.pdf\n", encoding="utf-8"
+    )
+
+    assert load_report_config(folder).pdf_path == folder.resolve() / "build" / "informe.pdf"
