@@ -24,3 +24,4 @@ renaming `validate_ieee` or the `ieee` validator key.
 - [ ] 6. Real build check: compile a sample report with `citation_style: apa` in Docker and inspect the PDF.
 
 ## Evidence log
+- Task 1 `a282bc7`: RED 9 failed (test_citation_style_*), GREEN tools/test_report_config.py 73 passed.
