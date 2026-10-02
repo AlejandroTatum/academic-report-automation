@@ -17,5 +17,5 @@ bibliography file, mutually exclusive with `min_sources`). When on:
 
 - [x] 1. Config + source gate + content check (tests first) — commit `feat(tools): add uncited_bibliography opt-in to source gate and content check`
 - [x] 2. LaTeX build `\nocite{*}` + IEEE validation (tests first)  — commit `feat(tools): emit nocite bibliography and relax IEEE uncited checks`
-- [ ] 3. Skill reference docs (content, production, routing, data)
+- [x] 3. Skill reference docs (content, production, routing, data) — commit `docs(skill): document the uncited_bibliography opt-in`
 - [ ] 4. Apply to APE 1 Simulación report and build the preview

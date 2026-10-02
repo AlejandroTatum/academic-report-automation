@@ -41,6 +41,7 @@ cover:                        # top-level, optional; explicit values win over th
 deliver_bibliography: true    # only when the course requires the .bib as a submitted artifact
 bibliography: sources.bib
 min_sources: 1                # only when a requirement limits sources; positive integer, default 5
+# uncited_bibliography: true  # instead of min_sources: academic only; prints every bib entry, no citations needed
 ```
 
 - `pdf:`/`docx:` are optional top-level overrides; unset, the build path is derived under the content root's outputs tree (`routing.md`).

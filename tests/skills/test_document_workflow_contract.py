@@ -958,6 +958,17 @@ def test_source_minimum_is_always_stated_as_the_effective_one() -> None:
             assert "min_sources" in text[match.start() : match.start() + 160], name
 
 
+def test_uncited_bibliography_opt_in_is_documented_in_every_reference() -> None:
+    """The opt-in is academic-only, prints the whole .bib and excludes min_sources."""
+    for name in ("content.md", "production.md", "routing.md", "data.md"):
+        text = _flat(REFS / name)
+        assert "uncited_bibliography" in text, name
+    content = _flat(REFS / "content.md")
+    window = content[content.index("uncited_bibliography") :][:500]
+    for token in ("academic", "every entry", "min_sources"):
+        assert token in window
+
+
 def test_folder_without_report_yml_is_an_unfinished_intake() -> None:
     """Task 8(j): doc_status answers next: intake and the routing loop says so."""
     routing = _flat(ROUTING_MD)
