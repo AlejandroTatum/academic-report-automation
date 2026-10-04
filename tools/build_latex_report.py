@@ -559,9 +559,9 @@ def markdown_to_latex(
         nonlocal paragraph
         if paragraph:
             text = " ".join(item.strip() for item in paragraph)
-            # A "Tabla N." caption must not be stranded at a page foot apart
-            # from its table: reserve room for the caption plus table head.
-            if re.match(r"^(Tabla|Table)\s+\d+\.", text):
+            # A "Tabla N." caption or a "**Código N.**" listing label must not be
+            # stranded at a page foot apart from its table or listing.
+            if re.match(r"^(Tabla|Table)\s+\d+\.|^\*\*(Código|Listing)\s+\S+?\.\*\*", text):
                 output.append(r"\Needspace{8\baselineskip}")
             output.append(convert_inline(text))
             output.append("")

@@ -222,3 +222,11 @@ def test_table_caption_paragraph_reserves_space_to_stay_with_its_table() -> None
 def test_ordinary_paragraph_gets_no_caption_needspace() -> None:
     tex = build_latex_report.markdown_to_latex("La Tabla 3 resume los registros.\n")
     assert r"\Needspace{8\baselineskip}" not in tex
+
+
+def test_code_listing_label_reserves_space_to_stay_with_its_listing() -> None:
+    tex = build_latex_report.markdown_to_latex(
+        "**Código B2.** Encendido con OR (repo: `parte-b/b2/sketch.ino`)\n\n```c\nint x;\n```\n"
+    )
+    label_at = tex.index("Código B2.")
+    assert r"\Needspace{8\baselineskip}" in tex[:label_at]
