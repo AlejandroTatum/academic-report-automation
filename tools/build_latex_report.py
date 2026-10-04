@@ -239,6 +239,22 @@ BIBLATEX_SETUP = {
     "apa": (
         r"\DeclareLanguageMapping{spanish}{spanish-apa}"
         r"\ExecuteBibliographyOptions{language=spanish}"
+        # Spanish joins the last two authors with "y", not "&".
+        r"\DeclareDelimFormat[bib,biblist]{finalnamedelim}{\addspace y\space}"
+        r"\DeclareDelimFormat[parencite]{finalnamedelim}{\addspace y\space}"
+        # Air between reference entries; the hanging indent stays biblatex-apa's.
+        r"\setlength{\bibitemsep}{0.5\baselineskip}"
+        # URLs/DOIs may break after / . - only; never after "https:" or
+        # mid-word. xurl (loaded after biblatex) resets the counters and
+        # \biburlsetup resets the break sets, so apply both at end of preamble.
+        r"\urlstyle{same}"
+        r"\AtEndPreamble{"
+        r"\setcounter{biburlbreakpenalty}{50}"
+        r"\setcounter{biburlbigbreakpenalty}{10000}"
+        r"\setcounter{biburlnumpenalty}{0}"
+        r"\setcounter{biburlucpenalty}{0}"
+        r"\setcounter{biburllcpenalty}{0}"
+        r"\appto\biburlsetup{\Urlmuskip=0mu\relax\def\UrlBreaks{\do\/\do\.\do\-}\def\UrlBigBreaks{\do\:}}}"
     ),
 }
 
@@ -254,7 +270,8 @@ def convert_inline(text: str) -> str:
             return token
         text = re.sub(pattern, wrapper, text)
 
-    keep(r"\[@([A-Za-z0-9_:\-.,; ]+)\]", lambda m: r"\cite{" + re.sub(r"\s+", "", m.group(1)) + "}")
+    keep(r"\[@([A-Za-z0-9_:\-.,;@ ]+)\]",
+         lambda m: r"\cite{" + ",".join(k for k in re.split(r"[;,\s]+", m.group(1).replace("@", "")) if k) + "}")
     keep(r"\$([^$]+)\$", lambda m: "$" + m.group(1) + "$")
     keep(r"`([^`]+)`", lambda m: inline_code(m.group(1)))
     keep(r"\[([^\]]+)\]\((https?://[^\s)]+)\)",

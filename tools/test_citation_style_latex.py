@@ -77,3 +77,34 @@ def test_apa_titles_the_reference_list_referencias(tmp_path: Path, template: str
     # APA 7 (Spanish) names the list "Referencias", whatever the template's default.
     tex = render(tmp_path, template, citation_style="apa")
     assert r"\printbibliography[title={Referencias}]" in tex
+
+
+@pytest.mark.parametrize("text", ["[@a; @b]", "[@a;@b]", "[@a, @b]", "[@a, b]"])
+def test_multi_key_citation_becomes_a_key_list(text: str) -> None:
+    assert build_latex_report.convert_inline(text) == r"\cite{a,b}"
+
+
+def test_single_key_citation_unchanged() -> None:
+    assert build_latex_report.convert_inline("[@a2018]") == r"\cite{a2018}"
+
+
+def test_apa_setup_uses_spanish_y_delimiter() -> None:
+    setup = build_latex_report.BIBLATEX_SETUP["apa"]
+    assert r"\DeclareDelimFormat[bib,biblist]{finalnamedelim}" in setup
+    assert r"\DeclareDelimFormat[parencite]{finalnamedelim}" in setup
+    assert r"\addspace y\space" in setup
+    assert "&" not in setup
+
+
+def test_apa_setup_spaces_entries_and_softens_url_breaks() -> None:
+    setup = build_latex_report.BIBLATEX_SETUP["apa"]
+    assert r"\setlength{\bibitemsep}{0.5\baselineskip}" in setup
+    assert r"\urlstyle{same}" in setup
+    assert r"\AtEndPreamble{" in setup
+    assert r"\def\UrlBreaks{\do\/\do\.\do\-}" in setup
+    for counter in ("biburlbreakpenalty", "biburlbigbreakpenalty", "biburlnumpenalty"):
+        assert counter in setup
+
+
+def test_ieee_setup_stays_empty() -> None:
+    assert build_latex_report.BIBLATEX_SETUP["ieee"] == ""
