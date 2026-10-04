@@ -324,3 +324,10 @@ def test_ieee_still_bans_undated_text(tmp_path: Path, monkeypatch) -> None:
     rendered = "Latency [1].\nReferencias\n[1] Smith, s. f."
     result = _validate_cited(tmp_path, monkeypatch, rendered, "ieee")
     assert any("s. f." in e for e in result.errors)
+
+
+def test_cited_keys_reads_several_keys_in_one_bracket() -> None:
+    from validate_ieee_refs import cited_keys
+
+    text = "Texto [@freire2023; @valdivieso2019] y otro [@zailani2024]."
+    assert cited_keys(text) == {"freire2023", "valdivieso2019", "zailani2024"}

@@ -79,8 +79,9 @@ def bib_keys(bib_text: str) -> set[str]:
 
 def cited_keys(source_text: str) -> set[str]:
     keys: set[str] = set()
-    for match in re.finditer(r"\[@([A-Za-z0-9_:\-.,; ]+)\]", source_text):
-        keys.update(key.strip() for key in re.split(r"[,;]", match.group(1)) if key.strip())
+    # `[@a; @b]` cites several keys in one bracket; each later key keeps its `@`.
+    for match in re.finditer(r"\[@([A-Za-z0-9_:\-.,;@ ]+)\]", source_text):
+        keys.update(key.strip().lstrip("@") for key in re.split(r"[,;]", match.group(1)) if key.strip().lstrip("@"))
     for match in re.finditer(r"\\(?:cite|parencite|textcite|autocite)\*?(?:\[[^\]]*\])*\{([^}]+)\}", source_text):
         keys.update(key.strip() for key in match.group(1).split(",") if key.strip())
     return keys
