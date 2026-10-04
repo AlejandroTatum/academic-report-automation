@@ -244,6 +244,8 @@ BIBLATEX_SETUP = {
         r"\DeclareDelimFormat[parencite]{finalnamedelim}{\addspace y\space}"
         # Air between reference entries; the hanging indent stays biblatex-apa's.
         r"\setlength{\bibitemsep}{0.5\baselineskip}"
+        # APA lists are left-aligned; justified lines open wide word gaps.
+        r"\AtBeginBibliography{\raggedright}"
         # URLs/DOIs may break after / . - only; never after "https:" or
         # mid-word. xurl (loaded after biblatex) resets the counters and
         # \biburlsetup resets the break sets, so apply both at end of preamble.
@@ -254,7 +256,9 @@ BIBLATEX_SETUP = {
         r"\setcounter{biburlnumpenalty}{0}"
         r"\setcounter{biburlucpenalty}{0}"
         r"\setcounter{biburllcpenalty}{0}"
-        r"\appto\biburlsetup{\Urlmuskip=0mu\relax\def\UrlBreaks{\do\/\do\.\do\-}\def\UrlBigBreaks{\do\:}}}"
+        r"\appto\biburlsetup{\Urlmuskip=0mu\relax\def\UrlBreaks{\do\/\do\.\do\-}\def\UrlBigBreaks{\do\:}}"
+        # Body \url/\href: ":" is a big break by default, which splits "https: //".
+        r"\def\UrlBigBreaks{}}"
     ),
 }
 

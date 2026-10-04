@@ -106,5 +106,13 @@ def test_apa_setup_spaces_entries_and_softens_url_breaks() -> None:
         assert counter in setup
 
 
+def test_apa_setup_sets_ragged_bibliography_and_body_url_breaks() -> None:
+    setup = build_latex_report.BIBLATEX_SETUP["apa"]
+    # APA reference lists are left-aligned; justified lines open wide gaps.
+    assert r"\AtBeginBibliography{\raggedright}" in setup
+    # Body \url/\href must not break right after "https:" either.
+    assert r"\def\UrlBigBreaks{}" in setup
+
+
 def test_ieee_setup_stays_empty() -> None:
     assert build_latex_report.BIBLATEX_SETUP["ieee"] == ""
