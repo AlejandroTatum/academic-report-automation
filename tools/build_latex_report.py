@@ -558,7 +558,12 @@ def markdown_to_latex(
     def flush_paragraph() -> None:
         nonlocal paragraph
         if paragraph:
-            output.append(convert_inline(" ".join(item.strip() for item in paragraph)))
+            text = " ".join(item.strip() for item in paragraph)
+            # A "Tabla N." caption must not be stranded at a page foot apart
+            # from its table: reserve room for the caption plus table head.
+            if re.match(r"^(Tabla|Table)\s+\d+\.", text):
+                output.append(r"\Needspace{8\baselineskip}")
+            output.append(convert_inline(text))
             output.append("")
             paragraph = []
 
