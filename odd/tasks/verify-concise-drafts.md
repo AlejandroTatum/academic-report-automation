@@ -68,7 +68,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - [x] T3 S6 Per-section word budget in the rubric plan and a `max_words` failure in validate; no minimum. Route: inline. Commit: see L10
 - [x] T4 S6 Filler detector in `--body-check` (filler phrases, paragraphs over 80 words). Route: inline. Commit: see L10
 - [x] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: see L11
-- [ ] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: —
+- [x] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: see L12
 - [ ] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: —
 - [ ] T8 S2 Single approval packet (preview PDF + matrix + missing items). Route: inline. Commit: —
 - [ ] T9 S1–S7 E2E on the SD APE1 guide: compare words, rounds and time against the delivered v001. Route: inline. Commit: —
@@ -109,3 +109,16 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   with fewer non-heading checks than deliverables; content.md documents it. RED: 8 failed. GREEN: 1993
   passed. With this rule, the SD APE1 rubric (`informe-entrega`, a heading check only) would have been
   rejected at plan time.
+- L11b T5 review `review-6e736a75efc17537`: approved, acknowledged and burned; advisories informational.
+- L12 T6 evidence.
+  - Route: worker `muw8lvbf-2-rh79`. RED: 9 failing tests plus 2 uncollectable modules. GREEN reported as
+    2026; the parent re-ran it: 2026 passed.
+  - Legacy two-judge markers of the 4 delivered reports still read `pass` (same as HEAD).
+  - Parent fixes: `routing.md` verify row; the brief splits plural demands into one requirement per item.
+  - Real E2E on an SD APE1 scratch copy: one verifier ran from `--verify-brief`. It found real gaps the
+    two judges missed: the general objective omits "Reconocer la arquitectura", there is no cover sheet,
+    and table numbering diverges from the guide. It listed 3 deletion candidates.
+  - It still marked "Enlaces públicos de Wokwi" found on Part B alone, hence the split rule above and T5
+    deliverables.
+  - `content_check --verification` on a subset: `links_resolve` checked 10 real links, all resolve;
+    result fail (exit 1) on the missing requirements, as designed.

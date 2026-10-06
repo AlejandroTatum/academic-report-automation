@@ -113,20 +113,24 @@ def human_template(text: str) -> str:
     raise AssertionError("SKILL.md must embed the fenced human status block template")
 
 
-def test_verify_uses_independent_judge_without_drafting_conversation() -> None:
+def test_verify_uses_one_independent_verifier_without_drafting_conversation() -> None:
     text = read(PRODUCTION_MD)
-    assert "--judge-brief" in text
-    assert "independent read-only judge" in text
+    assert "--verify-brief" in text
+    assert "independent read-only verifier" in text
     assert "Do not pass the drafting conversation" in text
+    assert "--judge-brief" not in text and "two independent" not in text.lower()
 
 
-def test_verify_requires_two_parallel_judges_and_strictest_verdict() -> None:
-    text = read(PRODUCTION_MD)
-    assert "two independent read-only judge subagents in parallel" in text
-    assert "same brief" in text
-    assert "judgments-a.yml" in text and "judgments-b.yml" in text
-    assert "--judgments judgments-a.yml --judgments judgments-b.yml" in text
-    assert "strictest verdict wins" in text.lower()
+def test_verify_requires_one_verifier_matrix_and_quoted_evidence() -> None:
+    flat = re.sub(r"\s+", " ", read(PRODUCTION_MD))
+    assert "ONE independent read-only verifier" in flat
+    assert "verification.yml" in flat
+    assert "--verification verification.yml" in flat
+    assert "requirement" in flat and "evidence" in flat and "found|missing" in flat
+    assert "exact quote" in flat and "downgraded to `missing`" in flat
+    assert "links_resolve" in flat and "unmapped_paragraphs" in flat
+    assert "never scores" in flat
+    assert "--judgments" not in flat and "judgments-a.yml" not in flat
 
 
 def test_required_files_and_frontmatter() -> None:
@@ -546,10 +550,10 @@ def test_approval_batches_literal_orders_and_rechecks() -> None:
         assert phrase in text
 
 
-def test_verify_refuses_drafter_judgments_and_stale_marker() -> None:
+def test_verify_refuses_drafter_verification_and_stale_marker() -> None:
     text = read(PRODUCTION_MD)
-    assert "drafting agent never writes judgments" in text
-    assert "stale marker" in text and "re-run the independent judge" in text
+    assert "drafting agent never writes verification.yml" in text
+    assert "stale marker" in text and "re-run the verifier" in text
 
 
 def test_pdf_handoff_uses_exact_doc_status_fish_command() -> None:
@@ -563,7 +567,7 @@ def test_pdf_handoff_uses_exact_doc_status_fish_command() -> None:
 
 def test_skill_hard_rules_summarize_four_guards() -> None:
     hard = read(SKILL_MD).split("## Hard Rules", 1)[1].split("## Decision Gates", 1)[0]
-    for phrase in ("rubric TDD", "independent judge", "verified sources", "batched edit orders"):
+    for phrase in ("rubric TDD", "independent verifier", "verified sources", "batched edit orders"):
         assert len([line for line in hard.splitlines() if phrase.lower() in line.lower()]) == 1
 
 
@@ -673,12 +677,12 @@ def test_verify_reference_reports_findings_and_never_rewrites() -> None:
     """T6 rule 6: the content check reports findings; the user fixes them."""
     flat = re.sub(r"\s+", " ", read(PRODUCTION_MD)).lower()
     assert re.search(r"never rewrites? `?body\.md", flat), "production.md must forbid rewriting body.md"
-    for status in ("cumple", "flojo", "falta"):
-        assert status in flat, f"production.md must name the `{status}` judgment status"
+    for status in ("cumple", "falta", "found", "missing"):
+        assert status in flat, f"production.md must name the `{status}` status"
+    assert "flojo" not in flat, "the verify has no `flojo` status"
     assert "edit orders" in flat, "production.md must route fixes through the user's edit orders"
-    assert "confusing" in flat, "production.md must report confusing paragraphs"
-    assert re.search(r"figures? (?:that |which )?serves? no criterion", flat), (
-        "production.md must report figures that serve no criterion"
+    assert "unmapped paragraphs" in flat and "deletion candidates" in flat, (
+        "production.md must report unmapped paragraphs as deletion candidates"
     )
 
 
@@ -910,16 +914,16 @@ def content_check_cli_help() -> str:
     return result.stdout
 
 
-def test_verify_defines_the_orchestrator_judge_handoff() -> None:
+def test_verify_defines_the_orchestrator_verifier_handoff() -> None:
     flat = re.sub(r"\s+", " ", read(PRODUCTION_MD))
     for phrase in (
         "cannot launch subagents",
         "stops at verify",
-        "orchestrator runs the two judges",
+        "orchestrator runs the verifier",
         "brief verbatim",
-        "two independent read-only subagents",
+        "one independent read-only subagent",
         "saved unchanged",
-        "drafting agent never writes judgments",
+        "drafting agent never writes verification.yml",
     ):
         assert phrase in flat, f"production.md must say `{phrase}`"
 
@@ -1086,3 +1090,9 @@ def test_plan_turns_every_guide_deliverable_into_a_check() -> None:
     text = re.sub(r"\s+", " ", read(CONTENT_MD))
     for phrase in ("deliverables:", "one non-heading check per deliverable", "rubric_plan.py"):
         assert phrase in text, phrase
+
+
+def test_content_check_cli_offers_one_verification_and_no_judge_flags() -> None:
+    help_text = content_check_cli_help()
+    assert "--verification" in help_text and "--verify-brief" in help_text
+    assert "--judgments" not in help_text and "--judge-brief" not in help_text

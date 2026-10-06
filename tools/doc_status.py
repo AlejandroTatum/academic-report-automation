@@ -95,8 +95,9 @@ _GUIDANCE = {
         "an answer, no defaults; record the answers in {report_yml} only when approval.yml is written"
     ),
     "verify": (
-        "launch TWO independent judges for {rubric}; run {check_command} "
-        "--judgments a.yml --judgments b.yml, then re-run doc_status"
+        "launch ONE independent verifier for {rubric} with the brief from {check_command} "
+        "--verify-brief, save its matrix as verification.yml; run {check_command} "
+        "--verification verification.yml, then re-run doc_status"
     ),
     "format": (
         "the format answers normally arrive with the approval batch; ask only the missing "
@@ -303,7 +304,7 @@ def _phase_verify(folder: Path, _config: ReportConfig, _documents_root: Path | N
         return PhaseState(
             "verify",
             PENDING,
-            "content-check.yml is stale: inputs changed or legacy marker; re-run two independent judges",
+            "content-check.yml is stale: inputs changed or legacy marker; re-run the verifier",
             "content_check_stale",
         )
     if state == "fail":
@@ -625,12 +626,12 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             "is rebuilt, then re-run doc_status; generation runs only after you approve {body}"
         )
     if phase_name == "verify" and blocked_reason == "content_check_stale":
-        template = "launch TWO independent judges for {body}, then run {check_command} --judgments a.yml --judgments b.yml"
+        template = "launch ONE independent verifier for {body}, then run {check_command} --verification verification.yml"
     if phase_name == "verify" and blocked_reason == "content_check_malformed":
-        template = "launch TWO independent judges for {body}, then run the content check: {check_command} --judgments a.yml --judgments b.yml"
+        template = "launch ONE independent verifier for {body}, then run the content check: {check_command} --verification verification.yml"
     if phase_name == "verify" and blocked_reason == "content_check_failed":
         template = ("fix findings in {body} through the user's literal edit orders, "
-                    "then re-approve the draft and re-run the independent judge")
+                    "then re-approve the draft and re-run the verifier")
     if phase_name == "draft" and blocked_reason == "body_check_failed":
         template = "fix {body} until {check_command} --body-check passes, then re-run doc_status"
     if phase_name == "intake" and not config.metadata.get("student"):

@@ -4,16 +4,16 @@ Tools enforce quality between Decisions 2 and 3: run each, report findings, neve
 
 ## Verify (artifact `reports/<wf>/content-check.yml`)
 
-Runs only after `approval` is `done`, judging the approved draft.
+Runs only after `approval` is `done`, over the approved draft.
 
-1. `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --judge-brief`. Do not pass the drafting conversation to a judge.
-2. Give its exact output to two independent read-only judge subagents in parallel with the same brief; they must not coordinate and return the YAML the brief specifies (per criterion `cumple|flojo|falta`).
-3. Save the YAML unchanged as `judgments-a.yml` and `judgments-b.yml`; the drafting agent never writes judgments. Run `content_check.py <folder> --judgments judgments-a.yml --judgments judgments-b.yml`.
-4. The tool validates both files, adds the mechanical checks (citations resolve; at least 5, or the report's `min_sources:`, eligible sources cited; with `uncited_bibliography: true` the bib only needs 1 listed entry and no citation), the strictest verdict wins per criterion (`falta` > `flojo` > `cumple`), and writes `content-check.yml` bound by hash to body, rubric and bib. A stale marker means re-run the independent judges on current inputs; old judgments are reused only when the body change is markup-only (same `body_text_sha256`, same rubric).
+1. `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --verify-brief`. Do not pass the drafting conversation to the verifier.
+2. Give its exact output to ONE independent read-only verifier subagent. It never scores: it returns the requirement -> evidence matrix YAML the brief specifies (per rubric criterion, one or more `requirement` entries with `status: found|missing`, `location`, and `evidence`, an exact quote from `body.md`, required when `found`; plus `unmapped_paragraphs` and `findings`). Evidence it cannot quote is `missing`, never "seems to comply".
+3. Save the YAML unchanged as `verification.yml`; the drafting agent never writes verification.yml. Run `content_check.py <folder> --verification verification.yml`.
+4. The tool validates the file; a `found` requirement whose exact quote is not in `body.md` (whitespace-normalized) is downgraded to `missing` with a finding; a criterion is `cumple` when all its requirements are found, `falta` otherwise. It adds the mechanical checks (citations resolve; at least 5, or the report's `min_sources:`, eligible sources cited, or with `uncited_bibliography: true` at least 1 bib entry and no citation required; `links_resolve`: every http(s) URL in the body is opened, an HTTP error fails, a timeout or DNS failure only warns) and writes `content-check.yml` bound by hash to body, rubric, bib and guide. A stale marker means re-run the verifier on current inputs; a verification is reused only when the body change is markup-only (same `body_text_sha256`, same rubric). Legacy markers with `judges:` stay valid.
 
-When the executor cannot launch subagents, it stops at verify and reports the judges pending; the orchestrator runs the two judges exactly as above (brief verbatim, two independent read-only subagents, YAML saved unchanged) and the executor never stands in for a judge.
+When the executor cannot launch subagents, it stops at verify and reports the verifier pending; the orchestrator runs the verifier exactly as above (brief verbatim, one independent read-only subagent, YAML saved unchanged) and the executor never stands in for the verifier.
 
-The check only reports (per-criterion status, citation problems, confusing paragraphs, figures that serve no criterion). It never rewrites `body.md`; never add judgments for criteria the plan does not name or soften `falta` to `flojo`. Report every finding verbatim and collect literal edit orders (`approval.md`); a recorded `fail` blocks the route (`content_check_failed`) until fixed; an edited draft stales the marker and reruns the check.
+The check only reports (per-criterion `cumple|falta`, the requirement matrix with missing items, citation and link problems, unmapped paragraphs as deletion candidates). It never rewrites `body.md`; never add requirements for criteria the plan does not name. Report every finding verbatim and collect literal edit orders (`approval.md`); unmapped paragraphs are proposed for deletion, never added to. A recorded `fail` blocks the route (`content_check_failed`) until fixed; an edited draft stales the marker and reruns the check.
 
 ## Generate (artifact: the final PDF under `outputs/<materia>/`)
 
@@ -55,7 +55,7 @@ Visible evidence overrides automation: a visible blocking defect fails the artif
 
 Blocking defects:
 - Academic route only: cover on page 1, body from page 2, UNL logo present.
-- Headings without substantial following content (orphan heading: after a heading the same page must fit two lines of body text, a table header plus one data row, or a complete figure); clipped images, overfull boxes, accidental blank pages, pages under 20% meaningful content, half-empty pages from table pagination. `visual_pdf_auditor.py` only warns on orphans; inspect before judging.
+- Headings without substantial following content (orphan heading: after a heading the same page must fit two lines of body text, a table header plus one data row, or a complete figure); clipped images, overfull boxes, accidental blank pages, pages under 20% meaningful content, half-empty pages from table pagination. `visual_pdf_auditor.py` only warns on orphans; inspect before deciding.
 - Whitespace: over 40% of the lower page empty without a natural section close. An intentional gap or natural close is approvable only with a recorded visual justification; page-break space, an unsplit table or a page holding an isolated title is a defect. Record every page under 20% content, over 40% lower empty, heading before a page break, or whole table displaced.
 - Tables render as real grids (visible rules, distinct header, legible type; never raw Markdown pipes). Remove unneeded columns before compressing; split wide tables (e.g. `Code | Actor | Requirement | Priority` and `Code | Acceptance criterion`). Broken tables repeat the header. With `table_styles: {enabled: true}` every table needs a `<!-- table-style: <key> purpose=... -->` directive; run `tools/check_table_contexts.py <dir>`.
 - Type shrunk to fit is a defect; a table that cannot split is a defect unless a split was attempted.

@@ -19,12 +19,12 @@ Recommend at most one type with a reason, never select it. Ambiguity stops the r
 
 ## Hard Rules
 
-Tools enforce quality (`doc_status`, `content_check --body-check`, judges, `validate_report.py`, visual audit, `deliver_report.py`); run them and obey their blocks. Three human decisions: data, draft approval plus format, final review.
+Tools enforce quality (`doc_status`, `content_check --body-check`, verify, `validate_report.py`, visual audit, `deliver_report.py`); run them and obey their blocks. Three human decisions: data, draft approval plus format, final review.
 
 - Present the human block verbatim and every human gate losslessly; never proceed on silence.
 - Quality over quantity: no minimum length; every paragraph answers a guide requirement, and findings are fixed by cutting, never by adding prose (`references/content.md`).
 - Require rubric TDD checks in the plan before drafting; the draft turns them green.
-- Use an independent judge for semantic verification; the drafter never grades itself.
+- Use one independent verifier for semantic verification (requirement -> evidence matrix, unquotable evidence is `missing`); the drafter never verifies itself.
 - Require verified sources before research is finished.
 - Apply batched edit orders verbatim before seeking re-approval.
 - Never build before approval is `done`; never present the approval gate before `draft` is `done`.
@@ -40,7 +40,7 @@ Tools enforce quality (`doc_status`, `content_check --body-check`, judges, `vali
 
 | Situation | Action |
 |---|---|
-| `next` names a phase | Load its reference and run its executor (this skill, `research-workflow`, or a judge). |
+| `next` names a phase | Load its reference and run its executor (this skill, `research-workflow`, or the verifier). |
 | Intake data missing or ambiguous | Stop and ask; recording the contract is never approval. |
 | `next: approval` / `next: review` | Present the gate; write `approval.yml` / `final-review.yml` only on an explicit answer. |
 | Type ambiguous or non-academic | Recommend or resolve a route; never fall back to Route A. |

@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path) -> None:
+def test_legacy_verify_is_pending_and_requests_independent_verifier(tmp_path: Path) -> None:
     import yaml
     import doc_status
     from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
@@ -35,12 +35,12 @@ def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path)
     status = doc_status.derive(folder)
     verify = doc_status._phase_verify(folder, None, None)
     assert verify.state == doc_status.PENDING
-    assert "TWO independent judges" in status.gate
-    assert "--judgments a.yml --judgments b.yml" in status.gate
+    assert "independent verifier" in status.gate and "judge" not in status.gate
+    assert "--verification verification.yml" in status.gate
     assert "malformed" not in status.gate
 
 
-def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Path) -> None:
+def test_malformed_verify_guidance_requests_verifier_and_content_check(tmp_path: Path) -> None:
     import doc_status
     from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
 
@@ -52,8 +52,8 @@ def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Pa
     _approval(folder)
     _content_check(folder, mechanical=[])
     status = doc_status.derive(folder)
-    assert "TWO independent judges" in status.gate
-    assert "--judgments a.yml --judgments b.yml" in status.gate
+    assert "independent verifier" in status.gate and "judge" not in status.gate
+    assert "--verification verification.yml" in status.gate
     assert "content_check.py" in status.gate
 
 

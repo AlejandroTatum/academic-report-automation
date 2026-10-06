@@ -25,7 +25,7 @@ Every command is absolute and cwd-independent. Run first:
 | plan | `content.md` | academic-report-flow | `reports/<wf>/rubric.yml` |
 | draft | `content.md` | academic-report-flow | `reports/<wf>/body.md` |
 | approval | `approval.md` | human gate, no executor | `reports/<wf>/approval.yml` |
-| verify | `production.md` | academic-report-flow + two judges | `reports/<wf>/content-check.yml` |
+| verify | `production.md` | academic-report-flow + one independent verifier | `reports/<wf>/content-check.yml` |
 | format | `approval.md` | academic-report-flow | `reports/<wf>/report.yml` |
 | generate | `production.md` | academic-report-flow | `outputs/<materia>/<final>.pdf` |
 | validate | `production.md` | academic-report-flow or `gentle-ai review` | `reports/<wf>/validation.yml` |

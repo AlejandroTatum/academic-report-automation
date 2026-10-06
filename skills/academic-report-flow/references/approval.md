@@ -25,7 +25,7 @@ Ask in ONE batch, the same batch for approval and format, through `ask_user_choi
 
 ## Review loop - literal edit orders
 
-The user answers with literal edit orders ("in paragraph X replace '...' with '...'", "delete section Y", "move this paragraph before that one"). Apply the user's text verbatim: never polish, rephrase or improve user-authored text; polishing forges authorship. Batch all literal edit orders from one reading into one round: apply them all verbatim, rebuild the preview PDF, and only then ask for re-approval with the same links. Every edit changes `body.md`, so the approval goes stale and the route returns to `approval` as `pending`; present the gate again for the new bytes. Each re-approval re-runs verify (fresh independent judge), generate and validate before final review. The loop repeats until the user explicitly approves.
+The user answers with literal edit orders ("in paragraph X replace '...' with '...'", "delete section Y", "move this paragraph before that one"). Apply the user's text verbatim: never polish, rephrase or improve user-authored text; polishing forges authorship. Batch all literal edit orders from one reading into one round: apply them all verbatim, rebuild the preview PDF, and only then ask for re-approval with the same links. Every edit changes `body.md`, so the approval goes stale and the route returns to `approval` as `pending`; present the gate again for the new bytes. Each re-approval re-runs verify (fresh independent verifier), generate and validate before final review. The loop repeats until the user explicitly approves.
 
 ## Format (phase `format`, artifact `reports/<wf>/report.yml`)
 
