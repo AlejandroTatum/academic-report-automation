@@ -48,11 +48,11 @@ Gates: both branches enforce the identical gate set `BUILD_PASS`, `VALIDATION_PA
 | `HUMAN_REVIEW` | `final-review.yml` for the same bytes |
 | `READY_TO_SUBMIT` | every previous gate passes, artifacts unchanged |
 
-`VISUAL_PASS` ownership: the validate phase executor that performed the direct page-by-page inspection (every page rendered and read back, no blocking defect) records `VISUAL_PASS` in `validation.yml` `gates:` and notes it in the evidence report; a receipt without an inspection never records `VISUAL_PASS`. `READY_TO_SUBMIT` follows once `HUMAN_REVIEW` exists for the same bytes (`deliver_report.py` derives it).  Never write `approval.yml`, `body.md` or `report.yml` here.
+`VISUAL_PASS` ownership: the validate phase executor that performed the direct page-by-page inspection (every page rendered and read back, or after a correction the pages `visual_qa.md` lists as changed, no blocking defect) records `VISUAL_PASS` in `validation.yml` `gates:` and notes it in the evidence report; a receipt without an inspection never records `VISUAL_PASS`. `READY_TO_SUBMIT` follows once `HUMAN_REVIEW` exists for the same bytes (`deliver_report.py` derives it).  Never write `approval.yml`, `body.md` or `report.yml` here.
 
 ## Quality gates (inspection a tool cannot do)
 
-Visible evidence overrides automation: a visible blocking defect fails the artifact even when every script passes. Record the artifact hash and page count first; inspect every contact-sheet page and open every page with diagrams, figures, captions or tables at readable size. After any correction rebuild the whole artifact and rerun everything (never only changed pages); explain material page-count changes.
+Visible evidence overrides automation: a visible blocking defect fails the artifact even when every script passes. Record the artifact hash and page count first; inspect every contact-sheet page and open every page with diagrams, figures, captions or tables at readable size. After any correction rebuild the whole artifact and rerun every tool on it; explain material page-count changes. The auditor compares rendered pixels with its previous run in the same output folder (`page_hashes.json`): `visual_qa.md` lists the **Changed pages** and `changed_contact_sheet.png` shows them. Inspect only those pages again; a pixel-identical page keeps its earlier verdict. A first audit, a DPI change or `Changed pages: first audit` means inspect every page.
 
 Blocking defects:
 - Academic route only: cover on page 1, body from page 2, UNL logo present.

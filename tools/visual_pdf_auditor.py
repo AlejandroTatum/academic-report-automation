@@ -20,6 +20,9 @@ Output artifacts:
   - Rendered page PNGs in <outdir>/rendered/page-*.png
   - Contact sheet (thumbnail grid) at <outdir>/contact_sheet.png
   - Report at <outdir>/visual_qa.md
+  - Pixel hash per page at <outdir>/page_hashes.json; the next audit into the
+    same <outdir> lists the changed pages in visual_qa.md and draws them in
+    <outdir>/changed_contact_sheet.png
   - Optional JSON output with --json
 
 Where artifacts land (see ``default_output_dir()``): a PDF inside the content
@@ -44,6 +47,7 @@ Integration note:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -164,6 +168,9 @@ class AuditResult:
     render_success: bool = True
     severity: str = "PASS"  # PASS | PASS_WITH_WARNINGS | FAIL
     summary: str = ""
+    # Pages whose pixels differ from the previous audit in the same output
+    # directory; None when there is no comparable previous audit.
+    changed_pages: Optional[list] = None
 
 
 # ---------------------------------------------------------------------------
@@ -804,6 +811,35 @@ def _now_str() -> str:
         return "(unknown date)"
 
 
+PAGE_HASHES_NAME = "page_hashes.json"
+CHANGED_CONTACT_SHEET_NAME = "changed_contact_sheet.png"
+
+
+def _changed_pages_text(changed: Optional[list]) -> str:
+    if changed is None:
+        return "first audit, inspect every page"
+    if not changed:
+        return "none"
+    pages = ", ".join(str(p) for p in changed)
+    return f"{pages} (inspect these; unchanged pages keep the previous verdict)"
+
+
+def _previous_page_hashes(output_dir: Path, dpi: int) -> Optional[list]:
+    """The previous audit's page hashes at the same DPI, or None when unusable."""
+    try:
+        data = json.loads((output_dir / PAGE_HASHES_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("dpi") != dpi or not isinstance(data.get("pages"), list):
+        return None
+    return data["pages"]
+
+
+def _page_hash(img: Image.Image) -> str:
+    """Hash of the rendered pixels, so PDF metadata from a rebuild never counts."""
+    return hashlib.sha256(f"{img.mode}{img.size}".encode() + img.tobytes()).hexdigest()
+
+
 def write_visual_qa_report(result: AuditResult, output_path: Path) -> Path:
     """Write visual_qa.md — human-readable per-page audit report."""
     sev = result.severity
@@ -822,6 +858,7 @@ def write_visual_qa_report(result: AuditResult, output_path: Path) -> Path:
     ]
     if result.contact_sheet:
         lines.append(f"- **Contact sheet**: `{result.contact_sheet}`")
+    lines.append(f"- **Changed pages**: {_changed_pages_text(result.changed_pages)}")
     lines.append(f"- **Artifacts**: `{result.artifacts_dir}/`")
     lines.append("")
 
@@ -906,11 +943,14 @@ def audit_pdf(
     result.page_width_px = page_w
     result.page_height_px = page_h
     result.total_pages = n_pages
+    previous_hashes = _previous_page_hashes(output_dir, dpi)
+    page_hashes: list[str] = []
 
     # ---- 2. Per-page analysis ----
     for idx, png in enumerate(pngs):
         page_num = idx + 1
         with Image.open(png) as img:
+            page_hashes.append(_page_hash(img))
             finding = PageFinding(page=page_num)
 
             # Near-blank
@@ -972,6 +1012,23 @@ def audit_pdf(
         result.contact_sheet = str(cs_path)
     except Exception as exc:
         result.contact_sheet = f"ERROR: {exc}"
+
+    # ---- 3b. Changed pages since the previous audit (T7) ----
+    if previous_hashes is not None:
+        result.changed_pages = [
+            index + 1 for index, digest in enumerate(page_hashes)
+            if index >= len(previous_hashes) or previous_hashes[index] != digest
+        ]
+    changed_sheet = output_dir / CHANGED_CONTACT_SHEET_NAME
+    changed_sheet.unlink(missing_ok=True)
+    if result.changed_pages:
+        try:
+            create_contact_sheet([pngs[p - 1] for p in result.changed_pages], changed_sheet)
+        except Exception:
+            pass  # the full contact sheet still covers every page
+    (output_dir / PAGE_HASHES_NAME).write_text(
+        json.dumps({"dpi": dpi, "pages": page_hashes}, indent=2) + "\n", encoding="utf-8",
+    )
 
     # ---- 4. Severity ---- (classified once, in page_issues())
     failures = count_flagged_pages(result, FAILURE)
