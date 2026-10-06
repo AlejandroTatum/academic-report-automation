@@ -69,7 +69,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - [x] T4 S6 Filler detector in `--body-check` (filler phrases, paragraphs over 80 words). Route: inline. Commit: see L10
 - [x] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: see L11
 - [x] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: see L12
-- [ ] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: —
+- [x] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: see L13
 - [ ] T8 S2 Single approval packet (preview PDF + matrix + missing items). Route: inline. Commit: —
 - [ ] T9 S1–S7 E2E on the SD APE1 guide: compare words, rounds and time against the delivered v001. Route: inline. Commit: —
 
@@ -128,3 +128,10 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   STATUS, the correction plan and the validator capture ran through the provider CLI with the user's consent.
   Follow-ups (advisory): `http.client.HTTPException` subclasses still escape `_check_one`; the docstring
   omits the `ValueError` path.
+- L13 T7 evidence. 367722e: `content_check --verify-brief --since <previous verification.yml>` records
+  `section_sha256` per criterion (markup-normalized `concision.section_text`), re-checks only criteria whose
+  section changed and embeds the carried requirements to copy verbatim; a rubric change forces a full verify;
+  carried quotes are still re-checked by run_check. RED 9, GREEN 10. 769269e: `visual_pdf_auditor` writes
+  `page_hashes.json` (pixel hashes, DPI-bound); a later audit in the same folder lists **Changed pages** in
+  visual_qa.md and draws `changed_contact_sheet.png`; production.md now inspects only changed pages after a
+  correction. RED 6, GREEN 6. Full suite: 2042 passed.
