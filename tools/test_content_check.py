@@ -1645,3 +1645,103 @@ def test_body_check_clean_draft_reports_concision_checks_ok(tmp_path: Path) -> N
     results = {item["check"]: item for item in content_check.body_check_results(folder)}
     for name in ("word_budget", "filler_phrases", "long_paragraphs"):
         assert results[name]["ok"] is True, name
+
+
+# ---------------------------------------------------------------------------
+# Incremental re-verify (verify-concise-drafts T7, S2)
+# ---------------------------------------------------------------------------
+
+SECTIONED_BODY = (
+    "# Informe\n\n## Objetivos\n\nMedir la deriva con fuentes [@key1] y [@key2].\n\n"
+    "## Metodologia\n\nSe usaron [@key3], [@key4] y [@key5].\n"
+)
+
+
+def _sectioned_verification(folder: Path) -> Path:
+    """A verification of SECTIONED_BODY carrying the brief's section hashes."""
+    _verify_folder(folder)
+    _body(folder, SECTIONED_BODY)
+    hashes = content_check.section_hashes(SECTIONED_BODY, content_check.rubric_plan.load_rubric(folder))
+    return _verification(
+        folder,
+        requirements=[_req("objetivo", evidence="Medir la deriva"), _req("metodologia", evidence="Se usaron")],
+        section_sha256=hashes,
+    )
+
+
+def test_verify_brief_records_one_section_hash_per_criterion(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, SECTIONED_BODY)
+    hashes = content_check.section_hashes(SECTIONED_BODY, content_check.rubric_plan.load_rubric(folder))
+    assert set(hashes) == {"objetivo", "metodologia"}
+    brief = content_check.verify_brief(folder)
+    assert f"objetivo: {hashes['objetivo']}" in brief
+    assert f"metodologia: {hashes['metodologia']}" in brief
+
+
+def test_section_hash_ignores_markup_and_skips_missing_sections(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    criteria = content_check.rubric_plan.load_rubric(folder)
+    plain = content_check.section_hashes(SECTIONED_BODY, criteria)
+    bold = content_check.section_hashes(SECTIONED_BODY.replace("Medir la deriva", "**Medir la deriva**"), criteria)
+    assert plain == bold
+    assert content_check.section_hashes("# Informe\n\n## Objetivos\n\nTexto.\n", criteria).keys() == {"objetivo"}
+
+
+def test_since_brief_rechecks_only_changed_sections_and_carries_the_rest(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    previous = _sectioned_verification(folder)
+    _body(folder, SECTIONED_BODY.replace("Se usaron", "Se midieron con"))
+    brief = content_check.verify_brief(folder, since=previous)
+    assert "Incremental re-verify" in brief
+    assert "Re-check only these criteria: metodologia" in brief
+    assert "Carried over unchanged (copy these requirements verbatim): objetivo" in brief
+    assert "evidence: Medir la deriva" in brief
+    assert "evidence: Se usaron" not in brief
+
+
+def test_since_brief_with_unchanged_body_carries_everything(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    previous = _sectioned_verification(folder)
+    brief = content_check.verify_brief(folder, since=previous)
+    assert "Re-check only these criteria: (none)" in brief
+    assert "Carried over unchanged (copy these requirements verbatim): objetivo, metodologia" in brief
+
+
+def test_since_brief_after_rubric_change_is_a_full_verify(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    previous = _sectioned_verification(folder)
+    _rubric(folder, source="otra guia")
+    brief = content_check.verify_brief(folder, since=previous)
+    assert "Incremental re-verify" not in brief
+    assert "full verify: the rubric changed since" in brief
+
+
+def test_since_brief_without_previous_section_hashes_rechecks_everything(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    _body(folder, SECTIONED_BODY)
+    previous = _verification(folder, requirements=[_req("objetivo", evidence="Medir la deriva"),
+                                                   _req("metodologia", evidence="Se usaron")])
+    brief = content_check.verify_brief(folder, since=previous)
+    assert "Re-check only these criteria: objetivo, metodologia" in brief
+    assert "Carried over unchanged (copy these requirements verbatim): (none)" in brief
+
+
+def test_since_brief_rejects_an_unusable_previous_verification(tmp_path: Path, capsys) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    bad = folder / "old.yml"
+    bad.write_text("not: [valid", encoding="utf-8")
+    assert content_check.main([str(folder), "--verify-brief", "--since", str(bad)]) == 2
+    assert "content check input error: old.yml is not valid YAML" in capsys.readouterr().err
+
+
+def test_since_requires_verify_brief(tmp_path: Path, capsys) -> None:
+    folder = tmp_path / "wf"
+    previous = _sectioned_verification(folder)
+    assert content_check.main([str(folder), "--verification", str(previous), "--since", str(previous)]) == 2
+    assert "--since only applies to --verify-brief" in capsys.readouterr().err
+
+
+def test_verification_with_section_hashes_still_passes(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0

@@ -197,6 +197,44 @@ def body_text_sha256(text: str) -> str:
     return hashlib.sha256(normalize_body_text(text).encode("utf-8")).hexdigest()
 
 
+def section_hashes(body_text: str, criteria: list[dict]) -> dict[str, str]:
+    """Markup-normalized hash of each criterion's mapped section; absent sections are omitted."""
+    hashes: dict[str, str] = {}
+    for criterion in criteria:
+        section = criterion.get("section")
+        text = concision.section_text(body_text, section) if isinstance(section, str) else None
+        if text is not None:
+            hashes[str(criterion.get("id"))] = body_text_sha256(text)
+    return hashes
+
+
+def _incremental_section(since: Path, criteria: list[dict], hashes: dict[str, str], rubric_hash: str) -> str:
+    """Brief block for a re-verify after an edit (verify-concise-drafts T7, S2).
+
+    A criterion whose mapped section hashes the same as in the previous
+    verification is carried over verbatim; the verifier re-checks only the
+    rest. Carried quotes are still checked against body.md by run_check.
+    """
+    previous, errors = parse_verification(since)
+    if errors:
+        raise ValueError(errors[0])
+    name = Path(since).name
+    if previous["rubric_sha256"] != rubric_hash:
+        return f"Previous verification {name}: full verify: the rubric changed since it was written.\n"
+    old = previous["section_sha256"]
+    carried = [str(c.get("id")) for c in criteria
+               if str(c.get("id")) in hashes and old.get(str(c.get("id"))) == hashes[str(c.get("id"))]]
+    recheck = [str(c.get("id")) for c in criteria if str(c.get("id")) not in carried]
+    kept = [r for r in previous["requirements"] if r["criterion"] in carried]
+    text = (f"Incremental re-verify against {name}: only the sections of the re-checked criteria changed.\n"
+            f"Re-check only these criteria: {', '.join(recheck) or '(none)'}\n"
+            f"Carried over unchanged (copy these requirements verbatim): {', '.join(carried) or '(none)'}\n")
+    if kept:
+        text += yaml.safe_dump(kept, sort_keys=False, allow_unicode=True)
+    return text + ("List unmapped paragraphs only for the re-checked sections; the tool still checks every "
+                   "carried evidence quote against body.md.\n")
+
+
 VERIFY_EXAMPLE_NOTE = (
     "\nDouble-quote every string value (every requirement, location, evidence and finding): an "
     "unquoted ': ' inside a value breaks the YAML.\nExample of valid requirements, unmapped "
@@ -249,14 +287,15 @@ def _criteria_section(criteria: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def verify_brief(folder: Path) -> str:
+def verify_brief(folder: Path, since: Path | None = None) -> str:
     """A self-contained, read-only assignment with hashes for the current draft.
 
     Carries the rubric criteria and deliverables, the already-run deterministic
     rubric checks and their tolerance rules (report-flow-hardening T10), so the
     verifier never re-verifies a property a PASSing check has settled. body.md is
     read exactly once (T11): the recorded ``body_sha256`` and the rubric checks
-    verify the same bytes.
+    verify the same bytes. ``since`` is the previous verification: criteria
+    whose sections did not change are carried over instead of re-verified.
     """
     folder = folder.resolve()
     if rubric_plan.rubric_state(folder) != "valid":
@@ -280,12 +319,15 @@ def verify_brief(folder: Path) -> str:
         "body_sha256": hashlib.sha256(body_bytes).hexdigest(),
         "rubric_sha256": sha256_file(folder / rubric_plan.RUBRIC_NAME),
         "body_text_sha256": body_text_sha256(body_text),
+        "section_sha256": section_hashes(body_text, criteria),
         "requirements": [{"criterion": "<rubric criterion id>", "requirement": "<the guide/rubric demand, quoted>",
                           "status": "found|missing", "location": "<where in body.md>",
                           "evidence": "<exact quote from body.md; required when found>"}],
         "unmapped_paragraphs": ["<first words of a paragraph that answers no requirement>"],
         "findings": [],
     }
+    incremental = (_incremental_section(since, criteria, schema["section_sha256"], schema["rubric_sha256"])
+                   if since is not None else "")
     return ("You are an independent read-only verifier. Verify only from these inputs; "
             "do not use the drafting conversation or any other files. Do not edit any file.\n"
             "Never score or grade. For each rubric criterion list the requirements the guide and rubric "
@@ -298,6 +340,7 @@ def verify_brief(folder: Path) -> str:
             "unmapped_paragraphs (deletion candidates).\n"
             f"Citations [@key] in body.md render in {config.citation_style.upper()} format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
             + _criteria_section(criteria)
+            + incremental
             + _already_run_checks_section(folder, criteria, body_text)
             + "Allowed input paths (absolute):\n"
             + "\n".join(str(folder / name) for name in inputs)
@@ -388,6 +431,8 @@ def parse_verification(path: Path) -> tuple[dict, list[str]]:
             "body_sha256": data.get("body_sha256"),
             "rubric_sha256": data.get("rubric_sha256"),
             "body_text_sha256": _text_or_none(data.get("body_text_sha256")) or "",
+            "section_sha256": {str(k): v for k, v in (data.get("section_sha256") or {}).items()
+                               if isinstance(v, str)} if isinstance(data.get("section_sha256"), dict) else {},
             "requirements": requirements,
             "unmapped_paragraphs": list(unmapped),
             "findings": flattened,
@@ -975,10 +1020,18 @@ def main(argv: list[str] | None = None, fetcher: link_check.Fetcher | None = Non
         action="store_true",
         help="draft-time mechanical checks (format, citations, rubric checks); no verification, writes nothing",
     )
+    parser.add_argument(
+        "--since",
+        type=Path,
+        help="with --verify-brief: the previous verification.yml; re-verify only criteria whose sections changed",
+    )
     args = parser.parse_args(argv)
+    if args.since is not None and not args.verify_brief:
+        print("content check input error: --since only applies to --verify-brief", file=sys.stderr)
+        return 2
     if args.verify_brief:
         try:
-            print(verify_brief(args.folder))
+            print(verify_brief(args.folder, since=args.since))
         except (ValueError, OSError) as exc:
             print(f"content check input error: {exc}", file=sys.stderr)
             return 2
