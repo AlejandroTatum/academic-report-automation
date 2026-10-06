@@ -779,7 +779,9 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
     # build and taught the reader to skip warnings entirely.
     # Route-derived (#23): a non-academic route defaults to no cover, so the
     # academic cover/body boundary markers never apply to it.
-    has_cover = bool(config.cover_value("required", default=True))
+    # The APE format has no cover: page 1 is the identification table, and
+    # its unit name may well read "Introducción al ...".
+    has_cover = bool(config.cover_value("required", default=True)) and config.format != "ape"
     if has_cover and len(pages) > body_page_index:
         first = pages[0].lower()
         body_content = pages[body_page_index].lower()
@@ -822,11 +824,20 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
     # only ever needed `pages`. It used to sit inside the cover/body branch,
     # which meant a report without a cover — or one whose body legitimately
     # starts later — silently lost the check.
+    # A table cell that closes a page is table content, never a heading.
+    body_text = config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
+    table_cells = {
+        " ".join(cell.split())
+        for row in body_text.splitlines() if row.strip().startswith("|")
+        for cell in row.strip().strip("|").split("|")
+    }
     for idx, page in enumerate(pages[:-1], start=1):
         lines = [line.strip() for line in page.splitlines() if line.strip()]
         if not lines:
             continue
         last = lines[-1]
+        if " ".join(last.split()) in table_cells:
+            continue
         looks_heading = (
             bool(re.match(r"^(\d+(?:\.\d+)*)?\s*[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ\s]{3,70}$", last))
             and not last.endswith((".", ":", ";", ","))
