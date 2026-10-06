@@ -135,3 +135,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   `page_hashes.json` (pixel hashes, DPI-bound); a later audit in the same folder lists **Changed pages** in
   visual_qa.md and draws `changed_contact_sheet.png`; production.md now inspects only changed pages after a
   correction. RED 6, GREEN 6. Full suite: 2042 passed.
+- L13b T7 review `review-503aebe21ccac775` (high, 4 lenses): approved with no correction; acknowledged and burned.
+  Advisory follow-ups: removed pages are not reported as changed (auditor 1017-1021); the changed-sheet error
+  is swallowed (1028); a carried quote that no longer exists only downgrades at run_check (content_check 218-228);
+  unmapped paragraphs of carried sections are dropped (229-235).
