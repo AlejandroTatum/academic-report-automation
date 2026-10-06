@@ -40,8 +40,8 @@ PHASES = (
     "research",
     "plan",
     "draft",
-    "approval",
     "verify",
+    "approval",
     "format",
     "generate",
     "validate",
@@ -168,7 +168,7 @@ def test_status_template_contract() -> None:
     route_lines = [line for line in block.splitlines() if line.startswith("Route: ")]
     assert len(route_lines) == 1, "exactly one route line"
     assert route_lines[0] == (
-        "Route: intake > research > [plan] > draft > approval > verify > format"
+        "Route: intake > research > [plan] > draft > verify > approval > format"
         " > generate > validate > review > deliver"
     )
     brackets = re.findall(r"\[([a-z]+)\]", route_lines[0])
@@ -1096,3 +1096,13 @@ def test_content_check_cli_offers_one_verification_and_no_judge_flags() -> None:
     help_text = content_check_cli_help()
     assert "--verification" in help_text and "--verify-brief" in help_text
     assert "--judgments" not in help_text and "--judge-brief" not in help_text
+
+
+def test_verify_runs_before_approval_and_the_gate_shows_one_packet() -> None:
+    """verify-concise-drafts T8 (S2): one approval packet with the verify matrix."""
+    approval = read(APPROVAL_MD)
+    production = read(PRODUCTION_MD)
+    assert "tools/approval_packet.py" in approval
+    assert "requirement matrix, the missing items" in approval
+    assert "before `approval`" in production
+    assert "approval_packet.py <folder>" in production

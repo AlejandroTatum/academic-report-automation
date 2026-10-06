@@ -4,7 +4,7 @@ Tools enforce quality between Decisions 2 and 3: run each, report findings, neve
 
 ## Verify (artifact `reports/<wf>/content-check.yml`)
 
-Runs only after `approval` is `done`, over the approved draft.
+Runs after the draft passes the body check and before `approval`, so the approval packet (`approval.md`) carries the matrix. A failing verify shows the user that same packet (`approval_packet.py <folder>`) to collect literal edit orders; after the edits rebuild the draft PDF and re-verify with `--since`.
 
 1. `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --verify-brief`. Do not pass the drafting conversation to the verifier.
 2. Give its exact output to ONE independent read-only verifier subagent. It never scores: it returns the requirement -> evidence matrix YAML the brief specifies (per rubric criterion, one or more `requirement` entries with `status: found|missing`, `location`, and `evidence`, an exact quote from `body.md`, required when `found`; plus `unmapped_paragraphs` and `findings`). Evidence it cannot quote is `missing`, never "seems to comply".

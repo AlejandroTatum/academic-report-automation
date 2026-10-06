@@ -17,6 +17,7 @@ from pathlib import Path
 
 import doc_status
 from conftest import (
+    _content_check,
     _approval,
     _body,
     _marker_text,
@@ -43,11 +44,12 @@ def _snapshot(folder: Path) -> list[tuple[str, str, int, str]]:
 
 
 def _working_folder(folder: Path) -> Path:
-    """Build a folder that reaches the approval phase: report, research, plan, body."""
+    """Build a folder that reaches the approval phase: report, research, plan, body, verify."""
     _report(folder)
     _sources_bib(folder)
     _rubric(folder)
     _body(folder)
+    _content_check(folder)
     return folder
 
 

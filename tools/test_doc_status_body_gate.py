@@ -22,10 +22,11 @@ def _ready(folder: Path, body: str | None = None) -> Path:
     return folder
 
 
-def test_clean_draft_reaches_the_approval_gate(tmp_path: Path) -> None:
+def test_clean_draft_reaches_the_verify_gate(tmp_path: Path) -> None:
+    # verify-concise-drafts T8: verify precedes approval.
     status = doc_status.derive(_ready(tmp_path / "wf"))
 
-    assert status.next_token == "approval"
+    assert status.next_token == "verify"
 
 
 def test_body_format_defect_keeps_the_route_at_draft_and_names_the_check(tmp_path: Path) -> None:

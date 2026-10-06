@@ -55,8 +55,10 @@ PHASES = (
     "research",
     "plan",
     "draft",
-    "approval",
+    # verify-concise-drafts T8: verify runs before approval, so one approval
+    # packet carries the preview, the requirement matrix and the missing items.
     "verify",
+    "approval",
     "format",
     "generate",
     "validate",
@@ -86,7 +88,8 @@ _GUIDANCE = {
         "before asking, build a preview PDF with {build_command} --no-approval-check, render and "
         "inspect every page, fix layout defects in {body}, and rebuild; the message right before "
         "the prompt lists clickable Markdown links with absolute file:// URLs to the draft PDF "
-        "({pdf}) and {body}; "
+        "({pdf}) and {body}: print it with {packet_command} and paste that approval packet "
+        "(links, verify matrix, missing items) unchanged; "
         "the preview is never the final artifact; "
         "generation runs only after you approve {body}; in the same batch use ask_user_choice "
         "(suggested options, never free text) for the document format AA, APE or libre (libre also "
@@ -96,7 +99,8 @@ _GUIDANCE = {
     ),
     "verify": (
         "launch ONE independent verifier for {rubric} with the brief from {check_command} "
-        "--verify-brief, save its matrix as verification.yml; run {check_command} "
+        "--verify-brief (add --verify-brief --since verification.yml when it exists, so only "
+        "changed sections are re-checked), save its matrix as verification.yml; run {check_command} "
         "--verification verification.yml, then re-run doc_status"
     ),
     "format": (
@@ -537,8 +541,8 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
         _phase_research,
         _phase_plan,
         _phase_draft,
-        _phase_approval,
         _phase_verify,
+        _phase_approval,
         _phase_format,
         _phase_generate,
         _phase_validate,
@@ -626,12 +630,16 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             "is rebuilt, then re-run doc_status; generation runs only after you approve {body}"
         )
     if phase_name == "verify" and blocked_reason == "content_check_stale":
-        template = "launch ONE independent verifier for {body}, then run {check_command} --verification verification.yml"
+        template = ("launch ONE independent verifier for {body} with the brief from {check_command} "
+                    "--verify-brief --since verification.yml, then run {check_command} "
+                    "--verification verification.yml")
     if phase_name == "verify" and blocked_reason == "content_check_malformed":
         template = "launch ONE independent verifier for {body}, then run the content check: {check_command} --verification verification.yml"
     if phase_name == "verify" and blocked_reason == "content_check_failed":
-        template = ("fix findings in {body} through the user's literal edit orders, "
-                    "then re-approve the draft and re-run the verifier")
+        template = ("show the user the approval packet from {packet_command} (draft PDF, matrix, "
+                    "missing items) and fix {body} only through the user's literal edit orders; "
+                    "rebuild the preview, then re-run the verifier with {check_command} "
+                    "--verify-brief --since verification.yml")
     if phase_name == "draft" and blocked_reason == "body_check_failed":
         template = "fix {body} until {check_command} --body-check passes, then re-run doc_status"
     if phase_name == "intake" and not config.metadata.get("student"):
@@ -686,6 +694,7 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
         pdf=config.pdf_path,
         final_review=folder / "final-review.yml",
         check_command=_tool_command("content_check.py", folder),
+        packet_command=_tool_command("approval_packet.py", folder),
         build_command=_tool_command("build_report_auto.py", folder),
         deliver_command=_tool_command("deliver_report.py", folder),
     )

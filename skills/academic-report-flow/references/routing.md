@@ -51,15 +51,15 @@ Present the human block verbatim (ASCII only, flat bullets, no tables, no nested
 
 ```text
 **Gate**: plan pending - record the teacher's rubric in <report-folder>/rubric.yml, then re-run doc_status
-Route: intake > research > [plan] > draft > approval > verify > format > generate > validate > review > deliver
+Route: intake > research > [plan] > draft > verify > approval > format > generate > validate > review > deliver
 
 **Summary**
 - intake: done - route=academic, title and student recorded
 - research: done - sources.bib has 5/5 book or paper sources
 - plan: current - rubric.yml missing
 - draft: pending
-- approval: pending
 - verify: pending
+- approval: pending
 - format: pending
 - generate: pending
 - validate: pending

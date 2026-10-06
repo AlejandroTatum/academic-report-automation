@@ -1,6 +1,6 @@
 # Approval - Decision 2 (draft approval + format batch)
 
-Phases `approval` (human gate) and `format`. No executor is delegated to the gate: the orchestrator presents the prompt and only the human's explicit answer may produce the marker. `doc_status` offers it only once the body check passes (`content.md`).
+Phases `approval` (human gate) and `format`. No executor is delegated to the gate: the orchestrator presents the prompt and only the human's explicit answer may produce the marker. `doc_status` offers it only once the body check passes (`content.md`) and the verify passes (`production.md`): verify runs before approval, so the human approves with the requirement matrix in hand.
 
 ## Marker
 
@@ -17,7 +17,7 @@ The gate prompt is lossless and blocking: complete decision, consequences and ex
 
 ## Preview before asking
 
-Before asking, build a preview with `build_report_auto.py <folder> --no-approval-check` (it records the sha256 of the `body.md` it rendered next to the PDF; `doc_status` keeps the gate closed with "rebuild the draft PDF" while that record is missing or differs from the current `body.md`), render every page and inspect it against the blocking-defect list in `production.md`. Fix layout defects in `body.md` first (re-run the body check), then rebuild. The message immediately before the approval `ask_user_choice` lists clickable Markdown links with absolute `file://` URLs to the preview PDF and to `body.md` (and to the editable DOCX draft when the user edits in DOCX); never present the gate without them. The preview is never the final artifact: it predates `approval.yml`, so generate stays `pending` and the final build runs after approval.
+Before asking, build a preview with `build_report_auto.py <folder> --no-approval-check` (it records the sha256 of the `body.md` it rendered next to the PDF; `doc_status` keeps the gate closed with "rebuild the draft PDF" while that record is missing or differs from the current `body.md`), render every page and inspect it against the blocking-defect list in `production.md`. Fix layout defects in `body.md` first (re-run the body check), then rebuild. The message immediately before the approval `ask_user_choice` is the approval packet printed by `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/approval_packet.py" <folder>`, pasted unchanged: clickable Markdown links with absolute `file://` URLs to the preview PDF, `body.md` and the latest DOCX draft, plus the verify result, the requirement matrix, the missing items, the deletion candidates and the findings. It flags a stale preview or verification; never present the gate without them, and never with either stale. The preview is never the final artifact: it predates `approval.yml`, so generate stays `pending` and the final build runs after approval.
 
 ## One batch: approval plus format
 
