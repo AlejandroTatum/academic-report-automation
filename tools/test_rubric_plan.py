@@ -311,3 +311,50 @@ def test_load_max_words_reads_the_total_or_none(tmp_path: Path) -> None:
     assert rubric_plan.load_max_words(tmp_path) is None
     path.write_text(path.read_text(encoding="utf-8") + "max_words: 450\n", encoding="utf-8")
     assert rubric_plan.load_max_words(tmp_path) == 450
+
+
+# ---------------------------------------------------------------------------
+# deliverables: each guide deliverable needs its own check (T5)
+# ---------------------------------------------------------------------------
+
+
+def _with_deliverables(deliverables: object, checks: list[dict]) -> dict:
+    return {
+        "schema": RUBRIC_SCHEMA,
+        "source": "guia",
+        "criteria": [
+            {
+                "id": "entrega",
+                "title": "Informe y entrega",
+                "section": "Anexos",
+                "deliverables": deliverables,
+                "checks": checks,
+            }
+        ],
+    }
+
+
+LINK_A = {"type": "link_present", "pattern": "wokwi.com/projects/1"}
+LINK_B = {"type": "link_present", "pattern": "wokwi.com/projects/2"}
+HEADING = {"type": "heading_present", "section": "Anexos"}
+
+
+def test_deliverables_with_one_non_heading_check_each_are_valid() -> None:
+    data = _with_deliverables(["Wokwi Parte A", "Wokwi Parte B"], [HEADING, LINK_A, LINK_B])
+    assert rubric_plan.validate_rubric(data) == []
+
+
+def test_deliverables_covered_only_by_a_heading_check_are_rejected() -> None:
+    errors = rubric_plan.validate_rubric(_with_deliverables(["Wokwi Parte A"], [HEADING]))
+    assert any("1 deliverables" in e and "0 non-heading checks" in e for e in errors), errors
+
+
+def test_fewer_non_heading_checks_than_deliverables_are_rejected() -> None:
+    errors = rubric_plan.validate_rubric(_with_deliverables(["A", "B", "C"], [LINK_A, LINK_B]))
+    assert any("3 deliverables" in e and "2 non-heading checks" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("value", ["Wokwi", [], [""], [3], None])
+def test_deliverables_must_be_a_non_empty_list_of_text(value: object) -> None:
+    errors = rubric_plan.validate_rubric(_with_deliverables(value, [LINK_A]))
+    assert any("deliverables" in e for e in errors), errors

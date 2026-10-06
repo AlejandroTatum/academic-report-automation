@@ -1080,3 +1080,9 @@ def test_plan_and_body_check_state_word_ceiling_and_padding_checks() -> None:
     text = re.sub(r"\s+", " ", read(CONTENT_MD))
     for phrase in ("never a minimum", "max_words:", "weight share", "the word budget", "no stock filler phrases", "no paragraph over 80 words"):
         assert phrase in text, phrase
+
+
+def test_plan_turns_every_guide_deliverable_into_a_check() -> None:
+    text = re.sub(r"\s+", " ", read(CONTENT_MD))
+    for phrase in ("deliverables:", "one non-heading check per deliverable", "rubric_plan.py"):
+        assert phrase in text, phrase

@@ -37,7 +37,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - [x] T2 S4,S5 Drafting rules in the skill (guide skeleton, answer first, theory only as needed, shrink to fix) plus contract tests. Route: inline. Commit: see L9
 - [x] T3 S6 Per-section word budget in the rubric plan and a `max_words` failure in validate; no minimum. Route: inline. Commit: see L10
 - [x] T4 S6 Filler detector in `--body-check` (filler phrases, paragraphs over 80 words). Route: inline. Commit: see L10
-- [ ] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: —
+- [x] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: see L11
 - [ ] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: —
 - [ ] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: —
 - [ ] T8 S2 Single approval packet (preview PDF + matrix + missing items). Route: inline. Commit: —
@@ -71,3 +71,11 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   - RED: collection error plus 9 failures. GREEN: 1980 passed.
   - Calibration on real bodies: SD flagged its three bloated "Resultado y justificación" paragraphs (99,
     120 and 146 words), Métodos 1, Simulación and CataClub 0. No filler false positives.
+- L10b T3/T4 review `review-bc764463694c4ade`. One CRITICAL (an unclosed `$$` hid the rest of the body, so the
+  gate failed open) was corrected in `bd22d59`: unclosed blocks count as prose. Targeted validation approved;
+  acknowledged and burned. Advisories (informational): filler list readability, multi-line HTML comments
+  counted, an unmatched budget section is silently ok.
+- L11 T5 evidence: criterion `deliverables:` (non-empty list of strings). `rubric_plan` rejects a criterion
+  with fewer non-heading checks than deliverables; content.md documents it. RED: 8 failed. GREEN: 1993
+  passed. With this rule, the SD APE1 rubric (`informe-entrega`, a heading check only) would have been
+  rejected at plan time.
