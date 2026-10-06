@@ -16,7 +16,7 @@ import build_latex_report  # noqa: E402
 import report_config  # noqa: E402
 
 IEEE_OPTIONS = "backend=biber,style=ieee,sorting=none,hyperref=true"
-APA_OPTIONS = "backend=biber,style=apa,sorting=nyt,hyperref=true"
+APA_OPTIONS = "backend=biber,style=apa,hyperref=true"
 TEMPLATES = ["unl", "plain", "ape", "chamba_overleaf"]
 BODY = "Los procesos [@a2018, b2019] planifican tareas.\n"
 BIB = "@book{a2018, author={A, B}, title={T}, year={2018}}\n@book{b2019, author={C, D}, title={U}, year={2019}}\n"
@@ -112,6 +112,19 @@ def test_apa_setup_sets_ragged_bibliography_and_body_url_breaks() -> None:
     assert r"\AtBeginBibliography{\raggedright}" in setup
     # Body \url/\href must not break right after "https:" either.
     assert r"\def\UrlBigBreaks{}" in setup
+
+
+def test_apa_options_keep_biblatex_apa_sorting() -> None:
+    # APA 7 (9.47) lists no-date works before dated ones of the same author;
+    # biblatex-apa's own sorting=apa does that, sorting=nyt does not.
+    options = build_latex_report.BIBLATEX_OPTIONS["apa"]
+    assert "sorting=" not in options
+
+
+def test_apa_setup_uses_spanish_retrieval_wording() -> None:
+    # APA 7 in Spanish: "Recuperado el <fecha>, de <URL>", not "Consultado ... desde".
+    setup = build_latex_report.BIBLATEX_SETUP["apa"]
+    assert r"\DefineBibliographyStrings{spanish}{retrieved={Recuperado},from={de}}" in setup
 
 
 def test_ieee_setup_stays_empty() -> None:

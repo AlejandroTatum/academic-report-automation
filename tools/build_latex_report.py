@@ -232,13 +232,16 @@ def inline_code(value: str) -> str:
 # (csquotes, which biblatex-apa requires, is already loaded by every template).
 BIBLATEX_OPTIONS = {
     "ieee": "backend=biber,style=ieee,sorting=none,hyperref=true",
-    "apa": "backend=biber,style=apa,sorting=nyt,hyperref=true",
+    # biblatex-apa's own sorting=apa lists no-date works first (APA 7, 9.47).
+    "apa": "backend=biber,style=apa,hyperref=true",
 }
 BIBLATEX_SETUP = {
     "ieee": "",
     "apa": (
         r"\DeclareLanguageMapping{spanish}{spanish-apa}"
         r"\ExecuteBibliographyOptions{language=spanish}"
+        # APA 7 in Spanish: "Recuperado el <fecha>, de <URL>".
+        r"\DefineBibliographyStrings{spanish}{retrieved={Recuperado},from={de}}"
         # Spanish joins the last two authors with "y", not "&".
         r"\DeclareDelimFormat[bib,biblist]{finalnamedelim}{\addspace y\space}"
         r"\DeclareDelimFormat[parencite]{finalnamedelim}{\addspace y\space}"
