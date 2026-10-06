@@ -556,7 +556,18 @@ def ape_structure_validation(config: ReportConfig) -> ValidationResult:
         for match in (BODY_HEADING_RE.match(line) for line in body.splitlines())
         if match
     ]
-    required = [(title, fold_heading(title)) for title in APE_BODY_HEADINGS]
+    # A teacher may drop a fixed section (``ape_omit_sections`` in report.yml).
+    omitted = config.raw.get("ape_omit_sections") or []
+    if not isinstance(omitted, list) or not all(isinstance(t, str) for t in omitted):
+        result.errors.append("ape_omit_sections debe ser una lista de títulos de sección")
+        omitted = []
+    known = {fold_heading(title) for title in APE_BODY_HEADINGS}
+    for title in omitted:
+        if fold_heading(title) not in known:
+            result.errors.append(f"ape_omit_sections: '{title}' no es una sección del formato APE")
+    skipped = {fold_heading(title) for title in omitted}
+    required = [(title, fold_heading(title)) for title in APE_BODY_HEADINGS
+                if fold_heading(title) not in skipped]
 
     missing = [title for title, norm in required if norm not in body_heads]
     if missing:
