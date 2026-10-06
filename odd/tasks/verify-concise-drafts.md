@@ -165,3 +165,6 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
     not a cover; a page-ending table cell is not an orphan heading). Full suite 2066 passed.
   - Follow-ups: flag unbraced corporate BibTeX authors; incremental verify trusts the criterion->section mapping;
     worktree lacks node_modules (html-shot ran from main).
+- L17b T9 fixes review `review-edf50307aef6a995` (high, 4 lenses, range 793f19c..8f9d6fd): approved with no
+  correction; acknowledged and burned. Advisory warnings: the table-cell orphan skip may hide a real heading whose
+  text equals a table cell; annex [H] relies on the float package being loaded.
