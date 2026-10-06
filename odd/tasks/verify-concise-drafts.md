@@ -32,6 +32,36 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   - Spanish "y" (fixed in cfb9eda; re-check)
   - URLs splitting after "https:" (fixed in 0ee7272; re-check)
 
+## Design T6 (single verify)
+- Input file `verification.yml`, schema `academic.verification/v1`, written by ONE independent read-only
+  verifier subagent from `content_check.py --verify-brief` (replaces `--judge-brief`):
+  - `verifier: {role: independent, inputs: [...]}`, with the same allowed inputs as the old `judge.inputs`.
+  - `body_sha256` and `rubric_sha256` bind the current files. The markup-only reuse rule stays.
+  - `requirements:` is a list of `{criterion, requirement, status: found|missing, location, evidence}`. Every
+    rubric criterion needs at least one requirement. `requirement` quotes the guide/rubric demand.
+    `evidence` is an exact quote from body.md and is required when `found`.
+  - `unmapped_paragraphs:` is a list of strings: the first words of paragraphs that answer no requirement
+    (deletion candidates, reported and non-blocking).
+  - `findings:` is a list of strings.
+- content_check, deterministically:
+  - A `found` requirement whose evidence quote is not in body.md (whitespace-normalized) is downgraded to
+    `missing`, with a finding naming it. This is the anti-hallucination rule; it would have caught "Wokwi
+    links all present".
+  - Per-criterion status: `cumple` when all its requirements are found, `falta` otherwise; no `flojo`.
+  - Mechanical `links_resolve` via a new `tools/link_check.py` with an injectable fetcher. Every http(s) URL
+    in body.md gets a HEAD request, with GET as fallback and a short timeout. HTTP 404/410/other 4xx/5xx
+    FAIL; DNS/timeouts are a warning finding (offline must not block); results are cached per URL in the run.
+  - `result: pass` iff every criterion is cumple and every mechanical check is ok.
+- Marker `content-check.yml` keeps its schema name. New markers record `verifier`, `requirements` and
+  `unmapped_paragraphs` instead of `judges`/`disagreements`. Existing two-judge markers stay readable and
+  valid (delivered reports must not regress); only new runs use the verifier.
+- CLI: `--verification <file>` (exactly one) replaces `--judgments` x2; `--verify-brief` replaces
+  `--judge-brief`. The brief lists rubric criteria, deliverables, already-run rubric checks and tolerance
+  rules (kept from T10), and tells the verifier never to score, to quote evidence exactly, and to mark
+  missing when it cannot quote.
+- doc_status verify-phase texts say "re-run the verifier"; production.md/SKILL.md/contract tests drop the
+  two judges and describe the single verify.
+
 ## Tasks
 - [x] T1 S7 APA polish: build SD APE1 as APA, list the remaining defects, fix them test-first. Route: inline. Commit: see Log L8
 - [x] T2 S4,S5 Drafting rules in the skill (guide skeleton, answer first, theory only as needed, shrink to fix) plus contract tests. Route: inline. Commit: see L9
