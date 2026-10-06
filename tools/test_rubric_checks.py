@@ -37,6 +37,17 @@ def test_thematic_break_after_blank_does_not_end_section(tmp_path: Path) -> None
         {'type': 'heading_present', 'section': 'Actual'}]}], 'Actual\n---\nbody')[0].ok
 
 
+def test_section_includes_its_subsections_until_a_same_level_heading(tmp_path: Path) -> None:
+    # APE control questions are `##` headings under `# Preguntas de Control`.
+    body = ("# Preguntas de Control\n\n## ¿Por qué estándares?\n\nRespuesta.\n\n"
+            "![Mapa](figures/m.png)\n\n# Conclusiones\n\nfuera\n")
+    checks = [{"type": "contains", "section": "Preguntas de Control", "text": "¿Por qué estándares?"},
+              {"type": "figure_referenced", "section": "Preguntas de Control"},
+              {"type": "contains", "section": "Preguntas de Control", "text": "fuera"},
+              {"type": "contains", "section": "¿Por qué estándares?", "text": "Respuesta."}]
+    assert [r.ok for r in run_checks(tmp_path, [{"id": "x", "checks": checks}], body)] == [True, True, False, True]
+
+
 def test_unknown_runtime_check_fails_with_detail(tmp_path: Path) -> None:
     result, = run_checks(tmp_path, [{"id": "x", "checks": [{"type": "unknown", "section": "Missing"}]}], "")
     assert not result.ok and "unknown check type" in result.detail

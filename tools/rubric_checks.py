@@ -34,6 +34,7 @@ def _fold(text: str) -> str:
 def _section(body: str, title: str) -> str | None:
     lines = body.splitlines()
     start = None
+    level = 0
     fence = None
     for index, line in enumerate(lines):
         marker = re.match(r"^\s*(`{3,}|~{3,})", line)
@@ -51,10 +52,12 @@ def _section(body: str, title: str) -> str | None:
         heading = match.group(1).strip().rstrip("# ").strip() if match else lines[index - 1].strip() if setext and index and lines[index - 1].strip() else None
         if heading:
             boundary = index - 1 if setext else index
-            if start is not None:
+            depth = len(line) - len(line.lstrip("#")) if match else (1 if line.strip()[0] == "=" else 2)
+            # A section keeps its subsections; it ends at a same or higher level heading.
+            if start is not None and depth <= level:
                 return "\n".join(lines[start:boundary])
-            if _fold(heading.strip()) == _fold(title.strip()):
-                start = index + 1
+            if start is None and _fold(heading.strip()) == _fold(title.strip()):
+                start, level = index + 1, depth
     return "\n".join(lines[start:]) if start is not None else None
 
 
