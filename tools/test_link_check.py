@@ -79,6 +79,13 @@ def test_timeout_or_dns_is_unreachable_not_broken(error: BaseException) -> None:
     assert result.status == "unreachable"
 
 
+def test_malformed_url_is_unreachable_with_the_production_fetcher() -> None:
+    # urllib rejects the invalid IPv6 literal while parsing, before any network access.
+    [result] = link_check.check_links(["http://[::1"])
+    assert result.status == "unreachable"
+    assert result.detail.startswith("ValueError")
+
+
 def test_results_are_cached_per_url_across_calls() -> None:
     fetcher = FakeFetcher({})
     cache: dict = {}

@@ -58,12 +58,12 @@ def default_fetcher(url: str, method: str) -> int:
 
 def _check_one(url: str, fetcher: Fetcher) -> LinkResult:
     status: int | None = None
-    error: OSError | None = None
+    error: Exception | None = None
     for method in ("HEAD", "GET"):
         try:
             status = fetcher(url, method)
             error = None
-        except OSError as exc:
+        except (OSError, ValueError) as exc:  # ValueError: URL urllib cannot parse
             status, error = None, exc
         if status is not None and status < 400:
             return LinkResult(url, "ok", f"HTTP {status}")
