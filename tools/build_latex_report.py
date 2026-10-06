@@ -488,6 +488,9 @@ def markdown_to_latex(
     output: list[str] = []
     paragraph: list[str] = []
     list_stack: list[tuple[int, str]] = []
+    # Annex figures are pinned ([H]): an annex page often holds only its
+    # heading, so a float would leave it empty and move to the next page.
+    in_annex = False
 
     def split_table_row(row: str) -> list[str]:
         # GFM: `\|` is a literal pipe inside a cell, never a column break.
@@ -754,7 +757,7 @@ def markdown_to_latex(
             options = figure_includegraphics_options(resolved)
             output.extend([
                 r"\Needspace{6\baselineskip}",
-                rf"\begin{{figure}}[{figure_placement}]",
+                rf"\begin{{figure}}[{'H' if in_annex else figure_placement}]",
                 r"\centering",
                 rf"\includegraphics[{options}]{{{src}}}",
                 rf"\caption{{{caption}}}",
@@ -769,6 +772,8 @@ def markdown_to_latex(
             flush_paragraph(); close_list()
             level = len(heading.group(1))
             raw_title = heading.group(2).strip()
+            if level == 1:
+                in_annex = fold_heading(raw_title).startswith("anexo")
             if is_bibliography_heading(raw_title) and (
                 suppress_bibliography_heading
                 or not any(rest.strip() for rest in lines[i + 1 :])
