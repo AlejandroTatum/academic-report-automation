@@ -70,7 +70,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - [x] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: see L11
 - [x] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: see L12
 - [x] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: see L13
-- [ ] T8 S2 Single approval packet (preview PDF + matrix + missing items). Route: inline. Commit: —
+- [x] T8 S2 Single approval packet (preview PDF + matrix + missing items). Route: inline. Commit: see L15
 - [ ] T9 S1–S7 E2E on the SD APE1 guide: compare words, rounds and time against the delivered v001. Route: inline. Commit: —
 
 ## Log
@@ -139,3 +139,12 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   Advisory follow-ups: removed pages are not reported as changed (auditor 1017-1021); the changed-sheet error
   is swallowed (1028); a carried quote that no longer exists only downgrades at run_check (content_check 218-228);
   unmapped paragraphs of carried sections are dropped (229-235).
+- L14 (2026-10-06) The user chose the phase order for the single packet: "Verify antes de aprobar (recomendado)":
+  draft → verify → approval; a failing verify shows the same packet to collect literal edit orders.
+- L15 T8 evidence. 639537d: `tools/approval_packet.py <folder>` prints file:// links to the preview PDF (flags a
+  stale or missing preview), body.md and the latest DOCX draft, then the verify result, matrix, missing items,
+  deletion candidates and findings; a stale/absent verification shows no matrix. RED import error, GREEN 10.
+  229cfe9: doc_status PHASES now `draft, verify, approval`; verify guidance adds `--since`; a failed verify asks
+  for the packet and literal edit orders (no re-approve); the approval gate pastes the packet. Eight old tests
+  that pinned the old order were updated to the new order (folders that reach approval now carry a passing
+  check). approval.md, production.md, routing.md and a contract test updated. Full suite: 2059 passed.
