@@ -120,3 +120,22 @@ def test_concision_results_fail_with_details() -> None:
 
 def test_inline_math_is_not_counted_as_prose() -> None:
     assert concision.prose_words(r"Con $V_f \approx 2\ \text{V}$ enciende.") == 2
+
+
+def test_unclosed_display_math_does_not_hide_the_rest_of_the_body() -> None:
+    body = "Antes.\n\n$$ x = y\n\nCabe destacar que esto sigue siendo prosa.\n"
+    assert concision.filler_problems(body)
+    assert concision.prose_words(body) >= 8
+
+
+def test_single_line_display_math_keeps_trailing_prose() -> None:
+    assert concision.prose_words("$$ x = y $$ y luego texto") == 3
+
+
+def test_unclosed_code_fence_does_not_hide_the_rest_of_the_body() -> None:
+    body = "Antes.\n\n```c\n\nEn resumen, sigue.\n"
+    assert concision.filler_problems(body)
+
+
+def test_closed_blocks_still_hide_their_content() -> None:
+    assert concision.prose_words("$$\ncabe destacar\n$$\n\n```\nen resumen\n```") == 0

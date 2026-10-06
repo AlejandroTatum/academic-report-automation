@@ -55,37 +55,50 @@ def _fold(text: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", text.casefold()) if not unicodedata.combining(c))
 
 
+def _closes_fence(line: str, fence: str) -> bool:
+    marker = _FENCE.match(line)
+    return bool(marker) and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence)
+
+
+def _block_end(lines: list[str], start: int) -> int | None:
+    """Index of the line closing the code fence or display math opened at
+    ``start``, or None when it never closes (the block is then prose, so a
+    stray opener can never hide the rest of the body from the checks)."""
+    opener = lines[start]
+    marker = _FENCE.match(opener)
+    for index in range(start + 1, len(lines)):
+        if marker and _closes_fence(lines[index], marker.group(1)):
+            return index
+        if not marker and "$$" in lines[index]:
+            return index
+    return None
+
+
 def _prose_blocks(body: str) -> list[str]:
     """Paragraphs and single list items of prose, in order."""
     blocks: list[str] = []
     current: list[str] = []
-    fence: str | None = None
-    in_math = False
 
     def flush() -> None:
         if current:
             blocks.append(" ".join(current))
             current.clear()
 
-    for line in body.splitlines():
-        marker = _FENCE.match(line)
-        if fence is None and marker:
-            flush()
-            fence = marker.group(1)
-            continue
-        if fence is not None:
-            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
-                fence = None
-            continue
+    lines = body.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
         stripped = line.strip()
-        if stripped.startswith("$$"):
-            flush()
-            # "$$ x $$" on one line opens and closes; a bare "$$" toggles.
-            if not (len(stripped) > 2 and stripped.endswith("$$")):
-                in_math = not in_math
-            continue
-        if in_math:
-            continue
+        index += 1
+        if stripped.startswith("$$") and stripped.count("$$") >= 2:
+            # One-line display math: only the text after the closing $$ is prose.
+            line = stripped = stripped.split("$$", 2)[2].strip()
+        elif _FENCE.match(line) or stripped.startswith("$$"):
+            end = _block_end(lines, index - 1)
+            if end is not None:
+                flush()
+                index = end + 1
+                continue
         if not stripped or _HEADING.match(line) or stripped.startswith("|") or stripped.startswith("<!--"):
             flush()
             continue
