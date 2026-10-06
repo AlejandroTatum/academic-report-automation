@@ -1052,3 +1052,25 @@ def test_citation_style_opt_in_is_documented_in_every_reference() -> None:
     for token in ("apa", "ieee", "default"):
         assert token in window.lower()
     assert "no other style exists" not in content
+
+
+def test_draft_states_concision_rules() -> None:
+    # verify-concise-drafts S4/S5: no padding, no basic concepts, fix by cutting.
+    text = re.sub(r"\s+", " ", read(CONTENT_MD))
+    for phrase in (
+        "never a minimum length",
+        "answers a guide or rubric requirement",
+        "first sentence",
+        "at most 2-3 sentences",
+        "tables or display equations",
+        "only the concepts the report's own decisions use",
+        "never define basic course concepts",
+        "by cutting or shrinking, never by adding prose",
+    ):
+        assert phrase in text, phrase
+
+
+def test_skill_hard_rules_state_quality_over_quantity() -> None:
+    text = re.sub(r"\s+", " ", read(SKILL_MD))
+    assert "Quality over quantity" in text
+    assert "no minimum length" in text

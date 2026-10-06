@@ -34,7 +34,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 
 ## Tasks
 - [x] T1 S7 APA polish: build SD APE1 as APA, list the remaining defects, fix them test-first. Route: inline. Commit: see Log L8
-- [ ] T2 S4,S5 Drafting rules in the skill (guide skeleton, answer first, theory only as needed, shrink to fix) plus contract tests. Route: inline. Commit: —
+- [x] T2 S4,S5 Drafting rules in the skill (guide skeleton, answer first, theory only as needed, shrink to fix) plus contract tests. Route: inline. Commit: see L9
 - [ ] T3 S6 Per-section word budget in the rubric plan and a `max_words` failure in validate; no minimum. Route: inline. Commit: —
 - [ ] T4 S6 Filler detector in `--body-check` (filler phrases, paragraphs over 80 words). Route: inline. Commit: —
 - [ ] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: —
@@ -61,3 +61,5 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   the strings "Recuperado el … de". RED: 6 failed. GREEN: 31 focused tests and 1955 in the full suite.
   The real PDF shows the fix.
 - L7 "si dale arranca y culmina el plan completo, luego haces pruebas sobre este tema tipos de simulaciones"
+- L9 T2 evidence: concision block in content.md Draft plus a SKILL.md hard rule. RED: 2 contract tests failed.
+  GREEN: 1957 passed. Passive skill prose with static tests, so no native review.

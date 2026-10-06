@@ -22,6 +22,7 @@ Recommend at most one type with a reason, never select it. Ambiguity stops the r
 Tools enforce quality (`doc_status`, `content_check --body-check`, judges, `validate_report.py`, visual audit, `deliver_report.py`); run them and obey their blocks. Three human decisions: data, draft approval plus format, final review.
 
 - Present the human block verbatim and every human gate losslessly; never proceed on silence.
+- Quality over quantity: no minimum length; every paragraph answers a guide requirement, and findings are fixed by cutting, never by adding prose (`references/content.md`).
 - Require rubric TDD checks in the plan before drafting; the draft turns them green.
 - Use an independent judge for semantic verification; the drafter never grades itself.
 - Require verified sources before research is finished.

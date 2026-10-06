@@ -25,6 +25,13 @@ A confirmed teacher template is mirrored too: its sections, order and formatting
 The draft phase produces exactly one artifact: the full body the user will review, from `rubric.yml` and the researched sources, in the document's language. Cover every rubric criterion in the section the plan mapped, with proposed figures where they genuinely help (built with `academic-visual-builder`, referenced `![caption](relative/path.png)`). Cite with `[@key]` resolved against `sources.bib`; every claim traces to an entry there.
 
 - Style: human and natural, neither overly technical nor flattering or obsequious. Model the tone on how the user writes (their messages in the session). No stock AI phrasing, no padding. The draft is a starting point for the user's review, offered for literal edit orders, not admiration.
+- Concision (quality over quantity; no guide asks for more text, so there is never a minimum length):
+  - Skeleton from the guide: every section and paragraph answers a guide or rubric requirement; a paragraph that answers none is deleted. No generic introductions, "importance of the topic" openers or closing summaries.
+  - Answer first: each question is answered in its first sentence, justified in at most 2-3 sentences.
+  - Data, specs, mappings and math go in tables or display equations, never packed into prose.
+  - Theory covers only the concepts the report's own decisions use, one sentence each; never define basic course concepts the reader already knows.
+  - Respect the plan's word budget (`max_words`); it is a ceiling, never a target.
+  - Fix a finding by cutting or shrinking, never by adding prose: soften or drop a doubtful claim instead of hedging it with extra sentences.
 - Body format (the template and font depend on it): sections start at `# ` (a body using only `##`/`###` numbers them 0.1.); `##` only for subsections under a `#`. Write sub/superscripts as math, never Unicode: `$c_1$`, `$10^{-5}$`, `m/s$^2$`.
 - Presentation defaults (numbering, cover, template) come from `report.yml`, never from the draft.
 - Gate before presenting: run `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/content_check.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/" --body-check`. It runs the mechanical part (format rules, citations resolve, every rubric check green), exits 1 on any FAIL and writes nothing; `doc_status` runs the same check and keeps `next: draft` until it passes, so approval is never offered early. Fix failures in the draft; the draft never writes judgments.
