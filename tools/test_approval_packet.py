@@ -1,0 +1,117 @@
+"""One approval packet: preview PDF, verify matrix and missing items (verify-concise-drafts T8, S2)."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import approval_packet
+import content_check
+from approval_marker import write_draft_record
+from conftest import _config, _cited_body, _pdf, _report, _rubric, _sources_bib, _verification
+
+
+def _folder(tmp_path: Path) -> Path:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    return folder
+
+
+def _verify(folder: Path, requirements: list[dict] | None = None, **extra: object) -> int:
+    path = _verification(folder, requirements=requirements, **extra)
+    return content_check.main([str(folder), "--verification", str(path)])
+
+
+def _fresh_preview(folder: Path) -> Path:
+    pdf = _pdf(folder)
+    write_draft_record(pdf, folder / "body.md")
+    return pdf
+
+
+def test_packet_links_the_fresh_preview_and_the_body(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    pdf = _fresh_preview(folder)
+    _verify(folder)
+    text = approval_packet.render(folder)
+    assert f"- Draft PDF: [{pdf.name}]({pdf.resolve().as_uri()})" in text
+    assert f"- body.md: [body.md]({(folder / 'body.md').resolve().as_uri()})" in text
+    assert "STALE" not in text
+
+
+def test_packet_flags_a_preview_older_than_the_body(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    _fresh_preview(folder)
+    _cited_body(folder, "# Informe\n\nOtro cuerpo [@key1], [@key2], [@key3], [@key4] y [@key5].\n")
+    text = approval_packet.render(folder)
+    assert "STALE: rebuild the preview with build_report_auto.py --no-approval-check" in text
+
+
+def test_packet_without_a_preview_says_so(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    assert "- Draft PDF: missing: build the preview with build_report_auto.py --no-approval-check" in (
+        approval_packet.render(folder))
+
+
+def test_packet_shows_the_matrix_and_lists_missing_items(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    _fresh_preview(folder)
+    assert _verify(folder, requirements=[
+        {"criterion": "objetivo", "requirement": "A goal | measurable", "status": "found",
+         "location": "## Informe", "evidence": "Cuerpo con fuentes"},
+        {"criterion": "metodologia", "requirement": "One Wokwi link per part", "status": "missing",
+         "location": "", "evidence": ""},
+    ], unmapped_paragraphs=["Como es sabido"], findings=["WARNING: repeats the intro"]) == 1
+    text = approval_packet.render(folder)
+    assert "## Verify: fail" in text
+    assert "| objetivo | A goal \\| measurable | found | ## Informe | Cuerpo con fuentes |" in text
+    assert "### Missing (1)\n- metodologia: One Wokwi link per part" in text
+    assert "### Deletion candidates (1)\n- Como es sabido" in text
+    assert "- WARNING: repeats the intro" in text
+
+
+def test_passing_verify_has_no_missing_items(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    _fresh_preview(folder)
+    assert _verify(folder) == 0
+    text = approval_packet.render(folder)
+    assert "## Verify: pass" in text
+    assert "### Missing (0)\n- none" in text
+
+
+def test_stale_verify_shows_no_old_matrix(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    _verify(folder)
+    _cited_body(folder, "# Informe\n\nOtro cuerpo [@key1], [@key2], [@key3], [@key4] y [@key5].\n")
+    text = approval_packet.render(folder)
+    assert "## Verify: stale: re-run the verifier (content_check.py --verify-brief --since verification.yml)" in text
+    assert "| Criterion |" not in text
+
+
+def test_absent_verify_says_run_it(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    assert "## Verify: absent: run the verifier first (content_check.py --verify-brief)" in (
+        approval_packet.render(folder))
+
+
+def test_latest_docx_draft_is_linked(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    drafts = folder / "borrador"
+    drafts.mkdir()
+    (drafts / "x-borrador-v01.docx").write_bytes(b"a")
+    latest = drafts / "x-borrador-v02.docx"
+    latest.write_bytes(b"b")
+    assert f"- DOCX draft: [{latest.name}]({latest.resolve().as_uri()})" in approval_packet.render(folder)
+
+
+def test_cli_prints_the_packet_and_rejects_a_missing_folder(tmp_path: Path, capsys) -> None:
+    folder = _folder(tmp_path)
+    assert approval_packet.main([str(folder)]) == 0
+    assert "# Approval packet" in capsys.readouterr().out
+    assert approval_packet.main([str(tmp_path / "nope")]) == 2
+    assert "approval packet input error: report folder not found" in capsys.readouterr().err
+
+
+def test_config_pdf_path_is_the_preview(tmp_path: Path) -> None:
+    folder = _folder(tmp_path)
+    assert approval_packet.preview_pdf(folder) == _config(folder).pdf_path
