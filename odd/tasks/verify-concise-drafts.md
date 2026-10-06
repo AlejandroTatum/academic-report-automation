@@ -71,7 +71,7 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - [x] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: see L12
 - [x] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: see L13
 - [x] T8 S2 Single approval packet (preview PDF + matrix + missing items). Route: inline. Commit: see L15
-- [ ] T9 S1–S7 E2E on the SD APE1 guide: compare words, rounds and time against the delivered v001. Route: inline. Commit: —
+- [x] T9 S1–S7 E2E on the SD APE1 guide: compare words, rounds and time against the delivered v001. Route: inline. Commit: see L17
 
 ## Log
 - L1 (2026-10-05) "como vamos con esta skill, el ultimo trabajo entregado no me gusto, en general no me gusta
@@ -151,3 +151,17 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - L15b T8 review `review-6fbe254c2d0d76e9` (high, 4 lenses): approved with no correction; acknowledged and burned.
   Advisory warnings: approval_packet reads the marker after content_check_state (a race or a non-mapping marker
   can raise; 71-80); doc_status approval guidance sentence is long (102).
+- L16 (2026-10-06) The user replaced the SD scratch E2E with a real APE: "pruebalo con este pdf" (Redes APE1 Fase 1
+  guide), "ya necesito la skill para hacer un APE"; later "el docente me pide que no pongamos preguntas de control,
+  quitalo" (chose "Borrar todo").
+- L17 T9 evidence (live E2E, reports/redes-ape-1-fase-1-networking, delivered v001 sha 21df9c89):
+  - Words: ~500 prose words vs 2175 in the delivered SD v001. Approval rounds: 1 (one packet).
+  - Verify rounds: 6 (6 missing, 1, 0, then incremental runs after the map, the question removal and the
+    inclusion line). Incremental `--since` rechecked 2-3 of 7-8 criteria each time.
+  - Visual: one independent full pass found a real defect (stray "L." from an unbraced corporate bib author); after
+    the fix `page_hashes.json` showed only page 5 changed and only pages 5-6 were re-inspected.
+  - Skill bugs found and fixed test-first: 6d26a40 (scoped rubric checks ignored subsections), e8faf12
+    (`ape_omit_sections`), e23ca9c (annex figures pinned so annex pages are not left empty), 33e04f3 (APE page 1 is
+    not a cover; a page-ending table cell is not an orphan heading). Full suite 2066 passed.
+  - Follow-ups: flag unbraced corporate BibTeX authors; incremental verify trusts the criterion->section mapping;
+    worktree lacks node_modules (html-shot ran from main).
