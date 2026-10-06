@@ -122,3 +122,9 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
     deliverables.
   - `content_check --verification` on a subset: `links_resolve` checked 10 real links, all resolve;
     result fail (exit 1) on the missing requirements, as designed.
+- L12b T6 review `review-ae4035a4a2cb7b3d`. One CRITICAL (R4-002): `link_check` let a `ValueError` from an
+  unparseable URL escape and abort verify without a marker. Fixed test-first in d16f0d9 (11 lines); the
+  targeted validator approved; acknowledged and burned. The facade cannot pass `baseRef` in this harness, so
+  STATUS, the correction plan and the validator capture ran through the provider CLI with the user's consent.
+  Follow-ups (advisory): `http.client.HTTPException` subclasses still escape `_check_one`; the docstring
+  omits the `ValueError` path.
