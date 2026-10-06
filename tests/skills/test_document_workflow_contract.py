@@ -1074,3 +1074,9 @@ def test_skill_hard_rules_state_quality_over_quantity() -> None:
     text = re.sub(r"\s+", " ", read(SKILL_MD))
     assert "Quality over quantity" in text
     assert "no minimum length" in text
+
+
+def test_plan_and_body_check_state_word_ceiling_and_padding_checks() -> None:
+    text = re.sub(r"\s+", " ", read(CONTENT_MD))
+    for phrase in ("never a minimum", "max_words:", "weight share", "the word budget", "no stock filler phrases", "no paragraph over 80 words"):
+        assert phrase in text, phrase

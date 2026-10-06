@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import concision
 import rubric_plan
 import rubric_checks
 import yaml
@@ -847,6 +848,7 @@ def body_check_results(folder: Path) -> list[dict]:
             or "all rubric checks pass",
         }
     )
+    results.extend(concision.concision_results(body_text, criteria, rubric_plan.load_max_words(folder)))
     scope_warnings = rubric_checks.section_scope_warnings(criteria, body_text)
     if scope_warnings:
         results.append({"check": "rubric_scope", "ok": True, "detail": "warning: " + "; ".join(scope_warnings)})

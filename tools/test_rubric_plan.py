@@ -276,3 +276,38 @@ def test_cli_reports_problems_and_fails_on_malformed_plan(
 def test_cli_fails_when_the_plan_is_absent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert rubric_plan.main([str(tmp_path)]) == 1
     assert "rubric.yml" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# max_words: optional word ceilings (verify-concise-drafts T3)
+# ---------------------------------------------------------------------------
+
+
+def _with_budget(total: object = None, criterion: object = None) -> dict:
+    data = {
+        "schema": RUBRIC_SCHEMA,
+        "source": "guia",
+        "criteria": [{"id": "objetivo", "title": "Objetivo", "section": "Objetivos"}],
+    }
+    if total is not None:
+        data["max_words"] = total
+    if criterion is not None:
+        data["criteria"][0]["max_words"] = criterion
+    return data
+
+
+def test_validate_accepts_total_and_criterion_max_words() -> None:
+    assert rubric_plan.validate_rubric(_with_budget(total=900, criterion=120)) == []
+
+
+@pytest.mark.parametrize("value", [0, -5, True, 2.5, "300"])
+def test_validate_rejects_non_positive_integer_max_words(value: object) -> None:
+    assert any("max_words" in e for e in rubric_plan.validate_rubric(_with_budget(total=value)))
+    assert any("max_words" in e for e in rubric_plan.validate_rubric(_with_budget(criterion=value)))
+
+
+def test_load_max_words_reads_the_total_or_none(tmp_path: Path) -> None:
+    path = _rubric(tmp_path)
+    assert rubric_plan.load_max_words(tmp_path) is None
+    path.write_text(path.read_text(encoding="utf-8") + "max_words: 450\n", encoding="utf-8")
+    assert rubric_plan.load_max_words(tmp_path) == 450

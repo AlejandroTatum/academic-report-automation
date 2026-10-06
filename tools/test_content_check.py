@@ -1608,3 +1608,33 @@ def test_judge_brief_names_apa_when_opted_in(tmp_path: Path) -> None:
     brief = _brief_with_style(tmp_path, "citation_style: apa\n")
     assert "render in APA format at build time" in brief
     assert "IEEE" not in brief
+
+
+# ---------------------------------------------------------------------------
+# Concision in the body check (verify-concise-drafts T3/T4)
+# ---------------------------------------------------------------------------
+
+
+def test_body_check_fails_when_total_word_budget_is_exceeded(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    rubric = folder / "rubric.yml"
+    rubric.write_text(rubric.read_text(encoding="utf-8") + "max_words: 3\n", encoding="utf-8")
+    results = {item["check"]: item for item in content_check.body_check_results(folder)}
+    assert results["word_budget"]["ok"] is False
+    assert "> 3" in results["word_budget"]["detail"]
+    assert content_check.main([str(folder), "--body-check"]) == 1
+
+
+def test_body_check_fails_on_filler_phrase(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    body = folder / "body.md"
+    body.write_text(body.read_text(encoding="utf-8") + "\nCabe destacar que funciona.\n", encoding="utf-8")
+    assert content_check.main([str(folder), "--body-check"]) == 1
+    assert "filler_phrases" in capsys.readouterr().out
+
+
+def test_body_check_clean_draft_reports_concision_checks_ok(tmp_path: Path) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    results = {item["check"]: item for item in content_check.body_check_results(folder)}
+    for name in ("word_budget", "filler_phrases", "long_paragraphs"):
+        assert results[name]["ok"] is True, name

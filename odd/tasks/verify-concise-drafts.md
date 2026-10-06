@@ -35,8 +35,8 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 ## Tasks
 - [x] T1 S7 APA polish: build SD APE1 as APA, list the remaining defects, fix them test-first. Route: inline. Commit: see Log L8
 - [x] T2 S4,S5 Drafting rules in the skill (guide skeleton, answer first, theory only as needed, shrink to fix) plus contract tests. Route: inline. Commit: see L9
-- [ ] T3 S6 Per-section word budget in the rubric plan and a `max_words` failure in validate; no minimum. Route: inline. Commit: —
-- [ ] T4 S6 Filler detector in `--body-check` (filler phrases, paragraphs over 80 words). Route: inline. Commit: —
+- [x] T3 S6 Per-section word budget in the rubric plan and a `max_words` failure in validate; no minimum. Route: inline. Commit: see L10
+- [x] T4 S6 Filler detector in `--body-check` (filler phrases, paragraphs over 80 words). Route: inline. Commit: see L10
 - [ ] T5 S3 Rubric plan derives one check per guide deliverable; a criterion with deliverables but only a heading check is rejected. Route: inline. Commit: —
 - [ ] T6 S1 Single verify replaces `judgments-a/b.yml`: matrix file, link fetch, unmapped paragraphs; `content_check`, `doc_status` and skill updated. Contract change: independent verify. Route: worker. Commit: —
 - [ ] T7 S2 Incremental re-verify of changed sections plus visual pass only on changed pages. Route: inline. Commit: —
@@ -63,3 +63,11 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
 - L7 "si dale arranca y culmina el plan completo, luego haces pruebas sobre este tema tipos de simulaciones"
 - L9 T2 evidence: concision block in content.md Draft plus a SKILL.md hard rule. RED: 2 contract tests failed.
   GREEN: 1957 passed. Passive skill prose with static tests, so no native review.
+- L10 T3+T4 evidence, one work unit since they share the new `tools/concision.py`.
+  - Rubric gains optional total and per-criterion `max_words`, with a weight-share fallback.
+  - The body check adds `word_budget`, `filler_phrases` and `long_paragraphs`, and all three fail the gate.
+  - The budget lives in the pre-approval body check, not in validate, because it must block before the
+    user reads the draft.
+  - RED: collection error plus 9 failures. GREEN: 1980 passed.
+  - Calibration on real bodies: SD flagged its three bloated "Resultado y justificación" paragraphs (99,
+    120 and 146 words), Métodos 1, Simulación and CataClub 0. No filler false positives.
