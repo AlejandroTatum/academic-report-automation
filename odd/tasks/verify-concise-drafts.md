@@ -148,3 +148,6 @@ Engram mirror: `odd/verify-concise-drafts/tasks`, project `academic-report-autom
   for the packet and literal edit orders (no re-approve); the approval gate pastes the packet. Eight old tests
   that pinned the old order were updated to the new order (folders that reach approval now carry a passing
   check). approval.md, production.md, routing.md and a contract test updated. Full suite: 2059 passed.
+- L15b T8 review `review-6fbe254c2d0d76e9` (high, 4 lenses): approved with no correction; acknowledged and burned.
+  Advisory warnings: approval_packet reads the marker after content_check_state (a race or a non-mapping marker
+  can raise; 71-80); doc_status approval guidance sentence is long (102).
