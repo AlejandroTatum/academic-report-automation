@@ -9,6 +9,10 @@ YAML front matter:
     report_defaults: {...}      # report.yml keys; explicit report.yml values win
     delivery_dir_template: "~/.../unidad-{unit}/ape-{practice_number}-{slug}/"
 
+With no profile template, a course repo under the Documents library
+(``Academicos/<subject-slug>/AGENTS.md``) supplies the shared practice layout
+``unidad-{unit}/{format}-{practice_number}-{topic}/documento/``.
+
 Profiles without front matter are prose-only and ignored. Missing keys are
 written as text (appended, or inserted under an existing top-level block) so
 the rest of report.yml keeps its comments and ordering.
@@ -26,11 +30,14 @@ from typing import Any
 import yaml
 
 from guide_facts import load_guide_facts
-from report_config import load_report_config
+from report_config import ascii_slug, load_report_config, resolve_documents_root
 
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "skills" / "academic-report-flow" / "references" / "profiles"
 _FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+# The practice layout every course repo's AGENTS.md declares.
+COURSE_LAYOUT = "unidad-{unit}/{format}-{practice_number}-{topic}/documento/"
+PRACTICE_FORMATS = ("aa", "ape")
 
 
 def _fold(value: object) -> str:
@@ -94,7 +101,9 @@ def _resolve_template(template: str, config: Any, folder: Path) -> tuple[str | N
         facts["practice_number"] = load_guide_facts(folder, config).get("practice_number", "")
     values = {"unit": _number(meta.get("unit")),
               "practice_number": _number(meta.get("practice_number") or facts.get("practice_number")),
-              "slug": facts["slug"]}
+              "slug": facts["slug"],
+              "format": config.format if config.format in PRACTICE_FORMATS else None,
+              "topic": ascii_slug(meta["topic"]) if meta.get("topic") else None}
     missing = [n for n in dict.fromkeys(_PLACEHOLDER.findall(template)) if not values.get(n)]
     if missing:
         return None, missing
@@ -120,11 +129,25 @@ def _valid(text: str) -> str | None:
     return None
 
 
+def course_repo(config: Any, documents_root: Path | None = None) -> Path | None:
+    """The subject's course repo in the Documents library, when it exists."""
+    try:
+        subject = config.delivery_subject_slug
+        category = config.publication_category
+    except (KeyError, ValueError):
+        return None
+    if not subject:
+        return None
+    repo = resolve_documents_root(documents_root) / category / subject
+    return repo if (repo / "AGENTS.md").is_file() else None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("folder", type=Path)
     parser.add_argument("--check", action="store_true", help="print what would be applied; write nothing")
     parser.add_argument("--profiles", type=Path, default=PROFILES_DIR, help=argparse.SUPPRESS)
+    parser.add_argument("--documents-root", type=Path, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     report_yml = args.folder / "report.yml"
@@ -133,16 +156,22 @@ def main(argv: list[str] | None = None) -> int:
         (path, profile) for path in sorted(args.profiles.glob("*.md"))
         if (profile := load_profile(path)) and _matches(profile, config.metadata)
     ]
-    if not candidates:
-        print("no profile")
-        return 0
     if len(candidates) > 1:
         print("error: several profiles match: " + ", ".join(p.name for p, _ in candidates), file=sys.stderr)
         return 2
 
-    path, profile = candidates[0]
+    path, profile = candidates[0] if candidates else (None, {})
     defaults = dict(profile.get("report_defaults") or {})
     template = profile.get("delivery_dir_template")
+    source = path.name if path else None
+    if not isinstance(template, str):
+        repo = course_repo(config, args.documents_root)
+        if repo is not None:
+            template = f"{repo}/{COURSE_LAYOUT}"
+            source = source or f"course repo {repo}"
+    if source is None:
+        print("no profile")
+        return 0
     if isinstance(template, str) and "delivery_dir" not in config.raw:
         resolved, missing = _resolve_template(template, config, args.folder)
         if resolved:
@@ -154,10 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     text, skipped = _write_defaults(report_yml.read_text(encoding="utf-8"), top, nested)
     error = _valid(text)
     if error:
-        print(f"error: profile {path.name} produces an invalid report.yml: {error}", file=sys.stderr)
+        print(f"error: profile {source} produces an invalid report.yml: {error}", file=sys.stderr)
         return 1
     applied = {**top, **{f"{k}.{n}": v for k, gap in nested.items() if k not in skipped for n, v in gap.items()}}
-    print(f"profile {path.name}: " + (", ".join(f"{k}={v}" for k, v in applied.items()) or "nothing to apply (report.yml already sets every key)"))
+    print(f"profile {source}: " + (", ".join(f"{k}={v}" for k, v in applied.items()) or "nothing to apply (report.yml already sets every key)"))
     for key in skipped:
         print(f"not applied: {key} is not a block-style mapping; edit it by hand")
     if not args.check and text != report_yml.read_text(encoding="utf-8"):

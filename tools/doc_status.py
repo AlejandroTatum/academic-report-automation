@@ -33,7 +33,8 @@ import content_check
 import final_review_marker
 import rubric_plan
 from guide_facts import load_guide_facts
-from approval_marker import approval_state, bound_file_names, draft_is_fresh, sha256_file
+from course_profile import COURSE_LAYOUT, PRACTICE_FORMATS, course_repo
+from approval_marker import approval_state, bound_file_names, draft_is_fresh, render_settings_unchanged, sha256_file
 from publish_pdf import PublicationError, matching_delivered_version
 from report_config import (
     ROOT,
@@ -370,6 +371,19 @@ def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | Non
         return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
     if legacy_pdf:
         return PhaseState("format", DONE, f"format={chosen}, output pdf (legacy report), metadata complete")
+    # A course repo fixes where the practice lands; recording it before the
+    # first build avoids moving (and re-approving) the PDF after review.
+    # Reports already built keep their status.
+    if chosen in PRACTICE_FORMATS and "delivery_dir" not in config.raw and not config.pdf_path.is_file():
+        repo = course_repo(config, documents_root)
+        if repo is not None:
+            return PhaseState(
+                "format",
+                PENDING,
+                f"delivery_dir not set: course repo {repo} uses {COURSE_LAYOUT}; record "
+                "metadata.unit, metadata.practice_number and metadata.topic, then run course_profile.py, "
+                "or set delivery_dir by hand",
+            )
     return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
 
 
@@ -379,10 +393,13 @@ def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | 
     Bounded to the mtime comparisons the design specifies (new-report-flow T5):
     the artifact is ``done`` when ``config.pdf_path`` exists and is not older
     than ``approval.yml`` AND not older than ``report.yml`` -- changing the
-    format after a build requires a rebuild. A missing PDF, a missing marker,
+    format after a build requires a rebuild. The one exception is a change to
+    delivery-only keys (``delivery_dir``, ``deliver_bibliography``): when the
+    build's render record still matches report.yml, the PDF is unchanged and
+    stays current. A missing PDF, a missing marker,
     or a PDF that predates either file is ordinary progress -- generate is
-    never ``blocked``; a stale build simply has to be redone. Only the
-    timestamps are read: nothing is written, hashed or repaired here.
+    never ``blocked``; a stale build simply has to be redone. Timestamps and
+    the render record are read; nothing is written or repaired here.
     """
     pdf = config.pdf_path
     if not pdf.is_file():
@@ -393,7 +410,7 @@ def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | 
         return PhaseState("generate", PENDING, "approval.yml missing")
     if not report_yml.is_file():
         return PhaseState("generate", PENDING, "report.yml missing")
-    if pdf.stat().st_mtime < report_yml.stat().st_mtime:
+    if pdf.stat().st_mtime < report_yml.stat().st_mtime and not render_settings_unchanged(folder):
         return PhaseState("generate", PENDING, f"final PDF {pdf.name} older than report.yml")
     if pdf.stat().st_mtime >= marker.stat().st_mtime:
         return PhaseState("generate", DONE, f"final PDF {pdf.name} is not older than approval.yml")

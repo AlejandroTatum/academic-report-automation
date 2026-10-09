@@ -681,5 +681,29 @@ class TestApprovalGuard:
         self._run(tmp_path)
         assert not draft_record_path(tmp_path / "outputs" / "report.pdf").exists()
 
+    def test_build_records_the_report_render_settings(self, tmp_path: Path) -> None:
+        from approval_marker import render_record_path, render_settings_unchanged
+
+        (tmp_path / "report.yml").write_text("format: aa\n", encoding="utf-8")
+        self._run(tmp_path, ["--no-approval-check"])
+        assert render_record_path(tmp_path).is_file()
+        assert render_settings_unchanged(tmp_path)
+
+    def test_failed_build_leaves_no_render_record(self, tmp_path: Path) -> None:
+        from approval_marker import render_record_path, write_render_record
+
+        (tmp_path / "report.yml").write_text("format: aa\n", encoding="utf-8")
+        write_render_record(tmp_path)
+        with pytest.raises(SystemExit):
+            self._run(tmp_path, ["--no-approval-check"], build_error=SystemExit("latex failed"))
+        assert not render_record_path(tmp_path).exists()
+
+    def test_tex_only_build_writes_no_render_record(self, tmp_path: Path) -> None:
+        from approval_marker import render_record_path
+
+        (tmp_path / "report.yml").write_text("format: aa\n", encoding="utf-8")
+        self._run(tmp_path, ["--no-approval-check", "--tex-only"])
+        assert not render_record_path(tmp_path).exists()
+
     def test_validate_only_does_not_need_approval(self, tmp_path: Path) -> None:
         self._run(tmp_path, ["--validate-only"]).assert_not_called()
