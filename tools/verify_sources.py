@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Check report bibliography identifiers against Crossref and Open Library."""
+"""Check report bibliography identifiers against Crossref, DataCite and Open Library.
+
+A DOI is looked up in Crossref and, when Crossref has no record (arXiv, Zenodo
+and other DataCite DOIs), in DataCite. A web-only entry (``@misc``/``@online``)
+without a DOI or ISBN is ``VERIFIED_URL`` when its URL answers; it proves the
+page exists, never a scholarly record, and web-only entries never count toward
+the source minimum (``source_count``).
+"""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +27,9 @@ from report_config import load_report_config
 from source_count import _ENTRY_HEADER
 
 USER_AGENT = "academic-report-automation/1.0 (mailto omitted)"
+WEB_TYPES = {"misc", "online"}
+PASSING = {"VERIFIED", "VERIFIED_WITH_WARNINGS", "VERIFIED_URL"}
+_URL = re.compile(r"https?://[^\s{}]+")
 
 
 def entries(text: str):
@@ -29,8 +39,8 @@ def entries(text: str):
         if header.group(1).lower() in {"string", "comment", "preamble"}:
             continue
         body = text[header.end():headers[index + 1].start() if index + 1 < len(headers) else len(text)]
-        fields = {}
-        for match in re.finditer(r"\b(title|author|year|doi|isbn)\s*=\s*", body, re.I):
+        fields = {"_type": header.group(1).lower()}
+        for match in re.finditer(r"\b(title|author|year|doi|isbn|url|howpublished)\s*=\s*", body, re.I):
             value = body[match.end():].lstrip()
             if value.startswith("{"):
                 depth = 0
@@ -164,6 +174,44 @@ def default_fetch(request: Request, timeout: int):
         return json.load(response)
 
 
+def default_probe(url: str, timeout: int) -> int:
+    with urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=timeout) as response:
+        return response.status
+
+
+def from_datacite(remote: object) -> dict:
+    """Reshape a DataCite record into the Crossref fields ``compare`` reads."""
+    attributes = remote.get("data", {}).get("attributes") if isinstance(remote, dict) else None
+    if not isinstance(attributes, dict):
+        raise RegistryDataError("DataCite record has no attributes")
+    titles = attributes.get("titles") or []
+    title = titles[0].get("title") if titles and isinstance(titles[0], dict) else None
+    creators = [c for c in attributes.get("creators") or [] if isinstance(c, dict)]
+    family = (creators[0].get("familyName") or str(creators[0].get("name", "")).split(",", 1)[0]) if creators else ""
+    message = {"title": [title] if isinstance(title, str) else [],
+               "issued": {"date-parts": [[attributes.get("publicationYear")]]}}
+    if family:
+        message["author"] = [{"family": family}]
+    return {"message": message}
+
+
+def _web_url(fields: dict) -> str:
+    if fields["_type"] not in WEB_TYPES:
+        return ""
+    match = _URL.search(fields.get("url", "") or fields.get("howpublished", ""))
+    return match.group().rstrip(".,") if match else ""
+
+
+def _with_retry(call, sleep):
+    try:
+        return call()
+    except HTTPError as error:
+        if error.code not in (429, 503):
+            raise
+        (sleep or time.sleep)(2)
+        return call()
+
+
 def _summary_line(row: dict) -> str:
     """One line per entry: ``key: STATUS`` plus the reason for anything not verified."""
     reasons = [row["detail"]] if row.get("detail") else []
@@ -172,7 +220,7 @@ def _summary_line(row: dict) -> str:
     return f"{row['key'] or '(bibliography)'}: {row['status']}" + (f" ({'; '.join(reasons)})" if reasons else "")
 
 
-def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
+def verify_sources(folder: Path, fetch=None, sleep=None, probe=None) -> int:
     folder = Path(folder)
     if not (folder / "report.yml").is_file():
         raise ValueError("report.yml does not exist")
@@ -186,23 +234,34 @@ def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
         result = {"key": key}
         doi = re.sub(r'^(?:https?://(?:dx\.)?doi\.org/|doi:)', '', fields.get('doi', '').strip(), flags=re.I)
         isbn = re.sub(r"[^0-9Xx]", "", fields.get("isbn", ""))
+        web = _web_url(fields)
         if doi:
             url, kind = "https://api.crossref.org/works/" + quote(doi, safe="/"), "doi"
         elif isbn:
             url, kind = f"https://openlibrary.org/isbn/{isbn}.json", "isbn"
+        elif web:
+            url, kind = web, "url"
         else:
             result["status"] = "NO_IDENTIFIER"
             results.append(result)
             continue
         request = Request(url, headers={"User-Agent": USER_AGENT})
+        get = fetch or default_fetch
         try:
+            if kind == "url":
+                _with_retry(lambda: (probe or default_probe)(url, 15), sleep)
+                result["status"] = "VERIFIED_URL"
+                result["detail"] = url
+                results.append(result)
+                continue
             try:
-                remote = (fetch or default_fetch)(request, 15)
+                remote = _with_retry(lambda: get(request, 15), sleep)
             except HTTPError as error:
-                if error.code not in (429, 503):
+                if kind != "doi" or error.code != 404:
                     raise
-                (sleep or time.sleep)(2)
-                remote = (fetch or default_fetch)(request, 15)
+                datacite = Request("https://api.datacite.org/dois/" + quote(doi, safe="/"),
+                                   headers={"User-Agent": USER_AGENT})
+                remote = from_datacite(_with_retry(lambda: get(datacite, 15), sleep))
             result.update(compare(fields, remote, kind))
         except RegistryDataError as error:
             result['status'] = 'MISMATCH'
@@ -226,7 +285,7 @@ def verify_sources(folder: Path, fetch=None, sleep=None) -> int:
     destination.write_text(yaml.safe_dump(output, allow_unicode=True, sort_keys=False), encoding="utf-8")
     for row in results:
         print(_summary_line(row))
-    failed = [row for row in results if row["status"] not in {"VERIFIED", "VERIFIED_WITH_WARNINGS"}]
+    failed = [row for row in results if row["status"] not in PASSING]
     if failed:
         print(f"verify_sources: {len(failed)} of {len(results)} entries failed; details in {destination}")
     return 1 if failed else 0
