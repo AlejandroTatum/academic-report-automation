@@ -411,3 +411,14 @@ def test_approval_gate_with_a_fresh_draft_prints_the_packet(tmp_path: Path) -> N
     assert "approval_packet.py" in guidance
     assert "--open" in guidance
     assert str(folder) in guidance
+
+
+def test_approval_guidance_inspects_only_changed_preview_pages(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    guidance = doc_status._guidance("approval", folder)
+    assert "visual_pdf_auditor.py" in guidance
+    assert "only the Changed pages" in guidance
+    assert "inspect every page," not in guidance

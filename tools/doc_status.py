@@ -85,8 +85,9 @@ _GUIDANCE = {
     "plan": "record the teacher's rubric in {rubric}, then re-run doc_status",
     "draft": "draft {body}, then re-run doc_status",
     "approval": (
-        "before asking, build a preview PDF with {build_command} --no-approval-check, render and "
-        "inspect every page, fix layout defects in {body}, and rebuild; the message right before "
+        "before asking, build a preview PDF with {build_command} --no-approval-check, audit it with "
+        "visual_pdf_auditor.py and inspect every page the first time, after an edit round only the "
+        "Changed pages its visual_qa.md lists; fix layout defects in {body}, and rebuild; the message right before "
         "the prompt lists clickable Markdown links with absolute file:// URLs to the draft PDF "
         "({pdf}) and {body}: print it with {packet_command} --open (it also opens the fresh draft PDF "
         "for the user) and paste that approval packet "
