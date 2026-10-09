@@ -807,7 +807,15 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
             "desarrollo",
         ]
         cover_body_marker_pattern = r"\b(" + "|".join(re.escape(marker) for marker in cover_body_markers) + r")\b"
-        if re.search(cover_body_marker_pattern, first) and not config.raw.get("allow_body_on_cover", False):
+        # The cover must print the title and subject, so a marker inside them
+        # ("Desarrollo Basado en Plataformas") is not body text on page 1.
+        cover_text = " ".join(first.split())
+        metadata = config.raw.get("metadata") or {}
+        for field in ("title", "subject"):
+            value = " ".join(str(metadata.get(field) or "").lower().split())
+            if value:
+                cover_text = cover_text.replace(value, " ")
+        if re.search(cover_body_marker_pattern, cover_text) and not config.raw.get("allow_body_on_cover", False):
             result.errors.append("La portada parece mezclada con el cuerpo; el cuerpo debe iniciar en página 2")
         # The marker vocabulary is academic Spanish (#23's numbering contract).
         # Non-academic routes render unnumbered, route-specific headings by
