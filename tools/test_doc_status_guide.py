@@ -1,6 +1,9 @@
 """Guide-aware status guidance contracts."""
+import shlex
+import sys
 from pathlib import Path
 
+import doc_status
 from doc_status import _guidance
 from report_config import ReportConfig
 
@@ -36,36 +39,18 @@ def test_format_guidance_discloses_facts_and_remaining_gaps(tmp_path: Path):
     assert "practice_number, " not in guidance
 
 
-def test_pdf_handoff_is_short_home_relative(tmp_path: Path):
+def test_review_opens_the_exact_pdf_for_the_user(tmp_path):
+    folder = tmp_path / "my report"
+    config = ReportConfig(folder, {"pdf": str(folder / "author's [final] $copy.pdf")})
+    guidance = _guidance("review", folder, config)
+    expected = shlex.join([sys.executable, str(doc_status.ROOT / "tools" / "pdf_viewer.py"),
+                           str(folder / "author's [final] $copy.pdf")])
+    assert "open the PDF for the user (never screenshots): " + expected in guidance
+    assert "brave" not in guidance
+
+
+def test_generate_guidance_opens_nothing(tmp_path):
     folder = Path.home() / "reports" / "sample"
     config = ReportConfig(folder, {"pdf": str(folder / "report-final.pdf")})
-    for phase in ("generate", "review"):
-        guidance = _guidance(phase, folder, config)
-        assert "set d ~/'reports/sample'\nset f 'report-final.pdf'\nbrave $d/$f" in guidance
-        assert all(len(line) < 90 for line in guidance.splitlines()[1:])
-
-
-def test_pdf_handoff_quotes_fish_metacharacters_and_apostrophes():
-    folder = Path.home() / 'reports' / 'my folder'
-    config = ReportConfig(folder, {'pdf': str(folder / "author's [final] $copy.pdf")})
-    guidance = _guidance('review', folder, config)
-    assert "set d ~/'reports/my folder'" in guidance
-    assert "set f 'author\\'s [final] $copy.pdf'" in guidance
-    assert 'brave $d/$f' in guidance
-    assert all(len(line) < 90 for line in guidance.splitlines()[1:])
-
-
-def test_pdf_handoff_escapes_backslashes_and_quotes(tmp_path):
-    folder = Path.home() / 'reports' / "O'Brien\\ files"
-    config = ReportConfig(folder, {'pdf': str(folder / "draft\\'s file.pdf")})
-    guidance = _guidance('review', folder, config)
-    assert "set d ~/'reports/O\\'Brien\\\\ files'" in guidance
-    assert "set f 'draft\\\\\\'s file.pdf'" in guidance
-    assert all(len(line) < 90 for line in guidance.splitlines()[1:])
-
-
-def test_pdf_handoff_outside_home_uses_quoted_absolute_path(tmp_path):
-    folder = tmp_path / 'report'
-    config = ReportConfig(folder, {'pdf': str(folder / "final's.pdf")})
-    guidance = _guidance('review', folder, config)
-    assert "brave '" + str(folder) + "/final\\'s.pdf'" in guidance
+    guidance = _guidance("generate", folder, config)
+    assert "pdf_viewer.py" not in guidance and "brave" not in guidance

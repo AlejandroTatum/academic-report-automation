@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import content_check
+import pdf_viewer
 import yaml
 from approval_marker import BODY_NAME, draft_is_fresh
 from draft_docx import DRAFT_DIR
@@ -94,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Print the approval packet (preview links, verify matrix, missing items); read-only."
     )
     parser.add_argument("folder", type=Path)
+    parser.add_argument("--open", action="store_true",
+                        help="also open the preview PDF for the reviewer, only when it is fresh")
     args = parser.parse_args(argv)
     if not (args.folder / "report.yml").is_file():
         print(f"approval packet input error: report folder not found: {args.folder}", file=sys.stderr)
@@ -103,7 +106,18 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"approval packet input error: {exc}", file=sys.stderr)
         return 2
+    if args.open:
+        _open_preview(args.folder)
     return 0
+
+
+def _open_preview(folder: Path) -> None:
+    pdf = preview_pdf(folder)
+    if not pdf.is_file() or not draft_is_fresh(pdf, folder / BODY_NAME):
+        print("preview not opened: rebuild the preview first", file=sys.stderr)
+        return
+    error = pdf_viewer.open_pdf(pdf)
+    print(f"preview not opened: {error}" if error else f"opened {pdf.resolve()}", file=sys.stderr)
 
 
 if __name__ == "__main__":

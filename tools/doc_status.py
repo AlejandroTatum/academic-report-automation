@@ -88,7 +88,8 @@ _GUIDANCE = {
         "before asking, build a preview PDF with {build_command} --no-approval-check, render and "
         "inspect every page, fix layout defects in {body}, and rebuild; the message right before "
         "the prompt lists clickable Markdown links with absolute file:// URLs to the draft PDF "
-        "({pdf}) and {body}: print it with {packet_command} and paste that approval packet "
+        "({pdf}) and {body}: print it with {packet_command} --open (it also opens the fresh draft PDF "
+        "for the user) and paste that approval packet "
         "(links, verify matrix, missing items) unchanged; "
         "the preview is never the final artifact; "
         "generation runs only after you approve {body}; in the same batch use ask_user_choice "
@@ -636,7 +637,7 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     if phase_name == "verify" and blocked_reason == "content_check_malformed":
         template = "launch ONE independent verifier for {body}, then run the content check: {check_command} --verification verification.yml"
     if phase_name == "verify" and blocked_reason == "content_check_failed":
-        template = ("show the user the approval packet from {packet_command} (draft PDF, matrix, "
+        template = ("show the user the approval packet from {packet_command} --open (draft PDF, matrix, "
                     "missing items) and fix {body} only through the user's literal edit orders; "
                     "rebuild the preview, then re-run the verifier with {check_command} "
                     "--verify-brief --since verification.yml")
@@ -662,20 +663,9 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             gaps = [key for key in missing if key not in known]
             if gaps:
                 template += "; remaining gaps: " + ", ".join(gaps)
-    if phase_name in ("generate", "review"):
-        pdf = config.pdf_path
-        try:
-            relative = pdf.parent.resolve().relative_to(Path.home().resolve())
-            escaped_dir = str(relative).replace('\\', '\\\\').replace("'", "\\'")
-            escaped_file = pdf.name.replace('\\', '\\\\').replace("'", "\\'")
-            command = f"set d ~/'{escaped_dir}'\nset f '{escaped_file}'\nbrave $d/$f"
-            if all(len(line) < 90 for line in command.splitlines()):
-                template += "; present PDF to the user (never screenshots):\n" + command
-        except ValueError:
-            quoted = str(pdf).replace('\\', '\\\\').replace("'", "\\'")
-            handoff = "present PDF to the user (never screenshots):\nbrave '" + quoted + "'"
-            if phase_name == "review":
-                template += "; " + handoff
+    if phase_name == "review":
+        template += ("; open the PDF for the user (never screenshots): "
+                     + _tool_command("pdf_viewer.py", config.pdf_path).replace("{", "{{").replace("}", "}}"))
     if phase_name == "research" and _uncited_bibliography(config):
         template = (
             "write at least 1 entry (any type) to {sources}, the exact list to print "

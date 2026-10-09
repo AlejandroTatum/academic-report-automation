@@ -71,6 +71,7 @@ def test_failed_verify_guidance_requires_user_orders_and_reapproval(tmp_path: Pa
     status = doc_status.derive(folder)
     assert "user's literal edit orders" in status.gate
     assert "approval_packet.py" in status.gate
+    assert "--open" in status.gate
     assert "--verify-brief --since verification.yml" in status.gate
     assert "re-approve" not in status.gate
     assert "run the check" not in status.gate
@@ -408,4 +409,5 @@ def test_approval_gate_with_a_fresh_draft_prints_the_packet(tmp_path: Path) -> N
     _fresh_draft(folder)
     guidance = doc_status._guidance("approval", folder)
     assert "approval_packet.py" in guidance
+    assert "--open" in guidance
     assert str(folder) in guidance

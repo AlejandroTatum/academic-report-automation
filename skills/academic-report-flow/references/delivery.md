@@ -6,7 +6,7 @@ Phases `review` (human gate) and `deliver`. Generation never publishes: the buil
 
 Present the exact PDF the `validate` phase recorded, opened in full, never a summary. When `report.yml` sets `deliver_bibliography: true`, present the declared `.bib` alongside the PDF: the human OK covers both artifacts or neither. Only an explicit OK of that exact set produces the marker, binding `pdf_sha256` (plus `bibliography_sha256` when declared, computed from the `.bib` bytes only after that explicit OK), `reviewed_at`, `reviewed_by`. A review is never granted automatically; silence is never a yes and the marker is never inferred; a decline or any other answer writes nothing and review stays `pending`. A rebuilt PDF or changed declared `.bib` stales the marker and returns the route to `review`. Delivery runs only after this gate is `done`; never refresh a stale marker without a fresh explicit OK.
 
-PDF handoff: present the PDF with the exact short fish command from `doc_status` guidance: `set d <folder>`, `set f <exact PDF filename>`, `brave $d/$f`. Copy its quoting exactly; never glob or truncate the filename. Never send screenshots; the user reviews the PDF itself. The default viewer zathura does not follow internal links.
+PDF handoff: open the PDF for the user with the exact `pdf_viewer.py` command from `doc_status` guidance before asking for the OK; it launches `$REPORT_PDF_VIEWER`, else brave (it follows internal links; zathura does not), else `xdg-open`, detached. Also give its clickable `file://` link. If the viewer cannot start, say so and give the link; never send screenshots, the user reviews the PDF itself.
 
 ## Deliver (`next: deliver`)
 

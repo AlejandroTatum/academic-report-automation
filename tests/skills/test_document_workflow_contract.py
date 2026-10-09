@@ -556,13 +556,17 @@ def test_verify_refuses_drafter_verification_and_stale_marker() -> None:
     assert "stale marker" in text and "re-run the verifier" in text
 
 
-def test_pdf_handoff_uses_exact_doc_status_fish_command() -> None:
-    """The handoff is stated once, in the final-review stage that presents the PDF."""
+def test_pdf_handoff_opens_the_pdf_automatically() -> None:
+    """The handoff is stated once, in the final-review stage that presents the PDF: the PDF opens itself."""
     text = read(DELIVERY_MD)
-    for phrase in ("doc_status", "set d", "set f", "brave $d/$f", "exact", "zathura", "internal links", "Never send screenshots"):
+    for phrase in ("doc_status", "pdf_viewer.py", "exact", "zathura", "internal links", "file://", "never send screenshots"):
         assert phrase.lower() in text.lower(), phrase
-    assert "*.pdf" not in text
-    assert "brave $d/$f" not in read(PRODUCTION_MD), "the handoff must not be restated in production.md"
+    assert "*.pdf" not in text and "set d" not in text
+    assert "pdf_viewer.py" not in read(PRODUCTION_MD), "the handoff must not be restated in production.md"
+
+
+def test_approval_packet_opens_the_fresh_preview() -> None:
+    assert "approval_packet.py\" <folder> --open`" in read(APPROVAL_MD)
 
 
 def test_skill_hard_rules_summarize_four_guards() -> None:
@@ -714,7 +718,7 @@ def test_guide_driven_intake_and_pdf_handoff() -> None:
     review = read(DELIVERY_MD).lower()
     assert "alejandro padilla" in intake and "ask_user_choice" in intake
     assert "format_hint:" in intake and "guide_facts.py" in intake
-    assert "brave $d/" in review and "never send screenshots" in review
+    assert "pdf_viewer.py" in review and "never send screenshots" in review
 
 
 def test_review_reference_gates_delivery_on_an_explicit_pdf_ok() -> None:
