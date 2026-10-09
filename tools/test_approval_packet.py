@@ -1,4 +1,4 @@
-"""One approval packet: preview PDF, verify matrix and missing items (verify-concise-drafts T8, S2)."""
+"""One approval packet: preview PDF, per-criterion summary and missing items (verify-concise-drafts T8, S2; #64)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,7 +53,8 @@ def test_packet_without_a_preview_says_so(tmp_path: Path) -> None:
         approval_packet.render(folder))
 
 
-def test_packet_shows_the_matrix_and_lists_missing_items(tmp_path: Path) -> None:
+def test_packet_summarizes_per_criterion_and_lists_missing_items(tmp_path: Path) -> None:
+    """#64: the human gets one row per criterion, never the per-requirement evidence matrix."""
     folder = _folder(tmp_path)
     _fresh_preview(folder)
     assert _verify(folder, requirements=[
@@ -61,10 +62,15 @@ def test_packet_shows_the_matrix_and_lists_missing_items(tmp_path: Path) -> None
          "location": "## Informe", "evidence": "Cuerpo con fuentes"},
         {"criterion": "metodologia", "requirement": "One Wokwi link per part", "status": "missing",
          "location": "", "evidence": ""},
+        {"criterion": "metodologia", "requirement": "A results table", "status": "found",
+         "location": "## Informe", "evidence": "Cuerpo con fuentes"},
     ], unmapped_paragraphs=["Como es sabido"], findings=["WARNING: repeats the intro"]) == 1
     text = approval_packet.render(folder)
-    assert "## Verify: fail" in text
-    assert "| objetivo | A goal \\| measurable | found | ## Informe | Cuerpo con fuentes |" in text
+    assert "## Verify: fail (2/3 requirements found)" in text
+    assert "| Criterion | Status | Found |\n|---|---|---|\n| objetivo | cumple | 1/1 |\n| metodologia | falta | 1/2 |" in text
+    assert "Cuerpo con fuentes" not in text and "| Evidence |" not in text
+    matrix = (folder / content_check.CONTENT_CHECK_NAME).resolve().as_uri()
+    assert f"Full requirement matrix (for agents): [content-check.yml]({matrix})" in text
     assert "### Missing (1)\n- metodologia: One Wokwi link per part" in text
     assert "### Deletion candidates (1)\n- Como es sabido" in text
     assert "- WARNING: repeats the intro" in text
@@ -75,7 +81,7 @@ def test_passing_verify_has_no_missing_items(tmp_path: Path) -> None:
     _fresh_preview(folder)
     assert _verify(folder) == 0
     text = approval_packet.render(folder)
-    assert "## Verify: pass" in text
+    assert "## Verify: pass (2/2 requirements found)" in text
     assert "### Missing (0)\n- none" in text
 
 

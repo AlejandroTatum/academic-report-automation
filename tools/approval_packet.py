@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Print the single approval packet for a report folder (verify-concise-drafts T8, S2).
 
-One Markdown message holds everything the approver needs: clickable links to the
-draft PDF preview, ``body.md`` and the latest DOCX draft, the verify result, the
-requirement -> evidence matrix, the missing items, the deletion candidates and
-the findings. It is read-only: it never runs the verifier, builds or approves.
+One compact Markdown message holds what the approver needs: clickable links to
+the draft PDF preview, ``body.md`` and the latest DOCX draft, the verify result,
+one row per criterion (cumple/falta, found/total), the missing items, the
+deletion candidates and the findings. The per-requirement evidence matrix is
+for agents: it stays in ``content-check.yml`` and is linked, never pasted (#64). It is read-only: it never runs the verifier, builds or approves.
 A stale or absent verification shows no matrix, so an old verdict is never
 presented as current.
 """
@@ -71,12 +72,19 @@ def _verify_section(folder: Path) -> list[str]:
         return ["## Verify: stale: re-run the verifier (content_check.py --verify-brief --since verification.yml)"]
     if state not in ("pass", "fail"):
         return [f"## Verify: {state}: content-check.yml cannot be read; re-run the verifier"]
-    marker = yaml.safe_load((folder / content_check.CONTENT_CHECK_NAME).read_text(encoding="utf-8")) or {}
+    marker_path = folder / content_check.CONTENT_CHECK_NAME
+    marker = yaml.safe_load(marker_path.read_text(encoding="utf-8")) or {}
     requirements = [r for r in marker.get("requirements") or [] if isinstance(r, dict)]
-    lines = [f"## Verify: {state}", "", "| Criterion | Requirement | Status | Location | Evidence |",
-             "|---|---|---|---|---|"]
-    lines += [f"| {_cell(r.get('criterion'))} | {_cell(r.get('requirement'))} | {_cell(r.get('status'))} "
-              f"| {_cell(r.get('location'))} | {_cell(r.get('evidence'))} |" for r in requirements]
+    counts: dict[str, list[int]] = {}
+    for r in requirements:
+        found_total = counts.setdefault(_cell(r.get("criterion")), [0, 0])
+        found_total[0] += r.get("status") == "found"
+        found_total[1] += 1
+    found = sum(f for f, _ in counts.values())
+    lines = [f"## Verify: {state} ({found}/{len(requirements)} requirements found)", "",
+             "| Criterion | Status | Found |", "|---|---|---|"]
+    lines += [f"| {criterion} | {'cumple' if f == t else 'falta'} | {f}/{t} |" for criterion, (f, t) in counts.items()]
+    lines += ["", f"Full requirement matrix (for agents): {_link(marker_path)}"]
     missing = [f"{r.get('criterion')}: {r.get('requirement')}" for r in requirements if r.get("status") != "found"]
     lines += _listing("Missing", missing)
     lines += _listing("Deletion candidates", [str(p) for p in marker.get("unmapped_paragraphs") or []])
