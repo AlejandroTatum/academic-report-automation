@@ -16,6 +16,7 @@ from conftest import (
     _rubric,
     _sources_bib,
     _validation,
+    _mtime,
 )
 
 SLUG = "informe-de-laboratorio"
@@ -263,3 +264,29 @@ def test_course_folder_pending_message_offers_the_manual_way_out(tmp_path: Path)
     folder = _course_report(tmp_path / "wf")
 
     assert "or set delivery_dir by hand" in _format_phase(folder, documents).detail
+
+
+def test_preview_built_before_approval_does_not_waive_the_course_folder(tmp_path: Path) -> None:
+    """#72: the draft preview shares the final path and always predates approval."""
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _approval(folder)
+    _mtime(folder / "approval.yml", 2_000)
+    _mtime(_pdf(folder), 1_000)
+
+    phase = _format_phase(folder, documents)
+
+    assert phase.state == doc_status.PENDING
+    assert "delivery_dir" in phase.detail
+
+
+def test_final_build_after_approval_keeps_its_course_folder_status(tmp_path: Path) -> None:
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _approval(folder)
+    _mtime(folder / "approval.yml", 1_000)
+    _mtime(_pdf(folder), 2_000)
+
+    assert _format_phase(folder, documents).state == doc_status.DONE

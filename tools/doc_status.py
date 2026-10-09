@@ -335,6 +335,20 @@ def _has_legacy_pdf(folder: Path, config: ReportConfig, documents_root: Path | N
     return _phase_deliver(folder, config, documents_root).state == DONE
 
 
+def _has_final_build(folder: Path, config: ReportConfig) -> bool:
+    """True when the PDF at ``pdf_path`` is a final build, not a draft preview.
+
+    The preview (``--no-approval-check``) writes the same path and always
+    predates ``approval.yml``; a final build never does. A PDF from a report
+    without an approval marker (legacy) counts as built.
+    """
+    pdf = config.pdf_path
+    if not pdf.is_file():
+        return False
+    marker = folder / "approval.yml"
+    return not marker.is_file() or pdf.stat().st_mtime >= marker.stat().st_mtime
+
+
 def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
     """Map the chosen format and its metadata onto one phase state (T4/T5).
 
@@ -372,9 +386,9 @@ def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | Non
     if legacy_pdf:
         return PhaseState("format", DONE, f"format={chosen}, output pdf (legacy report), metadata complete")
     # A course repo fixes where the practice lands; recording it before the
-    # first build avoids moving (and re-approving) the PDF after review.
-    # Reports already built keep their status.
-    if chosen in PRACTICE_FORMATS and "delivery_dir" not in config.raw and not config.pdf_path.is_file():
+    # final build avoids moving (and re-approving) the PDF after review.
+    # Reports with a final build keep their status.
+    if chosen in PRACTICE_FORMATS and "delivery_dir" not in config.raw and not _has_final_build(folder, config):
         repo = course_repo(config, documents_root)
         if repo is not None:
             return PhaseState(
