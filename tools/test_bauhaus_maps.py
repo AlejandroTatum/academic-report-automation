@@ -832,18 +832,22 @@ def segments(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
 
 
 def label_boxes(root: ET.Element) -> dict[str, tuple[float, float, float, float]]:
-    """Each branch label's box: the text width measured in Space Grotesk at its size, and its cap height."""
+    """Each branch label's ink box: the advance width and the glyph extents of the string in Space Grotesk at its size.
+
+    Ascenders, accents and descenders count ("p" reaches about 2.5 units below the baseline).
+    """
     import bauhaus_maps
 
     boxes = {}
     for label in find(root, "text"):
         if not label.get("data-label"):
             continue
-        value, size = "".join(label.itertext()), float(label.get("font-size"))
-        width = bauhaus_maps.measure(value, size, int(label.get("font-weight")), float(label.get("letter-spacing") or 0))
+        value, size, weight = "".join(label.itertext()), float(label.get("font-size")), int(label.get("font-weight"))
+        width = bauhaus_maps.measure(value, size, weight, float(label.get("letter-spacing") or 0))
+        _, top, _, bottom = (v * size / 100 for v in bauhaus_maps._face(weight).getbbox(value, anchor="ls"))
         x, y, anchor = float(label.get("x")), float(label.get("y")), label.get("text-anchor")
         left = x if anchor == "start" else x - width if anchor == "end" else x - width / 2
-        boxes[label.get("data-label")] = (left, y - size, left + width, y + 1)
+        boxes[label.get("data-label")] = (left, y + top, left + width, y + bottom)
     return boxes
 
 
@@ -860,7 +864,12 @@ def assert_labels_are_clear(root: ET.Element) -> None:
         for other, points in lines.items():
             assert not crosses_box(points, rect), f"label {name} is crossed by connector {other}"
         for node_id, box_ in nodes.items():
-            assert not overlap(rect, box_), f"label {name} overlaps node {node_id}"
+            diamond = {e.get("data-node"): e for e in find(root, "polygon")}.get(node_id)
+            if diamond is not None:  # a diamond's corners are empty: measure against its outline
+                assert not any(rect[0] < x < rect[2] and rect[1] < y < rect[3] for x, y in outline_of(diamond)), \
+                    f"label {name} overlaps node {node_id}"
+            else:
+                assert not overlap(rect, box_), f"label {name} overlaps node {node_id}"
         for other, box_ in labels.items():
             assert other == name or not overlap(rect, box_), f"labels {name} and {other} overlap"
 
@@ -1430,7 +1439,8 @@ def test_a_decision_branch_straight_down_keeps_its_label_beside_its_own_line(tmp
     label = label_boxes(root)["d2>s6"]
     assert text_of(root, "SÍ") is not None
     assert label[1] >= diamond[3] and label[3] <= below[1], "the label sits between the diamond and the step below"
-    assert 0 < label[0] - line_x <= 14 or 0 < line_x - label[2] <= 14, "the label sits beside its connector"
+    # beside the line, yet 8 units from the arrowhead wing, so a few units further out than the usual 7
+    assert 0 < label[0] - line_x <= 24 or 0 < line_x - label[2] <= 24, "the label sits beside its connector"
     assert_labels_are_clear(root)
     assert_no_connector_crosses_a_node(root)
 
@@ -1651,9 +1661,97 @@ def test_links_that_would_hug_each_other_fail_naming_both_links_and_write_nothin
 
 
 @needs_dot
-def test_a_phrase_too_close_to_another_link_fails_naming_the_label_and_the_link(tmp_path: Path) -> None:
-    result, out = render(tmp_path, _flipped(2, 5))
-    assert result.returncode == 2
+def test_a_phrase_too_close_to_another_link_fails_naming_the_label_and_the_link(tmp_path: Path, monkeypatch, capsys) -> None:
+    import bauhaus_maps
+
+    monkeypatch.setattr(bauhaus_maps, "LABEL_AIR_X", 0)  # Graphviz is no longer told to keep room around the phrases
+    monkeypatch.setattr(bauhaus_maps, "LABEL_AIR_Y", 0)
+    out = tmp_path / "fig.svg"
+    assert bauhaus_maps.main(["render", str(write_spec(tmp_path, CONCEPT_SPEC)), "--out", str(out)]) == 2
     assert re.fullmatch(r"bauhaus_maps: 'links\[\d+\]\.label' is \d\.\d units from links\[\d+\] \(\w+ -> \w+\), under the "
-                        r"8-unit minimum; shorten it, or move the concepts or the link\n", result.stderr), result.stderr
+                        r"8-unit minimum; shorten it, or move the concepts or the link\n", capsys.readouterr().err)
     assert not out.exists()
+
+
+BRANCH_CLEARANCE = 8  # SVG units a process-map branch label keeps from every arrowhead and every box (its own line may be close)
+PROCESS_ARROW_LENGTH, PROCESS_ARROW_HALF = 8 * 1.62, 4 * 1.62  # tip-ink marker: path 8 x 4 of 10 units at 9 * 1.8 / 10 scale
+
+
+def process_arrowheads(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
+    """Outline of the arrowhead at the end of every connector and every dashed artifact line."""
+    heads = {}
+    for name, points in connectors(root).items():
+        (ax, ay), (tx, ty) = points[-2], points[-1]
+        heads[name] = _head((tx, ty), (tx - ax, ty - ay), PROCESS_ARROW_LENGTH, PROCESS_ARROW_HALF)
+    for name, points in segments(root).items():
+        if name.startswith("artifact:"):
+            (ax, ay), (tx, ty) = points
+            heads[name] = _head((tx, ty), (tx - ax, ty - ay), 8 * 1.44, 4 * 1.44)
+    return heads
+
+
+def _head(tip: tuple[float, float], direction: tuple[float, float], length: float, half: float) -> list[tuple[float, float]]:
+    size = (direction[0] ** 2 + direction[1] ** 2) ** 0.5
+    ux, uy = direction[0] / size, direction[1] / size
+    bx, by = tip[0] - length * ux, tip[1] - length * uy
+    corners = [tip, (bx - half * uy, by + half * ux), (bx + half * uy, by - half * ux)]
+    return triangle_outline(corners, per_edge=40)
+
+
+def outline_of(element: ET.Element) -> list[tuple[float, float]]:
+    """Boundary of a node (rect or diamond) sampled every half unit."""
+    x0, y0, x1, y1 = box(element)
+    if tag(element) == "polygon":
+        corners = [tuple(map(float, p.split(","))) for p in element.get("points").split()]
+    else:
+        corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    out = []
+    for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1]):
+        steps = max(2, int(((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5 * 2))
+        out += [(ax + (bx - ax) * i / steps, ay + (by - ay) * i / steps) for i in range(steps)]
+    return out
+
+
+def assert_branch_labels_keep_clear_of_arrowheads_and_boxes(root: ET.Element) -> None:
+    labels, heads = label_boxes(root), process_arrowheads(root)
+    shapes = {e.get("data-node"): e for e in root.iter() if tag(e) in ("rect", "polygon") and e.get("data-node")}
+    documents = {f"artifact:{e.get('data-artifact')}": artifact_box(root, e.get("data-artifact"))
+                 for e in find(root, "path") if e.get("data-artifact")}
+    assert labels, "no labels drawn"
+    for name, rect in labels.items():
+        for other, outline in heads.items():
+            near = min(distance_to_box(p, rect) for p in outline)
+            assert near >= BRANCH_CLEARANCE, f"label {name} is {near:.1f} units from the arrowhead of {other}"
+        for node_id, element in shapes.items():
+            outline = outline_of(element)
+            inside = tag(element) == "polygon" and all(rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3] for x, y in outline[:1])
+            near = 0.0 if inside else min(distance_to_box(p, rect) for p in outline)
+            assert near >= BRANCH_CLEARANCE, f"label {name} is {near:.1f} units from node {node_id}"
+        for doc_id, doc in documents.items():
+            assert box_gap(rect, doc) >= BRANCH_CLEARANCE, f"label {name} is too close to {doc_id}"
+
+
+@needs_dot
+@pytest.mark.parametrize("spec", [PROCESS_SPEC, ENGRAM_PROCESS_SPEC, ROUTES_SPEC, STRESS_SPEC, _labelled_lattice()],
+                         ids=["spec-kit", "engram", "routes", "stress", "lattice"])
+def test_branch_labels_keep_clear_of_arrowheads_and_boxes(tmp_path: Path, spec: dict) -> None:
+    assert_branch_labels_keep_clear_of_arrowheads_and_boxes(svg_root(tmp_path, spec))
+
+
+@needs_dot
+@needs_rsvg
+def test_the_measured_label_ink_matches_the_pixels_rsvg_draws(tmp_path: Path) -> None:
+    from PIL import Image
+
+    result, out = render(tmp_path, CONCEPT_SPEC, "--png", tmp_path / "fig.png")
+    assert result.returncode == 0, result.stderr
+    root = ET.fromstring(out.read_text(encoding="utf-8"))
+    pixels = Image.open(tmp_path / "fig.png").convert("RGB")
+    for name in ("spec>clar", "const>plan"):  # a phrase with descenders and one with accents
+        label = next(e for e in find(root, "text") if e.get("data-label") == name)
+        colour = tuple(int(label.get("fill")[i:i + 2], 16) for i in (1, 3, 5))
+        x0, y0, x1, y1 = label_boxes(root)[name]
+        rows = [py for py in range(int((y0 - 6) * 2), int((y1 + 6) * 2))
+                if any(sum(abs(a - b) for a, b in zip(pixels.getpixel((px, py)), colour)) < 90
+                       for px in range(int(x0 * 2), int(x1 * 2)))]
+        assert abs(min(rows) / 2 - y0) <= 1 and abs((max(rows) + 1) / 2 - y1) <= 1, (name, (y0, y1), (min(rows) / 2, (max(rows) + 1) / 2))
