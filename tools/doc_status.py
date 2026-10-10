@@ -91,7 +91,7 @@ _GUIDANCE = {
         "the prompt lists clickable Markdown links with absolute file:// URLs to the draft PDF "
         "({pdf}) and {body}: print it with {packet_command} --open (it also opens the fresh draft PDF "
         "for the user) and paste that approval packet "
-        "(links, verify matrix, missing items) unchanged; "
+        "(links, per-criterion summary, missing items) unchanged; "
         "the preview is never the final artifact; "
         "generation runs only after you approve {body}; in the same batch use ask_user_choice "
         "(suggested options, never free text) for the document format AA, APE or libre (libre also "
@@ -638,7 +638,7 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
     if phase_name == "verify" and blocked_reason == "content_check_malformed":
         template = "launch ONE independent verifier for {body}, then run the content check: {check_command} --verification verification.yml"
     if phase_name == "verify" and blocked_reason == "content_check_failed":
-        template = ("show the user the approval packet from {packet_command} --open (draft PDF, matrix, "
+        template = ("show the user the approval packet from {packet_command} --open (draft PDF, criterion summary, "
                     "missing items) and fix {body} only through the user's literal edit orders; "
                     "rebuild the preview, then re-run the verifier with {check_command} "
                     "--verify-brief --since verification.yml")
