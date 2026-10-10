@@ -227,6 +227,45 @@ def inline_code(value: str) -> str:
     return r"\texttt{" + "".join(pieces) + "}"
 
 
+# biblatex package options and trailing setup per `citation_style`. IEEE is
+# the default and must render exactly as before; APA needs the Spanish mapping
+# (csquotes, which biblatex-apa requires, is already loaded by every template).
+BIBLATEX_OPTIONS = {
+    "ieee": "backend=biber,style=ieee,sorting=none,hyperref=true",
+    # biblatex-apa's own sorting=apa lists no-date works first (APA 7, 9.47).
+    "apa": "backend=biber,style=apa,hyperref=true",
+}
+BIBLATEX_SETUP = {
+    "ieee": "",
+    "apa": (
+        r"\DeclareLanguageMapping{spanish}{spanish-apa}"
+        r"\ExecuteBibliographyOptions{language=spanish}"
+        # APA 7 in Spanish: "Recuperado el <fecha>, de <URL>".
+        r"\DefineBibliographyStrings{spanish}{retrieved={Recuperado},from={de}}"
+        # Spanish joins the last two authors with "y", not "&".
+        r"\DeclareDelimFormat[bib,biblist]{finalnamedelim}{\addspace y\space}"
+        r"\DeclareDelimFormat[parencite]{finalnamedelim}{\addspace y\space}"
+        # Air between reference entries; the hanging indent stays biblatex-apa's.
+        r"\setlength{\bibitemsep}{0.5\baselineskip}"
+        # APA lists are left-aligned; justified lines open wide word gaps.
+        r"\AtBeginBibliography{\raggedright}"
+        # URLs/DOIs may break after / . - only; never after "https:" or
+        # mid-word. xurl (loaded after biblatex) resets the counters and
+        # \biburlsetup resets the break sets, so apply both at end of preamble.
+        r"\urlstyle{same}"
+        r"\AtEndPreamble{"
+        r"\setcounter{biburlbreakpenalty}{50}"
+        r"\setcounter{biburlbigbreakpenalty}{10000}"
+        r"\setcounter{biburlnumpenalty}{0}"
+        r"\setcounter{biburlucpenalty}{0}"
+        r"\setcounter{biburllcpenalty}{0}"
+        r"\appto\biburlsetup{\Urlmuskip=0mu\relax\def\UrlBreaks{\do\/\do\.\do\-}\def\UrlBigBreaks{\do\:}}"
+        # Body \url/\href: ":" is a big break by default, which splits "https: //".
+        r"\def\UrlBigBreaks{}}"
+    ),
+}
+
+
 def convert_inline(text: str) -> str:
     placeholders: list[tuple[str, str]] = []
 
@@ -238,7 +277,8 @@ def convert_inline(text: str) -> str:
             return token
         text = re.sub(pattern, wrapper, text)
 
-    keep(r"\[@([A-Za-z0-9_:\-.,; ]+)\]", lambda m: r"\cite{" + re.sub(r"\s+", "", m.group(1)) + "}")
+    keep(r"\[@([A-Za-z0-9_:\-.,;@ ]+)\]",
+         lambda m: r"\cite{" + ",".join(k for k in re.split(r"[;,\s]+", m.group(1).replace("@", "")) if k) + "}")
     keep(r"\$([^$]+)\$", lambda m: "$" + m.group(1) + "$")
     keep(r"`([^`]+)`", lambda m: inline_code(m.group(1)))
     keep(r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
@@ -330,6 +370,16 @@ BIBLIOGRAPHY_HEADINGS = {"bibliografia", "referencias", "references", "bibliogra
 # Title each template's \printbibliography prints, keyed by normalized template
 # key. The renderer owns the emission decision (#26); the template owns the
 # heading wording.
+# APA 7 (Spanish) names the list "Referencias" regardless of the template.
+APA_BIBLIOGRAPHY_TITLE = "Referencias"
+
+
+def bibliography_title(config: ReportConfig, template_key: str) -> str:
+    if config.citation_style == "apa":
+        return APA_BIBLIOGRAPHY_TITLE
+    return BIBLIOGRAPHY_TITLES[template_key]
+
+
 BIBLIOGRAPHY_TITLES = {
     "default": "Bibliografía",
     "unl": "Bibliografía",
@@ -438,10 +488,14 @@ def markdown_to_latex(
     output: list[str] = []
     paragraph: list[str] = []
     list_stack: list[tuple[int, str]] = []
+    # Annex figures are pinned ([H]): an annex page often holds only its
+    # heading, so a float would leave it empty and move to the next page.
+    in_annex = False
 
     def split_table_row(row: str) -> list[str]:
-        stripped = row.strip().strip("|")
-        return [cell.strip() for cell in stripped.split("|")]
+        # GFM: `\|` is a literal pipe inside a cell, never a column break.
+        stripped = re.sub(r"(?<!\\)\|$", "", row.strip()).lstrip("|")
+        return [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", stripped)]
 
     def is_table_separator(row: str) -> bool:
         cells = split_table_row(row)
@@ -510,7 +564,12 @@ def markdown_to_latex(
     def flush_paragraph() -> None:
         nonlocal paragraph
         if paragraph:
-            output.append(convert_inline(" ".join(item.strip() for item in paragraph)))
+            text = " ".join(item.strip() for item in paragraph)
+            # A "Tabla N." caption or a "**Código N.**" listing label must not be
+            # stranded at a page foot apart from its table or listing.
+            if re.match(r"^(Tabla|Table)\s+\d+\.|^\*\*(Código|Listing)\s+\S+?\.\*\*", text):
+                output.append(r"\Needspace{8\baselineskip}")
+            output.append(convert_inline(text))
             output.append("")
             paragraph = []
 
@@ -698,7 +757,7 @@ def markdown_to_latex(
             options = figure_includegraphics_options(resolved)
             output.extend([
                 r"\Needspace{6\baselineskip}",
-                rf"\begin{{figure}}[{figure_placement}]",
+                rf"\begin{{figure}}[{'H' if in_annex else figure_placement}]",
                 r"\centering",
                 rf"\includegraphics[{options}]{{{src}}}",
                 rf"\caption{{{caption}}}",
@@ -713,6 +772,8 @@ def markdown_to_latex(
             flush_paragraph(); close_list()
             level = len(heading.group(1))
             raw_title = heading.group(2).strip()
+            if level == 1:
+                in_annex = fold_heading(raw_title).startswith("anexo")
             if is_bibliography_heading(raw_title) and (
                 suppress_bibliography_heading
                 or not any(rest.strip() for rest in lines[i + 1 :])
@@ -1050,6 +1111,8 @@ def render_tex(config: ReportConfig) -> str:
         "{{APE_LOGO_PATH}}": latex_escape(APE_LOGO_FILENAME),
         "{{APE_TITLE}}": latex_escape(ape_report_title(meta)),
         "{{IDENTIFICATION_TABLE}}": ape_identification_table(meta),
+        "{{BIBLATEX_OPTIONS}}": BIBLATEX_OPTIONS[config.citation_style],
+        "{{BIBLATEX_SETUP}}": BIBLATEX_SETUP[config.citation_style],
         "{{BIB_FILE}}": latex_escape(bib_file),
         "{{HAS_BIB}}": "true" if config.bib_path else "false",
         "{{HAS_FIGURES}}": "true" if has_figures else "false",
@@ -1074,13 +1137,16 @@ def render_tex(config: ReportConfig) -> str:
         # the .bib file prints the bibliography (and its template title).
         "{{PRINT_BIBLIOGRAPHY}}": (
             (r"\nocite{*}" + "\n" if config.uncited_bibliography else "")
-            + rf"\printbibliography[title={{{BIBLIOGRAPHY_TITLES[template_key]}}}]"
+            + rf"\printbibliography[title={{{bibliography_title(config, template_key)}}}]"
             if emit_bibliography
             else "% Bibliography omitted: the body cites nothing from the .bib file (#26)."
         ),
     }
     for key, value in replacements.items():
         template = template.replace(key, value)
+    if config.citation_style == "apa":
+        # Author-year in-text citations; the converter emits \cite for IEEE.
+        template = template.replace(r"\cite{", r"\parencite{")
     if template_key in UNL_TEMPLATE_KEYS:
         template = _apply_cover_sentinels(
             template,

@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
-"""The hard content check: record the agent's judgments, derive the verdict.
+"""The hard content check: record the verifier's matrix, derive the verdict.
 
-new-report-flow T3 makes the verify phase a two-sided contract. The AI agent
-judges every rubric criterion in a judgments file -- a YAML/JSON mapping of
-``criteria: [{id, status: cumple|flojo|falta, where, note}]`` plus optional
-free-text ``findings`` (confusing paragraphs, figures serving no criterion).
-This tool never generates those judgments; it validates them against the plan
-(``tools/rubric_plan.py``), adds the deterministic mechanical checks over
-``body.md`` and the document bib, and writes ``content-check.yml`` (schema
-``academic.content-check/v1``) with the derived ``result``: ``pass`` only when
-every criterion is ``cumple`` AND every mechanical check is ok, so the agent
-can never declare a pass by itself.
+verify-concise-drafts T6 replaces the two independent judges with ONE
+independent read-only verifier. It scores nothing: it fills a requirement ->
+evidence matrix (``verification.yml``, schema ``academic.verification/v1``):
+``requirements: [{criterion, requirement, status: found|missing, location,
+evidence}]`` plus ``unmapped_paragraphs`` (deletion candidates) and free-text
+``findings``. ``found`` needs ``evidence``, an exact quote from ``body.md``.
+This tool never generates the matrix; it validates it against the plan
+(``tools/rubric_plan.py``), downgrades any ``found`` requirement whose quote is
+not in ``body.md`` (whitespace-normalized) to ``missing`` with a finding, derives
+each criterion as ``cumple`` (all its requirements found) or ``falta``, adds the
+deterministic mechanical checks over ``body.md`` and the document bib, and writes
+``content-check.yml`` (schema ``academic.content-check/v1``) with the derived
+``result``: ``pass`` only when every criterion is ``cumple`` AND every
+mechanical check is ok, so the agent can never declare a pass by itself.
 
 Mechanical checks reuse the repo's existing citation helpers instead of a new
 regex: ``validate_ieee_refs.cited_keys``/``bib_keys`` for `[@key]` extraction
 and resolution, and ``source_count.eligible_entry_keys``/``MIN_ACADEMIC_SOURCES``
-for the at-least-five-eligible-sources-cited gate (T2).
+for the at-least-five-eligible-sources-cited gate (T2). ``links_resolve``
+(``tools/link_check.py``) opens every http(s) URL in the body: an HTTP error
+fails, DNS failures and timeouts are warnings only.
 
 The check reports findings and never rewrites the draft: its only write is
 ``content-check.yml``. ``body.md`` bytes flow into ``body_sha256`` exactly as
@@ -31,11 +37,14 @@ a half-written verdict.
 
 ``content_check_state`` also never trusts the recorded ``result`` blindly: it
 re-derives the verdict from the recorded criteria (every status ``cumple``),
-the recorded mechanical checks (every ``ok``), and the recorded criterion ids
-(equal to the current rubric ids) -- a forged ``result: pass`` fails.
+the recorded requirements (all ``found``, every criterion covered), the recorded
+mechanical checks (every ``ok``), and the recorded criterion ids (equal to the
+current rubric ids) -- a forged ``result: pass`` fails. Markers written by the
+old two-judge flow (``judges``/``disagreements``) stay readable and valid.
 
-CLI: ``python tools/content_check.py <report-folder> --judgments <file>``
-exits 0 on pass, 1 on fail, 2 on usage/input error.
+CLI: ``python tools/content_check.py <report-folder> --verification <file>``
+exits 0 on pass, 1 on fail, 2 on usage/input error; ``--verify-brief`` prints the
+verifier's assignment.
 """
 from __future__ import annotations
 
@@ -49,6 +58,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import concision
+import link_check
 import rubric_plan
 import rubric_checks
 import yaml
@@ -60,26 +71,32 @@ from validate_ieee_refs import bib_keys, cited_keys
 
 CONTENT_CHECK_NAME = "content-check.yml"
 CONTENT_CHECK_SCHEMA = "academic.content-check/v1"
-JUDGMENT_STATUSES = ("cumple", "flojo", "falta")
+VERIFICATION_SCHEMA = "academic.verification/v1"
+REQUIREMENT_STATUSES = ("found", "missing")
+JUDGMENT_STATUSES = ("cumple", "flojo", "falta")  # legacy two-judge markers
 RESULT_VALUES = ("pass", "fail")
-MECHANICAL_NAMES = {"citations_resolve", "eligible_sources_cited", "judgments_match_rubric", "rubric_checks"}
+LEGACY_MECHANICAL_NAMES = {"citations_resolve", "eligible_sources_cited", "judgments_match_rubric", "rubric_checks"}
+MECHANICAL_NAMES = {
+    "citations_resolve", "eligible_sources_cited", "verification_matches_rubric", "rubric_checks", "links_resolve",
+}
 
 # Keys content-check.yml must carry for content_check_state to trust it; the
-# per-check ``mechanical`` entries and ``criteria`` judgment records are
-# validated by presence here and by their producers above.
-REQUIRED_MARKER_KEYS = (
+# per-check ``mechanical`` entries and ``criteria`` records are validated by
+# presence here and by their producers below. Legacy two-judge markers carry
+# ``judges``/``disagreements`` instead of the verifier keys.
+_COMMON_MARKER_KEYS = (
     "schema",
     "body_sha256",
     "rubric_sha256",
     "bib_sha256",
-    "judges",
-    "disagreements",
     "checked_at",
     "criteria",
     "findings",
     "mechanical",
     "result",
 )
+REQUIRED_MARKER_KEYS = _COMMON_MARKER_KEYS + ("judges", "disagreements")
+REQUIRED_VERIFIER_KEYS = _COMMON_MARKER_KEYS + ("verifier", "requirements", "unmapped_paragraphs")
 
 
 @dataclass(frozen=True)
@@ -113,8 +130,8 @@ def _guide_input(folder: Path, config: ReportConfig) -> str | None:
     return str(resolved.relative_to(root))
 
 
-def judge_inputs(folder: Path, config: ReportConfig) -> list[str]:
-    """Exact report-relative names available to the independent judge."""
+def verifier_inputs(folder: Path, config: ReportConfig) -> list[str]:
+    """Exact report-relative names available to the independent verifier."""
     inputs = [rubric_plan.RUBRIC_NAME, BODY_NAME,
               Path(str(config.raw.get("bibliography") or config.raw.get("bib") or "sources.bib")).name]
     guide = _guide_input(folder, config)
@@ -126,12 +143,12 @@ def judge_inputs(folder: Path, config: ReportConfig) -> list[str]:
 def _already_run_checks_section(folder: Path, criteria: list[dict], body_text: str) -> str:
     """The deterministic rubric checks already run, with their tolerance rules.
 
-    report-flow-hardening T10: a judge once marked a criterion ``flojo`` over a
+    report-flow-hardening T10: a reviewer once marked a criterion down over a
     sentence-initial capital that ``verbatim_from_guide`` had already accepted,
-    re-judging a property the deterministic checks own. The brief therefore
-    lists every check's PASS/FAIL outcome over the exact body.md being judged
+    re-checking a property the deterministic checks own. The brief therefore
+    lists every check's PASS/FAIL outcome over the exact body.md being verified
     and states the tolerances plainly, so a PASS settles that property and the
-    judges spend their read-only pass on what the checks do not cover.
+    verifier spends its read-only pass on what the checks do not cover.
     """
     results = rubric_checks.run_checks(folder, criteria, body_text)
     lines = ["Deterministic rubric checks already run on this exact body.md (tool-run, read-only):"]
@@ -145,8 +162,8 @@ def _already_run_checks_section(folder: Path, criteria: list[dict], body_text: s
         lines.append("- None: this rubric defines no deterministic checks.")
     lines.append("Tolerance rules these checks apply: " + rubric_checks.TOLERANCE_RULES)
     lines.append(
-        "Do not mark a criterion flojo or falta for a property a PASSING check above already "
-        "verifies (including differences covered by the tolerance rules); judge only what the "
+        "Do not mark a requirement missing for a property a PASSING check above already "
+        "verifies (including differences covered by the tolerance rules); verify only what the "
         "checks do not cover. A FAILING check may be cited as evidence."
     )
     return "\n".join(lines) + "\n"
@@ -180,15 +197,63 @@ def body_text_sha256(text: str) -> str:
     return hashlib.sha256(normalize_body_text(text).encode("utf-8")).hexdigest()
 
 
-JUDGE_EXAMPLE_NOTE = (
-    "\nDouble-quote every string value (every where, note and finding): an unquoted "
-    "': ' inside a value breaks the YAML.\nExample of a valid criteria entry and findings:\n"
+def section_hashes(body_text: str, criteria: list[dict]) -> dict[str, str]:
+    """Markup-normalized hash of each criterion's mapped section; absent sections are omitted."""
+    hashes: dict[str, str] = {}
+    for criterion in criteria:
+        section = criterion.get("section")
+        text = concision.section_text(body_text, section) if isinstance(section, str) else None
+        if text is not None:
+            hashes[str(criterion.get("id"))] = body_text_sha256(text)
+    return hashes
+
+
+def _incremental_section(since: Path, criteria: list[dict], hashes: dict[str, str], rubric_hash: str) -> str:
+    """Brief block for a re-verify after an edit (verify-concise-drafts T7, S2).
+
+    A criterion whose mapped section hashes the same as in the previous
+    verification is carried over verbatim; the verifier re-checks only the
+    rest. Carried quotes are still checked against body.md by run_check.
+    """
+    previous, errors = parse_verification(since)
+    if errors:
+        raise ValueError(errors[0])
+    name = Path(since).name
+    if previous["rubric_sha256"] != rubric_hash:
+        return f"Previous verification {name}: full verify: the rubric changed since it was written.\n"
+    old = previous["section_sha256"]
+    carried = [str(c.get("id")) for c in criteria
+               if str(c.get("id")) in hashes and old.get(str(c.get("id"))) == hashes[str(c.get("id"))]]
+    recheck = [str(c.get("id")) for c in criteria if str(c.get("id")) not in carried]
+    kept = [r for r in previous["requirements"] if r["criterion"] in carried]
+    text = (f"Incremental re-verify against {name}: only the sections of the re-checked criteria changed.\n"
+            f"Re-check only these criteria: {', '.join(recheck) or '(none)'}\n"
+            f"Carried over unchanged (copy these requirements verbatim): {', '.join(carried) or '(none)'}\n")
+    if kept:
+        text += yaml.safe_dump(kept, sort_keys=False, allow_unicode=True)
+    return text + ("List unmapped paragraphs only for the re-checked sections; the tool still checks every "
+                   "carried evidence quote against body.md.\n")
+
+
+VERIFY_EXAMPLE_NOTE = (
+    "\nDouble-quote every string value (every requirement, location, evidence and finding): an "
+    "unquoted ': ' inside a value breaks the YAML.\nExample of valid requirements, unmapped "
+    "paragraphs and findings:\n"
     "```yaml\n"
-    "criteria:\n"
-    '  - id: "objetivo"\n'
-    '    status: "flojo"\n'
-    '    where: "## Objetivos, first paragraph"\n'
-    '    note: "The goal is stated, but it is vague: no measurable outcome."\n'
+    f'schema: "{VERIFICATION_SCHEMA}"\n'
+    "requirements:\n"
+    '  - criterion: "objetivo"\n'
+    '    requirement: "The guide asks for a measurable goal."\n'
+    '    status: "found"\n'
+    '    location: "## Objetivos, first paragraph"\n'
+    '    evidence: "Medir la deriva con error menor al 2 %"\n'
+    '  - criterion: "objetivo"\n'
+    '    requirement: "The guide asks for one Wokwi link per part."\n'
+    '    status: "missing"\n'
+    '    location: ""\n'
+    '    evidence: ""\n'
+    "unmapped_paragraphs:\n"
+    '  - "Como es sabido, la simulacion"\n'
     "findings:\n"
     '  - "WARNING: the conclusion repeats the introduction."\n'
     "```\n"
@@ -211,13 +276,26 @@ def _flatten_finding(item: object) -> str | None:
     return "; ".join(f"{k}: {item[k]}" for k in sorted(item, key=str))
 
 
-def judge_brief(folder: Path) -> str:
+def _criteria_section(criteria: list[dict]) -> str:
+    lines = ["Rubric criteria (every one needs at least one requirement):"]
+    for criterion in criteria:
+        line = f"- {criterion.get('id')}: {criterion.get('title', '')} (section: {criterion.get('section', '')})"
+        deliverables = criterion.get("deliverables")
+        if isinstance(deliverables, list) and deliverables:
+            line += "; deliverables: " + "; ".join(str(d) for d in deliverables)
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def verify_brief(folder: Path, since: Path | None = None) -> str:
     """A self-contained, read-only assignment with hashes for the current draft.
 
-    Carries the already-run deterministic rubric checks and their tolerance
-    rules (report-flow-hardening T10), so the judges never re-judge a property
-    a PASSing check has verified. body.md is read exactly once (T11): the
-    recorded ``body_sha256`` and the rubric checks judge the same bytes.
+    Carries the rubric criteria and deliverables, the already-run deterministic
+    rubric checks and their tolerance rules (report-flow-hardening T10), so the
+    verifier never re-verifies a property a PASSing check has settled. body.md is
+    read exactly once (T11): the recorded ``body_sha256`` and the rubric checks
+    verify the same bytes. ``since`` is the previous verification: criteria
+    whose sections did not change are carried over instead of re-verified.
     """
     folder = folder.resolve()
     if rubric_plan.rubric_state(folder) != "valid":
@@ -226,7 +304,7 @@ def judge_brief(folder: Path) -> str:
         if not (folder / name).is_file():
             raise ValueError(f"{name} missing or unreadable")
     config = ReportConfig(folder=folder, raw=read_yaml(folder / "report.yml"))
-    inputs = judge_inputs(folder, config)
+    inputs = verifier_inputs(folder, config)
     criteria = rubric_plan.load_rubric(folder)
     try:
         body_bytes = (folder / BODY_NAME).read_bytes()
@@ -236,130 +314,170 @@ def judge_brief(folder: Path) -> str:
     except OSError as exc:
         raise ValueError(f"{BODY_NAME} missing or unreadable") from exc
     schema = {
-        "judge": {"role": "independent", "inputs": inputs},
+        "schema": VERIFICATION_SCHEMA,
+        "verifier": {"role": "independent", "inputs": inputs},
         "body_sha256": hashlib.sha256(body_bytes).hexdigest(),
         "rubric_sha256": sha256_file(folder / rubric_plan.RUBRIC_NAME),
         "body_text_sha256": body_text_sha256(body_text),
-        "criteria": [{"id": "<rubric criterion id>", "status": "cumple|flojo|falta",
-                      "where": "<quoted location in body.md>", "note": "<reason>"}],
+        "section_sha256": section_hashes(body_text, criteria),
+        "requirements": [{"criterion": "<rubric criterion id>", "requirement": "<the guide/rubric demand, quoted>",
+                          "status": "found|missing", "location": "<where in body.md>",
+                          "evidence": "<exact quote from body.md; required when found>"}],
+        "unmapped_paragraphs": ["<first words of a paragraph that answers no requirement>"],
         "findings": [],
     }
-    return ("You are an independent read-only judge. Judge only from these inputs; "
+    incremental = (_incremental_section(since, criteria, schema["section_sha256"], schema["rubric_sha256"])
+                   if since is not None else "")
+    return ("You are an independent read-only verifier. Verify only from these inputs; "
             "do not use the drafting conversation or any other files. Do not edit any file.\n"
-            "Two judges run independently; do not coordinate with another judge.\n"
-            "Citations [@key] in body.md render in IEEE format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
+            "Never score or grade. For each rubric criterion list the requirements the guide and rubric "
+            "demand and mark each found or missing. Split a plural demand into one requirement per item "
+            "(one per part, link, table or question: \"Wokwi links\" for parts A-E is five requirements). "
+            "Quote evidence exactly: it must be a verbatim "
+            "substring of body.md. When you cannot quote it, mark the requirement missing; never write "
+            "that something seems to comply. Check data (numbers, names, links per part) against the guide. "
+            "Links are fetched by the tool. List paragraphs that answer no requirement under "
+            "unmapped_paragraphs (deletion candidates).\n"
+            f"Citations [@key] in body.md render in {config.citation_style.upper()} format at build time from sources.bib; citation keys are expected, not a formatting defect. Check that cited keys exist in sources.bib instead.\n"
+            + _criteria_section(criteria)
+            + incremental
             + _already_run_checks_section(folder, criteria, body_text)
             + "Allowed input paths (absolute):\n"
             + "\n".join(str(folder / name) for name in inputs)
-            + "\nReturn only judgments YAML using this schema. Judge every rubric criterion; "
-              "allowed statuses: cumple|flojo|falta. Quote where locations.\n"
+            + "\nReturn only verification YAML using this schema; allowed statuses: found|missing.\n"
             + yaml.safe_dump(schema, sort_keys=False)
-            + JUDGE_EXAMPLE_NOTE)
+            + VERIFY_EXAMPLE_NOTE)
 
 
-def parse_judgments(path: Path) -> tuple[list[dict], list[str], dict, str, str, list[str]]:
-    """Parse an agent judgments file into ``(judgments, findings, errors)``.
+def _text_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
-    A judgments file is the agent's *input* contract, so a structural violation
-    (bad YAML, non-mapping, missing id, unknown status) is a usage error the
-    caller reports with exit code 2 -- unlike an unknown criterion id, which is
-    well-formed input that simply fails the mechanical check. ``where`` and
-    ``note`` are optional and recorded as plain strings.
+
+def parse_verification(path: Path) -> tuple[dict, list[str]]:
+    """Parse the verifier's file into ``(verification, errors)``.
+
+    The file is the verifier's *input* contract, so a structural violation (bad
+    YAML, non-mapping, wrong schema, malformed requirement, ``found`` without an
+    evidence quote) is a usage error the caller reports with exit code 2 --
+    unlike an unknown criterion id, which is well-formed input that simply fails
+    the mechanical check. ``location`` is optional and recorded as a string.
     """
     name = Path(path).name
     try:
         text = Path(path).read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return [], [], {}, "", "", [f"{name} is not valid UTF-8; save it as UTF-8"]
+        return {}, [f"{name} is not valid UTF-8; save it as UTF-8"]
     except OSError:
-        return [], [], {}, "", "", [f"{name} unreadable"]
-
+        return {}, [f"{name} unreadable"]
     try:
         data = yaml.safe_load(text)
     except Exception:
-        return [], [], {}, "", "", [f"{name} is not valid YAML"]
+        return {}, [f"{name} is not valid YAML"]
     if not isinstance(data, dict):
-        return [], [], {}, "", "", [f"{name} must be a YAML mapping"]
+        return {}, [f"{name} must be a YAML mapping"]
+    if data.get("schema") != VERIFICATION_SCHEMA:
+        return {}, [f"{name} schema must be {VERIFICATION_SCHEMA}"]
 
-    records = data.get("criteria")
+    records = data.get("requirements")
     if not isinstance(records, list) or not records:
-        return [], [], {}, "", "", [f"{name} criteria must be a non-empty list"]
+        return {}, [f"{name} requirements must be a non-empty list"]
 
     errors: list[str] = []
-    judgments: list[dict] = []
+    requirements: list[dict] = []
     for index, record in enumerate(records, start=1):
         if not isinstance(record, dict):
-            errors.append(f"{name} judgment {index} must be a mapping")
+            errors.append(f"{name} requirement {index} must be a mapping")
             continue
-        cid = record.get("id")
+        criterion = record.get("criterion")
+        demand = record.get("requirement")
         status = record.get("status")
-        if not isinstance(cid, str) or not cid.strip():
-            errors.append(f"{name} judgment {index} missing or blank id")
+        evidence = record.get("evidence")
+        if not isinstance(criterion, str) or not criterion.strip():
+            errors.append(f"{name} requirement {index} missing or blank criterion")
             continue
-        if status not in JUDGMENT_STATUSES:
-            allowed = ", ".join(JUDGMENT_STATUSES)
-            errors.append(f"{name} judgment {index} (id '{cid}') status must be one of: {allowed}")
+        if not isinstance(demand, str) or not demand.strip():
+            errors.append(f"{name} requirement {index} (criterion '{criterion}') missing or blank requirement")
             continue
-        where = record.get("where")
-        note = record.get("note")
-        judgments.append(
+        if status not in REQUIREMENT_STATUSES:
+            allowed = ", ".join(REQUIREMENT_STATUSES)
+            errors.append(f"{name} requirement {index} (criterion '{criterion}') status must be one of: {allowed}")
+            continue
+        if status == "found" and (not isinstance(evidence, str) or not evidence.strip()):
+            errors.append(f"{name} requirement {index} (criterion '{criterion}') is found but has no evidence quote")
+            continue
+        requirements.append(
             {
-                "id": cid,
+                "criterion": criterion,
+                "requirement": demand,
                 "status": status,
-                "where": where if isinstance(where, str) else "",
-                "note": note if isinstance(note, str) else "",
+                "location": _text_or_none(record.get("location")) or "",
+                "evidence": _text_or_none(evidence) or "",
             }
         )
+
+    unmapped = data.get("unmapped_paragraphs") or []
+    if not isinstance(unmapped, list) or not all(isinstance(item, str) for item in unmapped):
+        errors.append(f"{name} unmapped_paragraphs must be a list of strings")
+        unmapped = []
 
     findings = data.get("findings") or []
     flattened = [_flatten_finding(f) for f in findings] if isinstance(findings, list) else [None]
     if any(f is None for f in flattened):
         errors.append(f"{name} findings must be a list of strings")
-        findings = []
-    else:
-        findings = flattened
-    return judgments, findings, data.get("judge"), data.get("body_sha256"), data.get("rubric_sha256"), errors
+        flattened = []
+    return (
+        {
+            "verifier": data.get("verifier"),
+            "body_sha256": data.get("body_sha256"),
+            "rubric_sha256": data.get("rubric_sha256"),
+            "body_text_sha256": _text_or_none(data.get("body_text_sha256")) or "",
+            "section_sha256": {str(k): v for k, v in (data.get("section_sha256") or {}).items()
+                               if isinstance(v, str)} if isinstance(data.get("section_sha256"), dict) else {},
+            "requirements": requirements,
+            "unmapped_paragraphs": list(unmapped),
+            "findings": flattened,
+        },
+        errors,
+    )
 
 
-def _judged_text_hash(path: Path) -> str:
-    """The ``body_text_sha256`` a judgments file recorded, or ``""``."""
-    try:
-        value = yaml.safe_load(Path(path).read_text(encoding="utf-8")).get("body_text_sha256")
-    except Exception:
-        return ""
-    return value.strip().lower() if isinstance(value, str) else ""
+def downgrade_unquoted_evidence(requirements: list[dict], body_text: str) -> tuple[list[dict], list[str]]:
+    """The anti-hallucination rule: ``found`` needs a quote that body.md really holds.
 
-
-# A single-quoted ``where`` fragment (T14). The opening quote may not sit
-# between word characters -- that is an ordinary apostrophe (``don't``,
-# ``student's``), not a quotation -- while apostrophes strictly inside a
-# quoted passage (``'the student's draft'``) are content, so judges may quote
-# possessives without breaking the passage.
-_QUOTED_FRAGMENT = re.compile(r"(?<!\w)'((?:[^']|(?<=\w)'(?=\w))+)'")
-
-
-def _missing_quote_warnings(judgments_file: str, judgments: list[dict], body_text: str) -> list[str]:
-    """Advisory warnings for quoted ``where`` fragments absent from body.md.
-
-    report-flow-hardening T14: a judge is asked to quote ``where`` locations
-    from body.md, so a quoted fragment that the body does not show
-    (whitespace-normalized, case-sensitive) hints at misquoted or paraphrased
-    evidence. It is a warning naming the originating judgments file and the
-    criterion id, pushed through the existing findings channel, and never a
-    check: it cannot change a status, the verdict or the exit code. Called per
-    judgments file before the strictest merge so every warning keeps its
-    judge's provenance; ``body_text`` is the one T11 read, never re-read.
+    A ``found`` requirement whose evidence is absent from body.md
+    (whitespace-normalized, case-sensitive) becomes ``missing`` and yields a
+    finding naming its criterion and the quote; nothing else changes.
     """
     normalized_body = " ".join(body_text.split())
-    warnings: list[str] = []
-    for record in judgments:
-        for fragment in _QUOTED_FRAGMENT.findall(record.get("where") or ""):
-            if " ".join(fragment.split()) not in normalized_body:
-                warnings.append(
-                    f"quote warning: {judgments_file}: criterion '{record['id']}': "
-                    f"quoted fragment not found in body.md: '{fragment}'"
-                )
-    return warnings
+    result: list[dict] = []
+    findings: list[str] = []
+    for record in requirements:
+        if record["status"] == "found" and " ".join(record["evidence"].split()) not in normalized_body:
+            findings.append(
+                f"evidence not found in body.md: criterion '{record['criterion']}': requirement "
+                f"'{record['requirement']}' downgraded to missing; quote: '{record['evidence']}'"
+            )
+            record = {**record, "status": "missing"}
+        result.append(record)
+    return result, findings
+
+
+def derive_criteria(criteria: list[dict], requirements: list[dict]) -> list[dict]:
+    """Per-criterion ``cumple`` (every requirement found) or ``falta``; never ``flojo``."""
+    derived = []
+    for criterion in criteria:
+        cid = str(criterion.get("id"))
+        own = [r for r in requirements if r["criterion"] == cid]
+        found = sum(1 for r in own if r["status"] == "found")
+        derived.append(
+            {
+                "id": cid,
+                "status": "cumple" if own and found == len(own) else "falta",
+                "where": "; ".join(dict.fromkeys(r["location"] for r in own if r["location"])),
+                "note": f"{found}/{len(own)} requirements found",
+            }
+        )
+    return derived
 
 
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -414,7 +532,7 @@ def mechanical_checks(
     body_text: str,
     bib_text: str,
     criteria: list[dict],
-    judgments: list[dict],
+    requirements: list[dict],
     min_sources: int = MIN_ACADEMIC_SOURCES,
     uncited_bibliography: bool = False,
 ) -> list[dict]:
@@ -424,7 +542,7 @@ def mechanical_checks(
     (b) at least ``min_sources`` (the report's effective minimum) distinct eligible book/paper entries
         are actually cited in body.md (not merely present in the bib);
         (``uncited_bibliography`` replaces this with "the bib lists at least one entry");
-    (c) every rubric criterion id has exactly one judgment and no unknown ids.
+    (c) every rubric criterion id has at least one requirement and no requirement names an unknown id.
     """
     cited = cited_keys(body_text)
     known_bib = bib_keys(bib_text)
@@ -466,19 +584,18 @@ def mechanical_checks(
         )
 
     known_ids = [str(criterion.get("id")) for criterion in criteria]
-    counts = Counter(str(judgment["id"]) for judgment in judgments)
+    counts = Counter(str(record["criterion"]) for record in requirements)
     problems: list[str] = []
     missing = [cid for cid in known_ids if counts.get(cid, 0) == 0]
     if missing:
-        problems.append(f"no judgment for: {', '.join(missing)}")
+        problems.append(f"no requirement for: {', '.join(missing)}")
     unknown = sorted(set(counts) - set(known_ids))
     if unknown:
         problems.append(f"unknown ids: {', '.join(unknown)}")
-    duplicated = sorted(cid for cid, count in counts.items() if count > 1)
-    if duplicated:
-        problems.append(f"duplicate judgments: {', '.join(duplicated)}")
-    detail = "; ".join(problems) or f"every criterion judged exactly once ({len(known_ids)} criteria)"
-    checks.append({"check": "judgments_match_rubric", "ok": not problems, "detail": detail})
+    detail = "; ".join(problems) or (
+        f"every criterion has at least one requirement ({len(known_ids)} criteria, {len(requirements)} requirements)"
+    )
+    checks.append({"check": "verification_matches_rubric", "ok": not problems, "detail": detail})
 
     return checks
 
@@ -530,15 +647,38 @@ def _write_marker_atomically(path: Path, text: str) -> None:
         raise
 
 
+def links_resolve_check(body_text: str, fetcher: link_check.Fetcher | None) -> tuple[dict, list[str]]:
+    """The ``links_resolve`` entry plus its warning findings (unreachable hosts never fail)."""
+    urls = link_check.extract_urls(body_text)
+    if not urls:
+        return {"check": "links_resolve", "ok": True, "detail": "no http(s) URLs in body.md"}, []
+    results = link_check.check_links(urls, fetcher)
+    broken = [r for r in results if r.status == "broken"]
+    unreachable = [r for r in results if r.status == "unreachable"]
+    detail = f"{len(results)} links checked"
+    if broken:
+        detail += "; broken: " + ", ".join(f"{r.url} ({r.detail})" for r in broken)
+    elif not unreachable:
+        detail += ", all resolve"
+    if unreachable:
+        detail += f"; {len(unreachable)} unreachable (warning only)"
+    warnings = [f"link warning: {r.url} unreachable ({r.detail}); not verified" for r in unreachable]
+    return {"check": "links_resolve", "ok": not broken, "detail": detail}, warnings
+
+
 def run_check(
-    folder: Path, judgments_path: list[Path] | tuple[Path, ...], config: ReportConfig | None = None
+    folder: Path,
+    verification_path: Path,
+    config: ReportConfig | None = None,
+    fetcher: link_check.Fetcher | None = None,
 ) -> CheckOutcome:
     """Run the content check for a report folder and write content-check.yml.
 
     The only file this function writes is ``content-check.yml``; ``body.md`` is
-    read for hashing and citation extraction and never modified. On a usage or
-    input error (missing folder/rubric/body, malformed judgments) nothing is
-    written and ``errors`` names the offending file.
+    read for hashing, citation and quote matching and never modified. On a usage
+    or input error (missing folder/rubric/body, malformed verification) nothing
+    is written and ``errors`` names the offending file. ``fetcher`` replaces the
+    production HTTP fetcher (tests never reach the network).
     """
     folder = Path(folder)
     if not folder.is_dir():
@@ -557,15 +697,11 @@ def run_check(
     except OSError:
         return CheckOutcome("", {}, (f"{BODY_NAME} missing or unreadable",))
 
-    if not isinstance(judgments_path, (list, tuple)) or len(judgments_path) != 2:
-        return CheckOutcome("", {}, ("two independent judges required: pass exactly two judgments files",))
-    try:
-        if Path(judgments_path[0]).read_bytes() == Path(judgments_path[1]).read_bytes():
-            return CheckOutcome("", {}, ("two independent judges required: judgments files are identical",))
-    except OSError:
-        pass  # parse_judgments supplies the precise unreadable-file error
-    parsed = [parse_judgments(path) for path in judgments_path]
-    errors = [error for item in parsed for error in item[5]]
+    if isinstance(verification_path, (list, tuple)):
+        if len(verification_path) != 1:
+            return CheckOutcome("", {}, ("exactly one verification file required: pass one --verification",))
+        verification_path = verification_path[0]
+    verification, errors = parse_verification(verification_path)
     if errors:
         return CheckOutcome("", {}, tuple(errors))
     if config is None:
@@ -580,73 +716,48 @@ def run_check(
         return CheckOutcome("", {}, (str(exc),))
 
     try:
-        expected_inputs = judge_inputs(folder, config)
+        expected_inputs = verifier_inputs(folder, config)
         criteria = rubric_plan.load_rubric(folder)
         rubric_hash = sha256_file(folder / rubric_plan.RUBRIC_NAME)
     except (OSError, ValueError, TypeError) as exc:
         return CheckOutcome("", {}, (f"rubric or guide missing, malformed or unreadable: {exc}",))
     if not criteria:
         return CheckOutcome("", {}, ("rubric.yml missing or malformed",))
-    names = [Path(path).name for path in judgments_path]
+    name = Path(verification_path).name
+    verifier = verification["verifier"]
     reused = False
-    for name, path, (_, _, judge, judged_body, judged_rubric, _) in zip(names, judgments_path, parsed):
-        if not isinstance(judge, dict) or judge.get("role") != "independent":
-            errors.append(f"{name}: judge.role must be independent")
-        elif judge.get("inputs") != expected_inputs:
-            errors.append(f"{name}: judge.inputs must list exactly: {', '.join(expected_inputs)}")
-        if not isinstance(judged_body, str) or not isinstance(judged_rubric, str):
-            errors.append(f"{name}: body_sha256 and rubric_sha256 are required")
-        elif judged_rubric != rubric_hash:
-            errors.append(f"{name}: judgments are for a different draft; re-run the judge")
-        elif judged_body != sha256_file(body_path):
-            # Stale body hash: still valid when only markup changed (same words).
-            if _judged_text_hash(path) == body_text_sha256(body_text):
-                reused = True
-            else:
-                errors.append(f"{name}: judgments are for a different draft; re-run the judge")
-    if parsed[0][3:5] != parsed[1][3:5]:
-        errors.append(f"{names[0]} and {names[1]} must bind the same body_sha256 and rubric_sha256")
+    if not isinstance(verifier, dict) or verifier.get("role") != "independent":
+        errors.append(f"{name}: verifier.role must be independent")
+    elif verifier.get("inputs") != expected_inputs:
+        errors.append(f"{name}: verifier.inputs must list exactly: {', '.join(expected_inputs)}")
+    verified_body, verified_rubric = verification["body_sha256"], verification["rubric_sha256"]
+    if not isinstance(verified_body, str) or not isinstance(verified_rubric, str):
+        errors.append(f"{name}: body_sha256 and rubric_sha256 are required")
+    elif verified_rubric != rubric_hash:
+        errors.append(f"{name}: verification is for a different draft; re-run the verifier")
+    elif verified_body != sha256_file(body_path):
+        # Stale body hash: still valid when only markup changed (same words).
+        if verification["body_text_sha256"].strip().lower() == body_text_sha256(body_text):
+            reused = True
+        else:
+            errors.append(f"{name}: verification is for a different draft; re-run the verifier")
     if errors:
         return CheckOutcome("", {}, tuple(errors))
 
-    rank = {"cumple": 0, "flojo": 1, "falta": 2}
-    # T14: judge each file's quoted ``where`` evidence against body.md before
-    # the merge, so a warning always names the judge that wrote the quote.
-    quote_warnings: list[str] = []
-    for name, parsed_file in zip(names, parsed):
-        quote_warnings.extend(_missing_quote_warnings(name, parsed_file[0], body_text))
-    first, second = parsed[0][0], parsed[1][0]
-    second_by_id = {record["id"]: record for record in second}
-    judgments = []
-    disagreements = []
-    for a in first:
-        b = second_by_id.get(a["id"])
-        if b is None:
-            judgments.append(a)
-            continue
-        judgments.append(a if rank[a["status"]] >= rank[b["status"]] else b)
-        if a["status"] != b["status"]:
-            disagreements.append({"id": a["id"], "statuses": [a["status"], b["status"]]})
-    judgments.extend(b for b in second if b["id"] not in {a["id"] for a in first})
-    findings = list(dict.fromkeys([*parsed[0][1], *parsed[1][1], *quote_warnings, *(
-        f"judges disagreed on {d['id']}: {d['statuses'][0]} vs {d['statuses'][1]}"
-        for d in disagreements
-    )]))
-    judges = [item[2] for item in parsed]
-    individual_checks = [mechanical_checks(body_text, _read_bib(config), criteria, item[0], min_sources, uncited)[-1] for item in parsed]
-    checks = mechanical_checks(body_text, _read_bib(config), criteria, judgments, min_sources, uncited)
+    requirements, downgrade_findings = downgrade_unquoted_evidence(verification["requirements"], body_text)
+    derived = derive_criteria(criteria, requirements)
+    link_entry, link_warnings = links_resolve_check(body_text, fetcher)
+    findings = list(dict.fromkeys([*verification["findings"], *downgrade_findings, *link_warnings]))
+    checks = mechanical_checks(body_text, _read_bib(config), criteria, requirements, min_sources, uncited)
     if reused and checks[-1]["ok"]:
-        checks[-1]["detail"] += "; judgments reused: markup-only change"
-    if not all(check["ok"] for check in individual_checks):
-        checks[-1] = {"check": "judgments_match_rubric", "ok": False,
-                      "detail": "; ".join(check["detail"] for check in individual_checks if not check["ok"])}
+        checks[-1]["detail"] += "; verification reused: markup-only change"
     rubric_results = [vars(item) for item in rubric_checks.run_checks(folder, criteria, body_text)]
     failed = [item for item in rubric_results if not item["ok"]]
     format_problems = body_format_problems(body_text)
-    statuses = {item["id"]: item["status"] for item in judgments}
+    statuses = {item["id"]: item["status"] for item in derived}
     detail = "; ".join(
         f"{item['criterion_id']} check {item['check_index']} ({item['type']}): {item['detail']}"
-        + (" (judged cumple despite failing check)" if statuses.get(item["criterion_id"]) == "cumple" else "")
+        + (" (verified cumple despite failing check)" if statuses.get(item["criterion_id"]) == "cumple" else "")
         for item in failed
     ) or f"all {len(rubric_results)} rubric checks pass"
     # The format defects ride on the deterministic body check so the marker
@@ -654,8 +765,9 @@ def run_check(
     if format_problems:
         detail = "; ".join([*([detail] if failed else []), *(f"body_format: {p}" for p in format_problems)])
     checks.append({"check": "rubric_checks", "ok": not failed and not format_problems, "detail": detail})
+    checks.append(link_entry)
     mechanical_ok = all(check["ok"] for check in checks)
-    criteria_ok = all(judgment["status"] == "cumple" for judgment in judgments)
+    criteria_ok = all(item["status"] == "cumple" for item in derived)
     guide = _guide_input(folder, config)
     guide_binding = {"guide_sha256": _sha256_or_empty(folder / guide)} if guide else {}
     marker = {
@@ -666,13 +778,15 @@ def run_check(
         # Optional binding (report-flow-hardening T11): recorded only when the
         # report declares a guide, so pre-guide markers keep their old shape.
         **guide_binding,
-        "judges": judges,
-        "disagreements": disagreements,
+        "verifier": verifier,
         "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-        "criteria": judgments,
-        # The agent's free-text findings verbatim, plus every mechanical
+        "criteria": derived,
+        "requirements": requirements,
+        # Deletion candidates: reported, never blocking.
+        "unmapped_paragraphs": verification["unmapped_paragraphs"],
+        # The verifier's free-text findings verbatim, plus every mechanical
         # failure so the human reads one artifact, not two.
-        "findings": list(findings)
+        "findings": findings
         + [f"{check['check']}: {check['detail']}" for check in checks if not check["ok"]],
         "mechanical": checks,
         "rubric_check_results": rubric_results,
@@ -694,12 +808,16 @@ def content_check_state(report_dir: Path) -> str:
     folder is ``stale`` (the draft, the rubric or the bib changed since the
     check), as is a recorded ``guide_sha256`` that no longer matches the
     guide the report declares (or the guide is gone). A marker without
-    ``guide_sha256`` predates guide binding and stays valid. A non-list
-    ``judges`` field never crashes: under the current schema it is the legacy
-    shape (``stale``), under any other schema it is ``malformed``. The recorded ``result`` is never trusted blindly: the
-    verdict is re-derived from the recorded criteria (every status ``cumple``),
-    the recorded mechanical checks (every ``ok``) and the recorded criterion ids
-    (equal to the current rubric ids), so a forged ``result: pass`` fails.
+    ``guide_sha256`` predates guide binding and stays valid. A marker with a
+    ``verifier`` is a single-verify marker; one without is the legacy two-judge
+    shape, still honored when well formed. A non-list ``judges`` field never
+    crashes: under the current schema it is the old, incomplete shape
+    (``stale``), under any other schema it is ``malformed``. The recorded
+    ``result`` is never trusted blindly: the verdict is re-derived from the
+    recorded criteria (every status ``cumple``), the recorded requirements (all
+    ``found``, every criterion covered, for verifier markers), the recorded
+    mechanical checks (every ``ok``) and the recorded criterion ids (equal to
+    the current rubric ids), so a forged ``result: pass`` fails.
     Never raises, never writes.
     """
     folder = Path(report_dir)
@@ -713,15 +831,22 @@ def content_check_state(report_dir: Path) -> str:
         return "malformed"
     if not isinstance(data, dict):
         return "malformed"
-    if data.get("schema") == CONTENT_CHECK_SCHEMA and ("rubric_sha256" not in data or "judges" not in data or not isinstance(data.get("judges"), list) or len(data["judges"]) < 2):
+    verified = "verifier" in data
+    if not verified and data.get("schema") == CONTENT_CHECK_SCHEMA and ("rubric_sha256" not in data or "judges" not in data or not isinstance(data.get("judges"), list) or len(data["judges"]) < 2):
         return "stale"
-    for key in REQUIRED_MARKER_KEYS:
+    for key in REQUIRED_VERIFIER_KEYS if verified else REQUIRED_MARKER_KEYS:
         if data.get(key) is None:
             return "malformed"
-    if not isinstance(data["judges"], list) or len(data["judges"]) != 2 or any(not isinstance(judge, dict) or judge.get("role") != "independent" for judge in data["judges"]):
-        return "malformed"
-    if not isinstance(data["disagreements"], list):
-        return "malformed"
+    if verified:
+        if not isinstance(data["verifier"], dict) or data["verifier"].get("role") != "independent":
+            return "malformed"
+        if not isinstance(data["requirements"], list) or not data["requirements"] or not isinstance(data["unmapped_paragraphs"], list):
+            return "malformed"
+    else:
+        if not isinstance(data["judges"], list) or len(data["judges"]) != 2 or any(not isinstance(judge, dict) or judge.get("role") != "independent" for judge in data["judges"]):
+            return "malformed"
+        if not isinstance(data["disagreements"], list):
+            return "malformed"
     if data["schema"] != CONTENT_CHECK_SCHEMA:
         return "malformed"
     if data["result"] not in RESULT_VALUES:
@@ -729,11 +854,12 @@ def content_check_state(report_dir: Path) -> str:
     if not isinstance(data["criteria"], list) or not data["criteria"]:
         return "malformed"
     mechanical = data["mechanical"]
+    expected_names = MECHANICAL_NAMES if verified else LEGACY_MECHANICAL_NAMES
     if (not isinstance(mechanical, list)
-            or len(mechanical) != len(MECHANICAL_NAMES)
+            or len(mechanical) != len(expected_names)
             or any(not isinstance(entry, dict) or type(entry.get("ok")) is not bool
                    for entry in mechanical)
-            or {entry["check"] for entry in mechanical if isinstance(entry.get("check"), str)} != MECHANICAL_NAMES):
+            or {entry["check"] for entry in mechanical if isinstance(entry.get("check"), str)} != expected_names):
         return "malformed"
 
     body_path = folder / BODY_NAME
@@ -799,14 +925,20 @@ def content_check_state(report_dir: Path) -> str:
     recorded_ids = [str(record.get("id")) for record in criteria if isinstance(record, dict)]
     current_ids = [str(criterion.get("id")) for criterion in planned]
     ids_match = len(recorded_ids) == len(current_ids) and set(recorded_ids) == set(current_ids)
-    return "pass" if criteria_ok and mechanical_ok and ids_match else "fail"
+    requirements_ok = True
+    if verified:
+        covered = {str(r.get("criterion")) for r in data["requirements"] if isinstance(r, dict)}
+        requirements_ok = all(
+            isinstance(r, dict) and r.get("status") == "found" for r in data["requirements"]
+        ) and set(current_ids) <= covered
+    return "pass" if criteria_ok and mechanical_ok and ids_match and requirements_ok else "fail"
 
 
 _BODY_CHECK_MECHANICAL = ("citations_resolve", "eligible_sources_cited")
 
 
 def body_check_results(folder: Path) -> list[dict]:
-    """The judgment-free draft checks as ``check``/``ok``/``detail`` entries.
+    """The verification-free draft checks as ``check``/``ok``/``detail`` entries.
 
     One source of truth for ``--body-check`` and for ``doc_status``'s approval
     gate. Raises ``OSError``/``ValueError``/``TypeError`` when an input
@@ -847,6 +979,7 @@ def body_check_results(folder: Path) -> list[dict]:
             or "all rubric checks pass",
         }
     )
+    results.extend(concision.concision_results(body_text, criteria, rubric_plan.load_max_words(folder)))
     scope_warnings = rubric_checks.section_scope_warnings(criteria, body_text)
     if scope_warnings:
         results.append({"check": "rubric_scope", "ok": True, "detail": "warning: " + "; ".join(scope_warnings)})
@@ -854,7 +987,7 @@ def body_check_results(folder: Path) -> list[dict]:
 
 
 def run_body_check(folder: Path) -> int:
-    """Run the judgment-free mechanical checks on a draft; print, never write."""
+    """Run the verification-free mechanical checks on a draft; print, never write."""
     try:
         results = body_check_results(folder)
     except (OSError, ValueError, TypeError) as exc:
@@ -865,23 +998,40 @@ def run_body_check(folder: Path) -> int:
     return 0 if all(check["ok"] for check in results) else 1
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, fetcher: link_check.Fetcher | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the hard content check for a report folder (never edits body.md)."
     )
     parser.add_argument("folder", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--judgments", type=Path, action="append")
-    mode.add_argument("--judge-brief", action="store_true")
+    mode.add_argument(
+        "--verification",
+        type=Path,
+        action="append",
+        help="the independent verifier's verification.yml (requirement -> evidence matrix); exactly one file",
+    )
+    mode.add_argument(
+        "--verify-brief",
+        action="store_true",
+        help="print the read-only assignment for the independent verifier",
+    )
     mode.add_argument(
         "--body-check",
         action="store_true",
-        help="draft-time mechanical checks (format, citations, rubric checks); no judgments, writes nothing",
+        help="draft-time mechanical checks (format, citations, rubric checks); no verification, writes nothing",
+    )
+    parser.add_argument(
+        "--since",
+        type=Path,
+        help="with --verify-brief: the previous verification.yml; re-verify only criteria whose sections changed",
     )
     args = parser.parse_args(argv)
-    if args.judge_brief:
+    if args.since is not None and not args.verify_brief:
+        print("content check input error: --since only applies to --verify-brief", file=sys.stderr)
+        return 2
+    if args.verify_brief:
         try:
-            print(judge_brief(args.folder))
+            print(verify_brief(args.folder, since=args.since))
         except (ValueError, OSError) as exc:
             print(f"content check input error: {exc}", file=sys.stderr)
             return 2
@@ -890,7 +1040,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.body_check:
         return run_body_check(args.folder)
 
-    outcome = run_check(args.folder, args.judgments)
+    if len(args.verification) != 1:
+        print("content check input error: exactly one verification file required: pass one --verification",
+              file=sys.stderr)
+        return 2
+    outcome = run_check(args.folder, args.verification[0], fetcher=fetcher)
     if outcome.errors:
         for error in outcome.errors:
             print(f"content check input error: {error}", file=sys.stderr)
@@ -902,6 +1056,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  [{mark}] {check['check']}: {check['detail']}")
     for finding in outcome.marker["findings"]:
         print(f"  finding: {finding}")
+    for paragraph in outcome.marker["unmapped_paragraphs"]:
+        print(f"  unmapped paragraph (deletion candidate): {paragraph}")
     return 0 if outcome.result == "pass" else 1
 
 

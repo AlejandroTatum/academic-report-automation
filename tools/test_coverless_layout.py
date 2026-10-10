@@ -134,3 +134,37 @@ def test_orphan_heading_detection_survives_for_coverless_reports(
     result = validate_report.pdf_layout_validation(load_report_config(folder))
 
     assert any("huérfano" in e for e in result.errors), result.errors
+
+
+def _ape_report(tmp_path: Path) -> Path:
+    folder = _report(tmp_path, cover_required=True, route="academic")
+    report = folder / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + "format: ape\n", encoding="utf-8")
+    (folder / "body.md").write_text(
+        "# Procedimiento\n\n| Integrante | Tarea |\n|---|---|\n| Ana | Redacción del informe |\n",
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_ape_identification_page_is_not_a_cover_mixed_with_the_body(
+    tmp_path: Path, stub_pdf_tools
+) -> None:
+    """APE has no cover: page 1 is the identification table, whose unit name may hold 'Introducción'."""
+    folder = _ape_report(tmp_path)
+    stub_pdf_tools(["Datos de Identificación\nUnidad\n1 – Introducción al Networking", "Objetivo\nTexto."])
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert not any("portada parece mezclada" in e for e in result.errors), result.errors
+
+
+def test_table_cell_closing_a_page_is_not_an_orphan_heading(
+    tmp_path: Path, stub_pdf_tools
+) -> None:
+    folder = _ape_report(tmp_path)
+    stub_pdf_tools(["Tabla 1.\nAna\nRedacción del informe", "Resultados\nTexto."])
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert not any("huérfano" in e for e in result.errors), result.errors

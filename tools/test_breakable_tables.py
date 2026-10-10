@@ -193,3 +193,40 @@ def test_template_declares_xltabular_after_tabularx(template_name: str) -> None:
     assert xltabular_idx > tabularx_idx, (
         f"{template_name}: xltabular must be declared after tabularx"
     )
+
+
+# GFM escaped pipe: `\|` inside a cell is a literal "|", never a column break.
+ESCAPED_PIPE_MD = """\
+| Linea en C | Instruccion | Ciclos |
+| --- | --- | --- |
+| `PORTB \\|= (1 << PORTB5);` | SBI | 2 |
+"""
+
+
+def test_escaped_pipe_stays_inside_its_cell() -> None:
+    tex = _tex_for(ESCAPED_PIPE_MD)
+    row = next(line for line in tex.splitlines() if "PORTB" in line)
+    assert row.count("&") == 2
+    assert "SBI" in row
+    assert "\\textbar" in row or "|" in row.split("&")[0]
+
+
+def test_table_caption_paragraph_reserves_space_to_stay_with_its_table() -> None:
+    tex = build_latex_report.markdown_to_latex(
+        "Tabla 3. Registros del puerto.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n"
+    )
+    caption_at = tex.index("Tabla 3. Registros del puerto.")
+    assert r"\Needspace{8\baselineskip}" in tex[:caption_at]
+
+
+def test_ordinary_paragraph_gets_no_caption_needspace() -> None:
+    tex = build_latex_report.markdown_to_latex("La Tabla 3 resume los registros.\n")
+    assert r"\Needspace{8\baselineskip}" not in tex
+
+
+def test_code_listing_label_reserves_space_to_stay_with_its_listing() -> None:
+    tex = build_latex_report.markdown_to_latex(
+        "**Código B2.** Encendido con OR (repo: `parte-b/b2/sketch.ino`)\n\n```c\nint x;\n```\n"
+    )
+    label_at = tex.index("Código B2.")
+    assert r"\Needspace{8\baselineskip}" in tex[:label_at]

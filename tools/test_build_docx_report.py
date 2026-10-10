@@ -672,3 +672,15 @@ def test_docx_validation_rejects_a_document_missing_its_figures(tmp_path: Path) 
     stripped.save(str(config.docx_path))
     result = docx_validation(config)
     assert any("imágenes" in error for error in result.errors)
+
+
+def test_apa_citation_style_is_rejected_in_docx_output(tmp_path: Path) -> None:
+    folder = make_report(tmp_path, "# T\n\nTexto.\n", extra="citation_style: apa")
+    with pytest.raises(SystemExit, match="APA.*DOCX"):
+        builder.build(folder)
+    assert not (folder / "final" / "report.docx").exists()
+
+
+def test_explicit_ieee_citation_style_still_builds_docx(tmp_path: Path) -> None:
+    folder = make_report(tmp_path, "# T\n\nTexto.\n", extra="citation_style: ieee")
+    assert build_and_open(folder) is not None

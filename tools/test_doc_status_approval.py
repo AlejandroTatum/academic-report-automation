@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path) -> None:
+def test_legacy_verify_is_pending_and_requests_independent_verifier(tmp_path: Path) -> None:
     import yaml
     import doc_status
     from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
@@ -35,12 +35,12 @@ def test_legacy_verify_is_pending_and_requests_independent_judge(tmp_path: Path)
     status = doc_status.derive(folder)
     verify = doc_status._phase_verify(folder, None, None)
     assert verify.state == doc_status.PENDING
-    assert "TWO independent judges" in status.gate
-    assert "--judgments a.yml --judgments b.yml" in status.gate
+    assert "independent verifier" in status.gate and "judge" not in status.gate
+    assert "--verification verification.yml" in status.gate
     assert "malformed" not in status.gate
 
 
-def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Path) -> None:
+def test_malformed_verify_guidance_requests_verifier_and_content_check(tmp_path: Path) -> None:
     import doc_status
     from conftest import _report, _body, _sources_bib, _rubric, _approval, _content_check
 
@@ -52,8 +52,8 @@ def test_malformed_verify_guidance_requests_judge_and_content_check(tmp_path: Pa
     _approval(folder)
     _content_check(folder, mechanical=[])
     status = doc_status.derive(folder)
-    assert "TWO independent judges" in status.gate
-    assert "--judgments a.yml --judgments b.yml" in status.gate
+    assert "independent verifier" in status.gate and "judge" not in status.gate
+    assert "--verification verification.yml" in status.gate
     assert "content_check.py" in status.gate
 
 
@@ -70,7 +70,9 @@ def test_failed_verify_guidance_requires_user_orders_and_reapproval(tmp_path: Pa
     _content_check(folder, result="fail", criteria=[{"id": "objetivo", "status": "flojo"}, {"id": "metodologia", "status": "cumple"}])
     status = doc_status.derive(folder)
     assert "user's literal edit orders" in status.gate
-    assert "re-approve" in status.gate
+    assert "approval_packet.py" in status.gate
+    assert "--verify-brief --since verification.yml" in status.gate
+    assert "re-approve" not in status.gate
     assert "run the check" not in status.gate
 
 
@@ -361,3 +363,49 @@ def test_approval_gate_with_a_fresh_draft_lists_absolute_paths(tmp_path: Path) -
     assert "ask_user_choice" in guidance
     assert str(pdf) in guidance
     assert str(folder / "body.md") in guidance
+
+
+# verify-concise-drafts T8 (S2): verify runs before approval, one approval packet.
+
+
+def test_verify_precedes_approval_in_the_route() -> None:
+    assert doc_status.PHASES.index("verify") < doc_status.PHASES.index("approval")
+
+
+def test_an_unverified_draft_routes_to_verify_not_approval(tmp_path: Path) -> None:
+    from conftest import _cited_body, _rubric
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    assert doc_status.derive(folder).next_token == "verify"
+
+
+def test_a_verified_draft_routes_to_approval(tmp_path: Path) -> None:
+    from conftest import _cited_body, _content_check, _rubric
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _sources_bib(folder)
+    _rubric(folder)
+    _cited_body(folder)
+    _content_check(folder)
+    assert doc_status.derive(folder).next_token == "approval"
+
+
+def test_verify_guidance_reuses_the_previous_verification(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    assert "--verify-brief --since verification.yml when it exists" in doc_status._guidance("verify", folder)
+
+
+def test_approval_gate_with_a_fresh_draft_prints_the_packet(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    guidance = doc_status._guidance("approval", folder)
+    assert "approval_packet.py" in guidance
+    assert str(folder) in guidance

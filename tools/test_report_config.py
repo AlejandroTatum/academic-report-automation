@@ -547,3 +547,37 @@ def test_delivery_dir_expands_home(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 def test_delivery_dir_invalid_value_is_a_config_error(tmp_path: Path, bad: object) -> None:
     with pytest.raises(ValueError, match="delivery_dir"):
         _delivery_config(tmp_path / "wf", bad).delivery_dir
+
+
+def _citation_style_folder(folder: Path, **extra: object) -> Path:
+    import yaml
+
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = {
+        "type": "technical_report",
+        "backend": "latex",
+        "output": "pdf",
+        "metadata": {"title": "T", "subject": "S"},
+        "body": "body.md",
+        **extra,
+    }
+    (folder / "report.yml").write_text(yaml.safe_dump(raw), encoding="utf-8")
+    (folder / "body.md").write_text("Texto.\n", encoding="utf-8")
+    return folder
+
+
+def test_citation_style_defaults_to_ieee(tmp_path: Path) -> None:
+    config = load_report_config(_citation_style_folder(tmp_path))
+    assert config.citation_style == "ieee"
+
+
+@pytest.mark.parametrize("value", ["ieee", "apa"])
+def test_citation_style_accepts_known_values(tmp_path: Path, value: str) -> None:
+    config = load_report_config(_citation_style_folder(tmp_path, citation_style=value))
+    assert config.citation_style == value
+
+
+@pytest.mark.parametrize("value", ["APA", "mla", "", True, 1, None])
+def test_citation_style_rejects_other_values_at_load(tmp_path: Path, value: object) -> None:
+    with pytest.raises(SystemExit, match="citation_style"):
+        load_report_config(_citation_style_folder(tmp_path, citation_style=value))

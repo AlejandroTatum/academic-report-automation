@@ -88,6 +88,28 @@ def _check_errors(check: object, label: str) -> list[str]:
     return errors
 
 
+def _deliverable_errors(criterion: dict, index: int) -> list[str]:
+    """Every deliverable the guide states needs its own non-heading check:
+    a heading proves a section exists, never that a link or table is in it."""
+    deliverables = criterion["deliverables"]
+    if not isinstance(deliverables, list) or not deliverables or not all(_is_text(d) for d in deliverables):
+        return [f"{RUBRIC_NAME} criterion {index} deliverables must be a non-empty list of strings"]
+    checks = criterion.get("checks")
+    checks = checks if isinstance(checks, list) else []
+    real = sum(1 for c in checks if isinstance(c, dict) and c.get("type") != "heading_present")
+    if real < len(deliverables):
+        return [
+            f"{RUBRIC_NAME} criterion {index} has {len(deliverables)} deliverables but "
+            f"{real} non-heading checks (one non-heading check per deliverable)"
+        ]
+    return []
+
+
+def _is_positive_int(value: object) -> bool:
+    # A word ceiling: a whole number above zero (bool is an int subclass).
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def validate_rubric(data: object) -> list[str]:
     """Return the schema errors of a parsed ``rubric.yml`` (empty = valid)."""
     if not isinstance(data, dict):
@@ -98,6 +120,8 @@ def validate_rubric(data: object) -> list[str]:
         errors.append(f"{RUBRIC_NAME} schema must be '{RUBRIC_SCHEMA}'")
     if not _is_text(data.get("source")):
         errors.append(f"{RUBRIC_NAME} source must be a non-empty string")
+    if "max_words" in data and not _is_positive_int(data["max_words"]):
+        errors.append(f"{RUBRIC_NAME} max_words must be a positive integer")
 
     criteria = data.get("criteria")
     if not isinstance(criteria, list) or not criteria:
@@ -126,6 +150,10 @@ def validate_rubric(data: object) -> list[str]:
                 errors.append(f"{RUBRIC_NAME} criterion {index} weight must be a number greater than 0")
             elif weight <= 0:
                 errors.append(f"{RUBRIC_NAME} criterion {index} weight must be greater than 0")
+        if "max_words" in criterion and not _is_positive_int(criterion["max_words"]):
+            errors.append(f"{RUBRIC_NAME} criterion {index} max_words must be a positive integer")
+        if "deliverables" in criterion:
+            errors.extend(_deliverable_errors(criterion, index))
         if "checks" in criterion:
             checks = criterion["checks"]
             if not isinstance(checks, list):
@@ -167,6 +195,19 @@ def load_rubric(report_dir: Path) -> list[dict]:
         return []
     criteria = data.get("criteria")
     return [criterion for criterion in criteria if isinstance(criterion, dict)]
+
+
+def load_max_words(report_dir: Path) -> int | None:
+    """Return the plan's total word ceiling (``max_words``), or None."""
+    folder = Path(report_dir)
+    if rubric_state(folder) != "valid":
+        return None
+    try:
+        data = read_yaml(folder / RUBRIC_NAME)
+    except Exception:
+        return None
+    value = data.get("max_words")
+    return value if _is_positive_int(value) else None
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -154,7 +154,7 @@ def test_render_human_golden(tmp_path: Path) -> None:
     assert text == "\n".join(
         [
             f"**Gate**: plan pending - {guidance}",
-            "Route: intake > research > [plan] > draft > approval > verify > format"
+            "Route: intake > research > [plan] > draft > verify > approval > format"
             " > generate > validate > review > deliver",
             "",
             "**Summary**",
@@ -162,8 +162,8 @@ def test_render_human_golden(tmp_path: Path) -> None:
             "- research: done - sources.bib has 5/5 book or paper sources",
             "- plan: current - rubric.yml missing",
             "- draft: pending",
-            "- approval: pending",
             "- verify: pending",
+            "- approval: pending",
             "- format: pending",
             "- generate: pending",
             "- validate: pending",
@@ -258,6 +258,7 @@ def test_human_and_json_gate_agree_across_the_state_matrix(tmp_path: Path) -> No
     _sources_bib(stale_approval)
     _rubric(stale_approval)
     _body(stale_approval)
+    _content_check(stale_approval)
     _approval(stale_approval, body_sha256="0" * 64)
     mismatched = tmp_path / "mismatched"
     _reviewed_build(mismatched)
@@ -344,6 +345,7 @@ def test_render_human_gate_reports_waiting_stale_approval(tmp_path: Path) -> Non
     _sources_bib(folder)
     _rubric(folder)
     _body(folder)
+    _content_check(folder)
     _approval(folder, body_sha256="0" * 64)
 
     status = doc_status.derive(folder)
@@ -420,6 +422,7 @@ def test_render_machine_lists_blocked_reasons(tmp_path: Path) -> None:
     _sources_bib(folder)
     _rubric(folder)
     _body(folder)
+    _content_check(folder)
     _marker_text(folder, "body_sha256: [unclosed\n")
 
     text = doc_status.render_machine(doc_status.derive(folder))

@@ -40,8 +40,8 @@ PHASES = (
     "research",
     "plan",
     "draft",
-    "approval",
     "verify",
+    "approval",
     "format",
     "generate",
     "validate",
@@ -113,20 +113,24 @@ def human_template(text: str) -> str:
     raise AssertionError("SKILL.md must embed the fenced human status block template")
 
 
-def test_verify_uses_independent_judge_without_drafting_conversation() -> None:
+def test_verify_uses_one_independent_verifier_without_drafting_conversation() -> None:
     text = read(PRODUCTION_MD)
-    assert "--judge-brief" in text
-    assert "independent read-only judge" in text
+    assert "--verify-brief" in text
+    assert "independent read-only verifier" in text
     assert "Do not pass the drafting conversation" in text
+    assert "--judge-brief" not in text and "two independent" not in text.lower()
 
 
-def test_verify_requires_two_parallel_judges_and_strictest_verdict() -> None:
-    text = read(PRODUCTION_MD)
-    assert "two independent read-only judge subagents in parallel" in text
-    assert "same brief" in text
-    assert "judgments-a.yml" in text and "judgments-b.yml" in text
-    assert "--judgments judgments-a.yml --judgments judgments-b.yml" in text
-    assert "strictest verdict wins" in text.lower()
+def test_verify_requires_one_verifier_matrix_and_quoted_evidence() -> None:
+    flat = re.sub(r"\s+", " ", read(PRODUCTION_MD))
+    assert "ONE independent read-only verifier" in flat
+    assert "verification.yml" in flat
+    assert "--verification verification.yml" in flat
+    assert "requirement" in flat and "evidence" in flat and "found|missing" in flat
+    assert "exact quote" in flat and "downgraded to `missing`" in flat
+    assert "links_resolve" in flat and "unmapped_paragraphs" in flat
+    assert "never scores" in flat
+    assert "--judgments" not in flat and "judgments-a.yml" not in flat
 
 
 def test_required_files_and_frontmatter() -> None:
@@ -164,7 +168,7 @@ def test_status_template_contract() -> None:
     route_lines = [line for line in block.splitlines() if line.startswith("Route: ")]
     assert len(route_lines) == 1, "exactly one route line"
     assert route_lines[0] == (
-        "Route: intake > research > [plan] > draft > approval > verify > format"
+        "Route: intake > research > [plan] > draft > verify > approval > format"
         " > generate > validate > review > deliver"
     )
     brackets = re.findall(r"\[([a-z]+)\]", route_lines[0])
@@ -546,10 +550,10 @@ def test_approval_batches_literal_orders_and_rechecks() -> None:
         assert phrase in text
 
 
-def test_verify_refuses_drafter_judgments_and_stale_marker() -> None:
+def test_verify_refuses_drafter_verification_and_stale_marker() -> None:
     text = read(PRODUCTION_MD)
-    assert "drafting agent never writes judgments" in text
-    assert "stale marker" in text and "re-run the independent judge" in text
+    assert "drafting agent never writes verification.yml" in text
+    assert "stale marker" in text and "re-run the verifier" in text
 
 
 def test_pdf_handoff_uses_exact_doc_status_fish_command() -> None:
@@ -563,7 +567,7 @@ def test_pdf_handoff_uses_exact_doc_status_fish_command() -> None:
 
 def test_skill_hard_rules_summarize_four_guards() -> None:
     hard = read(SKILL_MD).split("## Hard Rules", 1)[1].split("## Decision Gates", 1)[0]
-    for phrase in ("rubric TDD", "independent judge", "verified sources", "batched edit orders"):
+    for phrase in ("rubric TDD", "independent verifier", "verified sources", "batched edit orders"):
         assert len([line for line in hard.splitlines() if phrase.lower() in line.lower()]) == 1
 
 
@@ -673,12 +677,12 @@ def test_verify_reference_reports_findings_and_never_rewrites() -> None:
     """T6 rule 6: the content check reports findings; the user fixes them."""
     flat = re.sub(r"\s+", " ", read(PRODUCTION_MD)).lower()
     assert re.search(r"never rewrites? `?body\.md", flat), "production.md must forbid rewriting body.md"
-    for status in ("cumple", "flojo", "falta"):
-        assert status in flat, f"production.md must name the `{status}` judgment status"
+    for status in ("cumple", "falta", "found", "missing"):
+        assert status in flat, f"production.md must name the `{status}` status"
+    assert "flojo" not in flat, "the verify has no `flojo` status"
     assert "edit orders" in flat, "production.md must route fixes through the user's edit orders"
-    assert "confusing" in flat, "production.md must report confusing paragraphs"
-    assert re.search(r"figures? (?:that |which )?serves? no criterion", flat), (
-        "production.md must report figures that serve no criterion"
+    assert "unmapped paragraphs" in flat and "deletion candidates" in flat, (
+        "production.md must report unmapped paragraphs as deletion candidates"
     )
 
 
@@ -910,16 +914,16 @@ def content_check_cli_help() -> str:
     return result.stdout
 
 
-def test_verify_defines_the_orchestrator_judge_handoff() -> None:
+def test_verify_defines_the_orchestrator_verifier_handoff() -> None:
     flat = re.sub(r"\s+", " ", read(PRODUCTION_MD))
     for phrase in (
         "cannot launch subagents",
         "stops at verify",
-        "orchestrator runs the two judges",
+        "orchestrator runs the verifier",
         "brief verbatim",
-        "two independent read-only subagents",
+        "one independent read-only subagent",
         "saved unchanged",
-        "drafting agent never writes judgments",
+        "drafting agent never writes verification.yml",
     ):
         assert phrase in flat, f"production.md must say `{phrase}`"
 
@@ -1040,3 +1044,65 @@ def test_draft_phase_documents_the_docx_round_trip() -> None:
     content = _flat(CONTENT_MD)
     for token in ("draft_docx.py", "export", "import", "show the diff", "--apply", "never regenerate a draft that is open"):
         assert token in content, f"content.md must document the DOCX round-trip: {token}"
+
+
+def test_citation_style_opt_in_is_documented_in_every_reference() -> None:
+    """IEEE is the default; `citation_style: apa` is the opt-in the guide must demand."""
+    for name in ("content.md", "approval.md", "production.md", "routing.md", "data.md"):
+        text = _flat(REFS / name)
+        assert "citation_style" in text, name
+    content = _flat(REFS / "content.md")
+    window = content[content.index("citation_style") :][:400]
+    for token in ("apa", "ieee", "default"):
+        assert token in window.lower()
+    assert "no other style exists" not in content
+
+
+def test_draft_states_concision_rules() -> None:
+    # verify-concise-drafts S4/S5: no padding, no basic concepts, fix by cutting.
+    text = re.sub(r"\s+", " ", read(CONTENT_MD))
+    for phrase in (
+        "never a minimum length",
+        "answers a guide or rubric requirement",
+        "first sentence",
+        "at most 2-3 sentences",
+        "tables or display equations",
+        "only the concepts the report's own decisions use",
+        "never define basic course concepts",
+        "by cutting or shrinking, never by adding prose",
+    ):
+        assert phrase in text, phrase
+
+
+def test_skill_hard_rules_state_quality_over_quantity() -> None:
+    text = re.sub(r"\s+", " ", read(SKILL_MD))
+    assert "Quality over quantity" in text
+    assert "no minimum length" in text
+
+
+def test_plan_and_body_check_state_word_ceiling_and_padding_checks() -> None:
+    text = re.sub(r"\s+", " ", read(CONTENT_MD))
+    for phrase in ("never a minimum", "max_words:", "weight share", "the word budget", "no stock filler phrases", "no paragraph over 80 words"):
+        assert phrase in text, phrase
+
+
+def test_plan_turns_every_guide_deliverable_into_a_check() -> None:
+    text = re.sub(r"\s+", " ", read(CONTENT_MD))
+    for phrase in ("deliverables:", "one non-heading check per deliverable", "rubric_plan.py"):
+        assert phrase in text, phrase
+
+
+def test_content_check_cli_offers_one_verification_and_no_judge_flags() -> None:
+    help_text = content_check_cli_help()
+    assert "--verification" in help_text and "--verify-brief" in help_text
+    assert "--judgments" not in help_text and "--judge-brief" not in help_text
+
+
+def test_verify_runs_before_approval_and_the_gate_shows_one_packet() -> None:
+    """verify-concise-drafts T8 (S2): one approval packet with the verify matrix."""
+    approval = read(APPROVAL_MD)
+    production = read(PRODUCTION_MD)
+    assert "tools/approval_packet.py" in approval
+    assert "requirement matrix, the missing items" in approval
+    assert "before `approval`" in production
+    assert "approval_packet.py <folder>" in production

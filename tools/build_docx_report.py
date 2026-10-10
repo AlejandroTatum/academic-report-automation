@@ -1144,6 +1144,11 @@ def build(folder: Path) -> ReportConfig:
         raise SystemExit(
             f"build_docx_report solo aplica a backend=docx; actual: {config.backend}"
         )
+    if config.citation_style == "apa":
+        raise SystemExit(
+            "El estilo APA (citation_style: apa) no está soportado en salida DOCX (solo IEEE); "
+            "usa backend latex/PDF o quita citation_style de report.yml"
+        )
     document, warnings = render_document(config)
     config.docx_path.parent.mkdir(parents=True, exist_ok=True)
     document.save(str(config.docx_path))

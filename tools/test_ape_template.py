@@ -193,8 +193,12 @@ def test_ape_template_heading_color_and_size(ape_template: str) -> None:
     assert "14" in ape_template, "level-1 headings are 14pt"
 
 
-def test_ape_template_keeps_ieee_citations(ape_template: str) -> None:
-    assert "style=ieee" in ape_template, "every format cites IEEE"
+def test_ape_template_keeps_ieee_citations(ape_template: str, tmp_path: Path) -> None:
+    assert "{{BIBLATEX_OPTIONS}}" in ape_template, "the citation style is filled by the renderer"
+    rendered = build_latex_report.render_tex(
+        make_render_config(tmp_path, metadata=full_ape_metadata())
+    )
+    assert "style=ieee" in rendered, "every format cites IEEE by default"
 
 
 # ---------------------------------------------------------------------------
@@ -360,3 +364,42 @@ def test_ape_structure_validation_surfaces_through_metadata_validation(tmp_path)
     config = make_render_config(tmp_path, body=body, metadata=full_ape_metadata())
     result = metadata_validation(config)
     assert any("Resultados" in error for error in result.errors)
+
+
+# The teacher may drop a fixed APE section (e.g. no control questions).
+_APE_WITHOUT_QUESTIONS = "\n".join(
+    f"# {heading}\n\nContenido.\n"
+    for heading in (
+        "Objetivo(s) de la Práctica",
+        "Materiales, Reactivos, Equipos y Herramientas",
+        "Procedimiento / Metodología Ejecutada",
+        "Resultados",
+        "Conclusiones",
+        "Recomendaciones",
+        "Anexos",
+    )
+)
+
+
+def test_ape_omitted_section_is_not_required(tmp_path):
+    config = make_render_config(
+        tmp_path, raw={"ape_omit_sections": ["Preguntas de Control"]},
+        body=_APE_WITHOUT_QUESTIONS, metadata=full_ape_metadata(),
+    )
+    assert ape_structure_validation(config).errors == []
+
+
+def test_ape_section_still_required_without_the_omission(tmp_path):
+    config = make_render_config(tmp_path, body=_APE_WITHOUT_QUESTIONS, metadata=full_ape_metadata())
+    assert ape_structure_validation(config).errors == [
+        "Faltan secciones del formato APE en body.md: Preguntas de Control"
+    ]
+
+
+def test_ape_omission_of_an_unknown_section_is_an_error(tmp_path):
+    config = make_render_config(
+        tmp_path, raw={"ape_omit_sections": ["Marco Teórico"]},
+        body=_APE_WITHOUT_QUESTIONS, metadata=full_ape_metadata(),
+    )
+    errors = ape_structure_validation(config).errors
+    assert "ape_omit_sections: 'Marco Teórico' no es una sección del formato APE" in errors

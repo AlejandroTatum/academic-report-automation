@@ -69,3 +69,18 @@ def test_render_tex_here_pins_figures(tmp_path: Path) -> None:
     tex = build_latex_report.render_tex(make_config(tmp_path, figure_placement="here"))
     assert r"\begin{figure}[H]" in tex
     assert "[tbp]" not in tex
+
+
+ANNEX_BODY = (
+    "# Resultados\n\n![Mapa](figs/a.png)\n\n"
+    "# Anexos\n\n## Anexo A. Original\n\n![Original](figs/b.png)\n"
+)
+
+
+def test_annex_figures_stay_where_they_are_written() -> None:
+    # An annex starts a page with only its heading; a floating figure would
+    # leave that page empty and jump to the next one.
+    tex = build_latex_report.markdown_to_latex(ANNEX_BODY)
+    before, after = tex.split(r"\section{Anexos}")
+    assert r"\begin{figure}[tbp]" in before and r"\begin{figure}[H]" not in before
+    assert r"\begin{figure}[H]" in after and "[tbp]" not in after

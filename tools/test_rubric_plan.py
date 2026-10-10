@@ -276,3 +276,85 @@ def test_cli_reports_problems_and_fails_on_malformed_plan(
 def test_cli_fails_when_the_plan_is_absent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert rubric_plan.main([str(tmp_path)]) == 1
     assert "rubric.yml" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# max_words: optional word ceilings (verify-concise-drafts T3)
+# ---------------------------------------------------------------------------
+
+
+def _with_budget(total: object = None, criterion: object = None) -> dict:
+    data = {
+        "schema": RUBRIC_SCHEMA,
+        "source": "guia",
+        "criteria": [{"id": "objetivo", "title": "Objetivo", "section": "Objetivos"}],
+    }
+    if total is not None:
+        data["max_words"] = total
+    if criterion is not None:
+        data["criteria"][0]["max_words"] = criterion
+    return data
+
+
+def test_validate_accepts_total_and_criterion_max_words() -> None:
+    assert rubric_plan.validate_rubric(_with_budget(total=900, criterion=120)) == []
+
+
+@pytest.mark.parametrize("value", [0, -5, True, 2.5, "300"])
+def test_validate_rejects_non_positive_integer_max_words(value: object) -> None:
+    assert any("max_words" in e for e in rubric_plan.validate_rubric(_with_budget(total=value)))
+    assert any("max_words" in e for e in rubric_plan.validate_rubric(_with_budget(criterion=value)))
+
+
+def test_load_max_words_reads_the_total_or_none(tmp_path: Path) -> None:
+    path = _rubric(tmp_path)
+    assert rubric_plan.load_max_words(tmp_path) is None
+    path.write_text(path.read_text(encoding="utf-8") + "max_words: 450\n", encoding="utf-8")
+    assert rubric_plan.load_max_words(tmp_path) == 450
+
+
+# ---------------------------------------------------------------------------
+# deliverables: each guide deliverable needs its own check (T5)
+# ---------------------------------------------------------------------------
+
+
+def _with_deliverables(deliverables: object, checks: list[dict]) -> dict:
+    return {
+        "schema": RUBRIC_SCHEMA,
+        "source": "guia",
+        "criteria": [
+            {
+                "id": "entrega",
+                "title": "Informe y entrega",
+                "section": "Anexos",
+                "deliverables": deliverables,
+                "checks": checks,
+            }
+        ],
+    }
+
+
+LINK_A = {"type": "link_present", "pattern": "wokwi.com/projects/1"}
+LINK_B = {"type": "link_present", "pattern": "wokwi.com/projects/2"}
+HEADING = {"type": "heading_present", "section": "Anexos"}
+
+
+def test_deliverables_with_one_non_heading_check_each_are_valid() -> None:
+    data = _with_deliverables(["Wokwi Parte A", "Wokwi Parte B"], [HEADING, LINK_A, LINK_B])
+    assert rubric_plan.validate_rubric(data) == []
+
+
+def test_deliverables_covered_only_by_a_heading_check_are_rejected() -> None:
+    errors = rubric_plan.validate_rubric(_with_deliverables(["Wokwi Parte A"], [HEADING]))
+    assert any("1 deliverables" in e and "0 non-heading checks" in e for e in errors), errors
+
+
+def test_fewer_non_heading_checks_than_deliverables_are_rejected() -> None:
+    errors = rubric_plan.validate_rubric(_with_deliverables(["A", "B", "C"], [LINK_A, LINK_B]))
+    assert any("3 deliverables" in e and "2 non-heading checks" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("value", ["Wokwi", [], [""], [3], None])
+def test_deliverables_must_be_a_non_empty_list_of_text(value: object) -> None:
+    errors = rubric_plan.validate_rubric(_with_deliverables(value, [LINK_A]))
+    assert any("deliverables" in e for e in errors), errors

@@ -180,6 +180,59 @@ def _judgments(
     return path
 
 
+def _verification(
+    folder: Path,
+    *,
+    name: str = "verification.yml",
+    requirements: list[dict[str, object]] | None = None,
+    unmapped_paragraphs: list[str] | None = None,
+    findings: list[str] | None = None,
+    **overrides: object,
+) -> Path:
+    """Write an independent verifier's ``verification.yml`` and return its path.
+
+    Defaults give every ``DEFAULT_RUBRIC_CRITERIA`` id one ``found`` requirement
+    whose evidence is the first words of body.md's first paragraph, so the quote
+    always exists in the body; ``requirements`` replaces the records verbatim and
+    ``overrides`` replace top-level keys (``None`` drops the key).
+    """
+    from content_check import body_text_sha256
+
+    folder.mkdir(parents=True, exist_ok=True)
+    body_path = folder / "body.md"
+    body_text = body_path.read_text(encoding="utf-8") if body_path.is_file() else ""
+    if requirements is None:
+        first_line = next(
+            (line for line in body_text.splitlines() if line.strip() and not line.startswith("#")), ""
+        )
+        quote = " ".join(first_line.split()[:3])
+        requirements = [
+            {"criterion": c["id"], "requirement": f"The report covers {c['title']}.", "status": "found",
+             "location": str(c["section"]), "evidence": quote}
+            for c in DEFAULT_RUBRIC_CRITERIA
+        ]
+    config = _config(folder)
+    inputs = ["rubric.yml", "body.md", config.bib_path.name if config.bib_path else "sources.bib"]
+    if config.raw.get("guide") and (folder / str(config.raw["guide"])).is_file():
+        inputs.append(Path(str(config.raw["guide"])).name)
+    body: dict[str, object] = {
+        "schema": "academic.verification/v1",
+        "verifier": {"role": "independent", "inputs": inputs},
+        "body_sha256": _sha256(body_path) if body_path.is_file() else "",
+        "rubric_sha256": _sha256(folder / "rubric.yml") if (folder / "rubric.yml").is_file() else "",
+        "body_text_sha256": body_text_sha256(body_text),
+        "requirements": requirements,
+        "unmapped_paragraphs": unmapped_paragraphs if unmapped_paragraphs is not None else [],
+        "findings": findings if findings is not None else [],
+    }
+    body.update(overrides)
+    for key in [k for k, v in body.items() if v is None]:
+        del body[key]
+    path = folder / name
+    path.write_text(_yaml(body), encoding="utf-8")
+    return path
+
+
 def _content_check(
     folder: Path,
     *,
