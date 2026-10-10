@@ -17,7 +17,8 @@ assets only; `academic-report-flow` owns prose, assembly, and report readiness.
 ## Hard Rules
 
 - Prefer original, editable SVG visuals. Keep specs and generated assets in the paths defined by `references/visual-workflow.md`.
-- Default style is editorial technical (`references/editorial-style.md`): one ink plus one accent, serif title, hairline nodes, labelled straight links, never pastel pill cards. Diagrams use `tools/editorial_svg.py` layouts (`actor_map`, `concept_map`) when they fit; every figure passes `editorial_svg.py check` (5.5 pt printed) and is shown to the user at full size before insertion.
+- Concept maps and process maps default to the Bauhaus técnico style (`references/bauhaus-maps.md`): write a YAML spec and render it with `tools/bauhaus_maps.py` (`concept_map`, `process_map`); never draw them by hand or substitute another look. A layout over 860 SVG units is split or shortened, never shrunk.
+- Other diagrams keep the editorial technical style (`references/editorial-style.md`): `tools/editorial_svg.py` `actor_map`, hand-written SVG when no layout fits. Every figure passes `editorial_svg.py check` (5.5 pt printed) and is shown to the user at full size before insertion.
 - Visual assets, specs, manifests, and audits are working evidence: they live in the repo-defined work paths and are never copied to the user's Documents delivery folder. Only the final assembled PDF/DOCX produced by `academic-report-flow` reaches that folder; see `references/delivery.md` in that skill.
 - Every manifest must follow `references/figures-yml-schema.md`. Require stable unique `request_id`/`result_id`, raw-byte SHA-256, source/provenance, explicit license text and status, canonical section, caption, and `alt_text` accessibility text.
 - Treat `section` as canonical; accept `intended_section` only when section is absent or identical after trimming. Reject conflicts and integrity mismatches; never silently crop, substitute, overwrite, or accept unknown licensing.
@@ -30,7 +31,8 @@ assets only; `academic-report-flow` owns prose, assembly, and report readiness.
 
 | Need | Renderer |
 |---|---|
-| Flow/process/tree | Mermaid |
+| Concept map or process map | `bauhaus_maps.py` (Bauhaus técnico) |
+| Other flow/tree | Mermaid |
 | Chart/comparison | Vega-Lite / Altair / vl-convert |
 | Dashboard-like visual | ECharts SVG SSR |
 | Custom card | HTML + Playwright |
@@ -59,4 +61,5 @@ evidence, and readability/layout issues. Never imply `HUMAN_REVIEW` or readiness
 
 - `references/figures-yml-schema.md` — executable metadata contract and examples.
 - `references/visual-workflow.md` — asset classes, photo rules, renderer gates, and commands.
-- `references/editorial-style.md` — house style tokens, print-size rule, actor and concept map layouts.
+- `references/bauhaus-maps.md` — Bauhaus técnico tokens, `concept_map` and `process_map` schemas, limits, commands; examples in `assets/examples/`.
+- `references/editorial-style.md` — editorial tokens, print-size rule, `actor_map` layout.

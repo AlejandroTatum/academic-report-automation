@@ -82,7 +82,9 @@ def _text(parent: dict, key: str, where: str = "", required: bool = True) -> str
         if required:
             raise SpecError(f"'{here}' is required")
         return None
-    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+    if isinstance(value, bool):
+        raise SpecError(f"'{here}' must be text; YAML reads an unquoted yes/no as true/false, so put the word in quotes")
+    if not isinstance(value, (str, int, float)):
         raise SpecError(f"'{here}' must be text")
     return str(value)
 

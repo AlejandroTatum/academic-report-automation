@@ -798,6 +798,20 @@ def test_a_repeated_flow_pair_is_rejected(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_an_unquoted_yaml_no_is_reported_with_the_quoting_hint(tmp_path: Path) -> None:
+    out = tmp_path / "fig.svg"
+    spec = tmp_path / "spec.yml"
+    # YAML 1.1 reads a bare "no" as false, so a branch label written "label: no" arrives as a boolean.
+    text = yaml.safe_dump(PROCESS_SPEC, allow_unicode=True, sort_keys=False).replace("label: 'no'", "label: no")
+    assert "label: no\n" in text
+    spec.write_text(text, encoding="utf-8")
+    result = run_cli("render", spec, "--out", out)
+    assert result.returncode == 2
+    assert result.stderr == ("bauhaus_maps: 'flow[4].label' must be text; YAML reads an unquoted yes/no as true/false, "
+                             "so put the word in quotes\n")
+    assert not out.exists()
+
+
 @needs_rsvg
 def test_process_map_png_is_written_at_twice_the_svg_size(tmp_path: Path) -> None:
     png = tmp_path / "proceso.png"

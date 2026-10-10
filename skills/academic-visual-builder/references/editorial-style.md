@@ -1,4 +1,6 @@
-# Editorial technical style (default for report figures)
+# Editorial technical style (report figures other than maps)
+
+Concept maps and process maps now default to the Bauhaus técnico style the user chose over this one: see `bauhaus-maps.md` and `tools/bauhaus_maps.py`. This style stays the default for the `actor_map` layout and for hand-written figures; the `concept_map` layout below keeps working for existing specs.
 
 The house style for diagrams in reports: serious and clean, like a figure in a paper or an engineering book. It replaces the generic generator look the user rejected as "muy básicas, gritan IA" (#63). Approved on the DBP actor map, 2026-10-08.
 

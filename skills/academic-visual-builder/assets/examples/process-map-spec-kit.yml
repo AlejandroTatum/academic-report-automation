@@ -1,0 +1,36 @@
+# Process map: the Spec Kit flow of the DBP AA01 practice project.
+# Render: bauhaus_maps.py render process-map-spec-kit.yml --out process-map-spec-kit.svg --png process-map-spec-kit.png
+kind: process_map
+title: Flujo SDD con GitHub Spec Kit
+
+# 2 or 3 actor lanes, left to right. Colours default to red, blue, green, then ink;
+# set color: blue|red|green|ink to choose. short is the legend name.
+lanes:
+  - {id: equipo, label: EQUIPO DE DESARROLLO, short: EQUIPO}
+  - {id: ia, label: ASISTENTE CON SPEC KIT, short: ASISTENTE}
+
+# Optional last column for the documents the steps produce.
+artifact_lane: {label: ARTEFACTO}
+
+# One step per row, top to bottom. Steps are numbered in this order; a decision
+# (decision: true) is a saffron diamond and takes no number.
+steps:
+  - {id: s1, lane: equipo, title: Fijar principios, detail: /constitution, artifact: constitution.md}
+  - {id: s2, lane: ia, title: Especificar, detail: "/specify: qué y por qué", artifact: spec.md}
+  - {id: d1, lane: equipo, title: "¿Quedan ambigüedades?", decision: true}
+  - {id: s3, lane: ia, title: Preguntar y registrar, detail: "/clarify: hasta 5 preguntas", artifact: spec.md actualizado}
+  - {id: s4, lane: ia, title: Diseñar la solución, detail: "/plan: stack y datos", artifact: plan.md · data-model.md}
+  - {id: s5, lane: ia, title: Partir en tareas, detail: /tasks, artifact: tasks.md}
+  - {id: s6, lane: equipo, title: Implementar y verificar, detail: contra la especificación}
+
+# Connectors never cross a step. s3 -> d1 goes back up (a back edge); d1 -> s4 skips
+# rows and runs down the free edge of its source lane. Branch labels print in uppercase;
+# quote yes/no words ("no") because YAML reads a bare no as false.
+flow:
+  - {from: s1, to: s2}
+  - {from: s2, to: d1}
+  - {from: d1, to: s3, label: "sí"}
+  - {from: s3, to: d1}
+  - {from: d1, to: s4, label: "no"}
+  - {from: s4, to: s5}
+  - {from: s5, to: s6}
