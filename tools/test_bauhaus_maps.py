@@ -825,7 +825,7 @@ def label_boxes(root: ET.Element) -> dict[str, tuple[float, float, float, float]
         if not label.get("data-label"):
             continue
         value, size = "".join(label.itertext()), float(label.get("font-size"))
-        width = bauhaus_maps.measure(value, size, int(label.get("font-weight")), float(label.get("letter-spacing")))
+        width = bauhaus_maps.measure(value, size, int(label.get("font-weight")), float(label.get("letter-spacing") or 0))
         x, y, anchor = float(label.get("x")), float(label.get("y")), label.get("text-anchor")
         left = x if anchor == "start" else x - width if anchor == "end" else x - width / 2
         boxes[label.get("data-label")] = (left, y - size, left + width, y + 1)
@@ -1300,3 +1300,226 @@ def test_the_artifact_lane_takes_a_colour_nobody_chose(tmp_path: Path) -> None:
     spec["lanes"][1]["color"] = "ink"
     fills = lane_fills(svg_root(tmp_path, spec))
     assert fills == {"equipo": GREEN, "ia": INK, "artifact": RED}
+
+
+# --------------------------------------------------------------------------
+# #77 · follow-ups from the Engram example maps
+# --------------------------------------------------------------------------
+
+ENGRAM_CONCEPT_SPEC = {  # the Engram concept map the user marked ("mia esas lineas tan pegadas")
+    "kind": "concept_map",
+    "title": "Engram, la memoria persistente de los agentes",
+    "core": {"id": "engram", "name": "Engram", "subtitle": "memoria persistente de agentes"},
+    "families": {
+        "guarda": {"label": "GUARDA", "color": "blue", "meaning": "lo que se registra"},
+        "organiza": {"label": "ORDENA", "color": "green", "meaning": "proyecto y tema"},
+        "usa": {"label": "USO", "color": "red", "meaning": "herramientas"},
+    },
+    "concepts": [
+        {"id": "obs", "name": "Observación", "detail": "qué, por qué, dónde", "family": "guarda", "level": "key"},
+        {"id": "proyecto", "name": "Proyecto", "detail": "uno por repo", "family": "organiza", "level": "key"},
+        {"id": "tools", "name": "Herramientas", "detail": "del agente", "family": "usa", "level": "key"},
+        {"id": "resumen", "name": "Resumen", "detail": "al cerrar", "family": "guarda"},
+        {"id": "topic", "name": "topic_key", "detail": "sin duplicar", "family": "organiza"},
+        {"id": "save", "name": "mem_save", "detail": "al decidir", "family": "usa"},
+        {"id": "search", "name": "mem_search", "detail": "por palabras", "family": "usa"},
+    ],
+    "links": [
+        {"from": "engram", "to": "obs", "label": "almacena"},
+        {"from": "engram", "to": "proyecto", "label": "se ordena por"},
+        {"from": "engram", "to": "tools", "label": "se usa con"},
+        {"from": "obs", "to": "resumen", "label": "se condensa en"},
+        {"from": "proyecto", "to": "topic", "label": "agrupa temas con"},
+        {"from": "tools", "to": "save", "label": "escribe con"},
+        {"from": "tools", "to": "search", "label": "recupera con"},
+        {"from": "save", "to": "obs", "label": "crea o revisa", "cross": True},
+        {"from": "topic", "to": "obs", "label": "identifica la", "cross": True},
+    ],
+}
+
+ENGRAM_PROCESS_SPEC = {  # the Engram process map, with the "sí" on d2 -> s6 that made it fail
+    "kind": "process_map",
+    "title": "Ciclo de memoria en una sesión del agente",
+    "lanes": [{"id": "agente", "label": "AGENTE", "short": "AGENTE"}, {"id": "engram", "label": "ENGRAM", "short": "ENGRAM"}],
+    "artifact_lane": {"label": "REGISTRO"},
+    "steps": [
+        {"id": "s1", "lane": "agente", "title": "Abrir sesión", "detail": "mem_context"},
+        {"id": "s2", "lane": "engram", "title": "Dar contexto", "detail": "sesiones previas", "artifact": "contexto"},
+        {"id": "s3", "lane": "agente", "title": "Trabajar", "detail": "decidir y corregir"},
+        {"id": "d1", "lane": "agente", "title": "¿Hay algo útil?", "decision": True},
+        {"id": "s4", "lane": "engram", "title": "Guardar", "detail": "upsert por topic_key", "artifact": "observación"},
+        {"id": "d2", "lane": "agente", "title": "¿Fin de sesión?", "decision": True},
+        {"id": "s6", "lane": "agente", "title": "Resumir", "detail": "mem_session_summary"},
+        {"id": "s7", "lane": "engram", "title": "Archivar", "detail": "para la próxima", "artifact": "resumen"},
+    ],
+    "flow": [
+        {"from": "s1", "to": "s2"}, {"from": "s2", "to": "s3"}, {"from": "s3", "to": "d1"},
+        {"from": "d1", "to": "s4", "label": "sí"}, {"from": "d1", "to": "d2", "label": "no"}, {"from": "s4", "to": "d2"},
+        {"from": "d2", "to": "s3", "label": "no"}, {"from": "d2", "to": "s6", "label": "sí"}, {"from": "s6", "to": "s7"},
+    ],
+}
+
+
+def long_legend_spec() -> dict:
+    """The Engram concept map with the original legend, whose texts alone are wider than 860 units."""
+    spec = copy.deepcopy(ENGRAM_CONCEPT_SPEC)
+    for key, label, meaning in (("guarda", "QUÉ GUARDA", "observaciones y resúmenes"),
+                                ("organiza", "CÓMO ORGANIZA", "proyecto, alcance y tema"),
+                                ("usa", "CÓMO SE USA", "herramientas mem_*")):
+        spec["families"][key].update(label=label, meaning=meaning)
+    return spec
+
+
+@needs_dot
+def test_a_legend_wider_than_860_units_is_named_as_the_culprit(tmp_path: Path) -> None:
+    result, out = render(tmp_path, long_legend_spec(), "--png", tmp_path / "fig.png")
+    assert result.returncode == 2
+    assert re.fullmatch(
+        r"bauhaus_maps: the legend is \d+ units wide, over the 860-unit limit; the figure is never shrunk, so shorten "
+        r"its widest entry 'CÓMO ORGANIZA: proyecto, alcance y tema' or the other legend entries\n", result.stderr), result.stderr
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+@needs_dot
+def test_a_legend_that_fits_leaves_the_drawing_message_alone(tmp_path: Path) -> None:
+    spec = long_legend_spec()
+    for item in spec["families"].values():
+        item.pop("meaning")
+    spec["concepts"] = [
+        {"id": f"c{i}", "name": f"Concepto largo número {i}", "detail": "con un detalle bastante extenso", "family": "guarda"}
+        for i in range(8)]
+    spec["links"] = [{"from": "engram", "to": f"c{i}", "label": "incluye"} for i in range(8)]
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2 and not out.exists()
+    assert re.fullmatch(r"bauhaus_maps: layout is \d+ units wide, over the 860-unit limit; the figure is never shrunk, "
+                        r"so split the map or shorten names and details\n", result.stderr), result.stderr
+
+
+def test_lane_names_wider_than_860_units_in_the_legend_name_the_widest_one(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][0]["short"] = "UN NOMBRE DE ACTOR EXTRAORDINARIAMENTE LARGO PARA LA LEYENDA"
+    spec["lanes"][1]["short"] = "OTRO NOMBRE DE ACTOR TAMBIÉN MUY LARGO PARA LA LEYENDA"
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2 and not out.exists()
+    assert re.fullmatch(
+        r"bauhaus_maps: the legend is \d+ units wide, over the 860-unit limit; the figure is never shrunk, so shorten "
+        r"its widest entry 'UN NOMBRE DE ACTOR EXTRAORDINARIAMENTE LARGO PARA LA LEYENDA' or the other legend entries\n",
+        result.stderr), result.stderr
+
+
+@needs_dot
+def test_a_decision_branch_straight_down_keeps_its_label_beside_its_own_line(tmp_path: Path) -> None:
+    root = svg_root(tmp_path, ENGRAM_PROCESS_SPEC)
+    diamond, below = node_box(root, "d2"), node_box(root, "s6")
+    line_x = connectors(root)["d2>s6"][0][0]
+    label = label_boxes(root)["d2>s6"]
+    assert text_of(root, "SÍ") is not None
+    assert label[1] >= diamond[3] and label[3] <= below[1], "the label sits between the diamond and the step below"
+    assert 0 < label[0] - line_x <= 14 or 0 < line_x - label[2] <= 14, "the label sits beside its connector"
+    assert_labels_are_clear(root)
+    assert_no_connector_crosses_a_node(root)
+
+
+CLEARANCE = 10  # SVG units a concept-map link keeps from every node it does not connect and from other links' arrowheads
+ARROW_LENGTH, ARROW_HALF_WIDTH = 11.5, 5.8  # the marker: 8 of its 10 units long, 4 of them to each side, at 1.6 x 9 / 10
+
+
+def sampled_path(d: str, per_curve: int = 60) -> list[tuple[float, float]]:
+    """Points along a drawn link: the start plus every cubic béziér ('M x,y C c1 c2 end ...') sampled finely."""
+    numbers = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", d)]
+    points = list(zip(numbers[0::2], numbers[1::2]))
+    assert d.startswith("M") and (len(points) - 1) % 3 == 0, d
+    samples = [points[0]]
+    for i in range(0, len(points) - 1, 3):
+        (x0, y0), (x1, y1), (x2, y2), (x3, y3) = points[i:i + 4]
+        for step in range(1, per_curve + 1):
+            t = step / per_curve
+            a, b, c, e = (1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t ** 2 * (1 - t), t ** 3
+            samples.append((a * x0 + b * x1 + c * x2 + e * x3, a * y0 + b * y1 + c * y2 + e * y3))
+    return samples
+
+
+def distance_to_box(point: tuple[float, float], rect: tuple[float, float, float, float]) -> float:
+    dx = max(rect[0] - point[0], 0, point[0] - rect[2])
+    dy = max(rect[1] - point[1], 0, point[1] - rect[3])
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def arrowhead(samples: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """The triangle the marker draws at the end of a link: tip on the last point, pointing along the last stretch."""
+    (tx, ty) = samples[-1]
+    ax, ay = next(p for p in reversed(samples) if ((p[0] - tx) ** 2 + (p[1] - ty) ** 2) ** 0.5 > 3)
+    length = ((tx - ax) ** 2 + (ty - ay) ** 2) ** 0.5
+    ux, uy = (tx - ax) / length, (ty - ay) / length
+    bx, by = tx - ARROW_LENGTH * ux, ty - ARROW_LENGTH * uy
+    return [(tx, ty), (bx - ARROW_HALF_WIDTH * uy, by + ARROW_HALF_WIDTH * ux), (bx + ARROW_HALF_WIDTH * uy, by - ARROW_HALF_WIDTH * ux)]
+
+
+def distance_to_triangle(point: tuple[float, float], triangle: list[tuple[float, float]]) -> float:
+    px, py = point
+    signs = []
+    for (ax, ay), (bx, by) in zip(triangle, triangle[1:] + triangle[:1]):
+        signs.append((bx - ax) * (py - ay) - (by - ay) * (px - ax))
+    if all(s >= 0 for s in signs) or all(s <= 0 for s in signs):
+        return 0.0
+    best = float("inf")
+    for (ax, ay), (bx, by) in zip(triangle, triangle[1:] + triangle[:1]):
+        along = max(0.0, min(1.0, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2)))
+        best = min(best, ((px - ax - along * (bx - ax)) ** 2 + (py - ay - along * (by - ay)) ** 2) ** 0.5)
+    return best
+
+
+def drawn_links(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
+    return {e.get("data-link"): sampled_path(e.get("d")) for e in find(root, "path") if e.get("data-link")}
+
+
+def concept_boxes(root: ET.Element) -> dict[str, tuple[float, float, float, float]]:
+    return {e.get("data-node"): box(e) for e in find(root, "rect") if e.get("data-node")}
+
+
+def assert_links_keep_their_distance(root: ET.Element) -> None:
+    boxes, links = concept_boxes(root), drawn_links(root)
+    assert links, "no links drawn"
+    for name, samples in links.items():
+        ends = name.split(">")
+        for node_id, rect in boxes.items():
+            near = min(distance_to_box(p, rect) for p in samples)
+            if node_id in ends:
+                inside = [p for p in samples if rect[0] + 1 < p[0] < rect[2] - 1 and rect[1] + 1 < p[1] < rect[3] - 1]
+                assert not inside, f"link {name} runs inside its own node {node_id}"
+            else:
+                assert near >= CLEARANCE, f"link {name} passes {near:.1f} units from node {node_id}"
+        for other, other_samples in links.items():
+            if other != name:
+                head = arrowhead(other_samples)
+                near = min(distance_to_triangle(p, head) for p in samples)
+                assert near >= CLEARANCE, f"link {name} passes {near:.1f} units from the arrowhead of {other}"
+
+
+def assert_concept_labels_clear_of_nodes(root: ET.Element) -> None:
+    labels = label_boxes(root)
+    assert labels, "no labels drawn"
+    for name, rect in labels.items():
+        for node_id, node in concept_boxes(root).items():
+            assert not overlap(rect, node), f"label {name} overlaps node {node_id}"
+        for other, other_rect in labels.items():
+            assert other == name or not overlap(rect, other_rect), f"labels {name} and {other} overlap"
+
+
+@needs_dot
+@pytest.mark.parametrize("spec", [CONCEPT_SPEC, ENGRAM_CONCEPT_SPEC], ids=["sdd", "engram"])
+def test_concept_links_keep_their_distance_from_every_node_and_arrowhead(tmp_path: Path, spec: dict) -> None:
+    root = svg_root(tmp_path, spec)
+    assert_links_keep_their_distance(root)
+    assert_concept_labels_clear_of_nodes(root)
+
+
+@needs_dot
+@pytest.mark.parametrize("spec", [CONCEPT_SPEC, ENGRAM_CONCEPT_SPEC], ids=["sdd", "engram"])
+def test_every_concept_link_still_leaves_and_reaches_the_border_of_its_own_boxes(tmp_path: Path, spec: dict) -> None:
+    root = svg_root(tmp_path, spec)
+    boxes = concept_boxes(root)
+    for name, samples in drawn_links(root).items():
+        source, target = name.split(">")
+        assert distance_to_box(samples[0], boxes[source]) < 0.5, f"{name} starts away from {source}"
+        assert distance_to_box(samples[-1], boxes[target]) < 0.5, f"{name} stops short of {target}"

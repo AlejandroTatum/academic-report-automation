@@ -12,7 +12,7 @@ concept maps and a deterministic grid places process maps.
 
 A layout wider than 860 SVG units is never shrunk: a smaller scale would print the 12.5-unit
 labels below 5.5 pt (``editorial_svg.check``), so the render fails and tells the author to
-split the map or shorten names and details. ``--png`` rasterises with ``rsvg-convert -z 2``
+split the map or shorten names and details, or to shorten the widest legend entry when the legend is what is too wide. ``--png`` rasterises with ``rsvg-convert -z 2``
 under a generated fontconfig that loads ``assets/fonts``, so the PNG looks the same on any
 machine and nothing is installed system-wide.
 """
@@ -196,6 +196,16 @@ def _legend_end(entries: list[Entry], xs: list[float]) -> float:
     return xs[-1] + entries[-1].width if entries else 0
 
 
+def _guard_legend(entries: list[Entry]) -> None:
+    """Fail naming the widest entry when the legend alone, packed tight, is wider than the limit."""
+    width = 2 * PAD_X + sum(entry.width for entry in entries) + 36 * max(len(entries) - 1, 0)
+    if width > MAX_WIDTH:
+        widest = max(entries, key=lambda entry: entry.width)
+        name = f"{widest.label}: {widest.meaning}" if widest.meaning else widest.label
+        raise SpecError(f"the legend is {width:.0f} units wide, over the {MAX_WIDTH}-unit limit; the figure is never "
+                        f"shrunk, so shorten its widest entry '{name}' or the other legend entries")
+
+
 def _guard_width(width: float) -> None:
     if width > MAX_WIDTH:
         raise SpecError(f"layout is {width:.0f} units wide, over the {MAX_WIDTH}-unit limit; the figure is never "
@@ -219,6 +229,9 @@ def _finish(parts: list[str]) -> str:
 # --------------------------------------------------------------------------
 
 CORE_PAD, NODE_PAD, CORE_H, NODE_H = 56, 44, 74, 62
+# Graphviz sees every box this much bigger on each side, so its splines keep that distance from it: 10 units to the
+# sides; 22 above and below, where an arrowhead (11.5 units deep) may sit and other links still keep 10 from it.
+LINK_AIR_X, LINK_AIR_Y = 10, 22
 
 
 def _concept_model(spec: dict) -> dict:
@@ -306,17 +319,54 @@ def _run_tool(tool: str, label: str, args: list[str], **options) -> subprocess.C
         raise SpecError(f"{label} could not be run: {error}") from error
 
 
+def _reach_border(end: tuple[float, float], toward: tuple[float, float], rect: tuple[float, float, float, float]) -> tuple[float, float]:
+    """Where the ray from ``end`` along ``end -> toward`` first meets ``rect`` (x0, y0, x1, y1), else the nearest border point."""
+    dx, dy = toward[0] - end[0], toward[1] - end[1]
+    near, far = 0.0, float("inf")
+    for origin, step, low, high in ((end[0], dx, rect[0], rect[2]), (end[1], dy, rect[1], rect[3])):
+        if abs(step) < 1e-9:
+            if not low <= origin <= high:
+                near, far = 1.0, 0.0
+            continue
+        t0, t1 = sorted(((low - origin) / step, (high - origin) / step))
+        near, far = max(near, t0), min(far, t1)
+    if near <= far and near > 0:
+        return end[0] + near * dx, end[1] + near * dy
+    return min(max(end[0], rect[0]), rect[2]), min(max(end[1], rect[1]), rect[3])
+
+
+def _extend_to_borders(points: list, tail: tuple, head: tuple) -> list:
+    """Lengthen a spline that stops at the padded boxes so it starts and ends on the drawn borders."""
+    def real(box: tuple) -> tuple[float, float, float, float]:
+        cx, cy, w, h = box
+        return cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+
+    def straight(a: tuple, b: tuple) -> list:
+        return [(a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3), (a[0] + 2 * (b[0] - a[0]) / 3, a[1] + 2 * (b[1] - a[1]) / 3), b]
+
+    start = _reach_border(points[0], (2 * points[0][0] - points[1][0], 2 * points[0][1] - points[1][1]), real(tail))
+    end = _reach_border(points[-1], (2 * points[-1][0] - points[-2][0], 2 * points[-1][1] - points[-2][1]), real(head))
+    lead = [start, *straight(start, points[0])[:2]]
+    return [*lead, *points, *straight(points[-1], end)]
+
+
 def _dot(model: dict) -> tuple[float, float, dict, dict]:
-    """Run Graphviz on fixed-size boxes and fixed-size link labels; return graph size, boxes and links."""
+    """Run Graphviz on padded boxes and fixed-size link labels; return graph size, drawn boxes and links.
+
+    Graphviz routes splines around boxes ``LINK_AIR`` bigger than the drawn ones, so a link keeps that distance
+    from every box it does not connect; each link is then lengthened to the drawn border of its own boxes.
+    """
     if shutil.which("dot") is None:
         raise SpecError("Graphviz 'dot' was not found on PATH; install graphviz")
     name = {c["id"]: f"n{i}" for i, c in enumerate(model["concepts"])}
-    lines = ["digraph G {", "rankdir=TB; nodesep=0.16; ranksep=0.55; splines=spline; ordering=out;",
+    air_x, air_y = 2 * LINK_AIR_X / 72, 2 * LINK_AIR_Y / 72
+    lines = ["digraph G {", f"rankdir=TB; nodesep={max(0.16 - air_x, 0.02):.3f}; ranksep={max(0.55 - air_y, 0.02):.3f}; "
+             "splines=spline; ordering=out;",
              'node [shape=box fixedsize=true label=""];', "edge [arrowhead=none fontsize=14];"]
     for concept in model["concepts"]:
         w, h = _box_size(concept)
         group = ' group="spine"' if concept["id"] in model["spine"] else ""
-        lines.append(f"{name[concept['id']]} [width={w / 72:.3f} height={h / 72:.3f}{group}];")
+        lines.append(f"{name[concept['id']]} [width={w / 72 + air_x:.3f} height={h / 72 + air_y:.3f}{group}];")
     for link in model["links"]:
         cell = (f'<<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="0"><TR><TD WIDTH="{round(measure(link["label"], 12.5, 500) + 14)}" '
                 'HEIGHT="20"></TD></TR></TABLE>>')
@@ -327,20 +377,22 @@ def _dot(model: dict) -> tuple[float, float, dict, dict]:
     if done.returncode != 0:
         raise SpecError(f"Graphviz failed: {done.stderr.strip()}")
     ids = {v: k for k, v in name.items()}
-    size, boxes, links = (0.0, 0.0), {}, {}
+    size, boxes, found = (0.0, 0.0), {}, {}
     for row in done.stdout.splitlines():
         parts = row.split()
         if parts[0] == "graph":
             size = (float(parts[2]) * 72, float(parts[3]) * 72)
         elif parts[0] == "node":
-            boxes[ids[parts[1]]] = tuple(float(v) * 72 for v in parts[2:6])
+            cx, cy, w, h = (float(v) * 72 for v in parts[2:6])
+            boxes[ids[parts[1]]] = (cx, cy, w - 2 * LINK_AIR_X, h - 2 * LINK_AIR_Y)
         elif parts[0] == "edge":
             count = int(parts[3])
             points = [(float(parts[4 + 2 * i]) * 72, float(parts[5 + 2 * i]) * 72) for i in range(count)]
             rest = parts[4 + 2 * count:]
             # Trailing fields are "style color"; a label adds "<name> xl yl" before them.
             label = (float(rest[-4]) * 72, float(rest[-3]) * 72) if len(rest) > 2 else None
-            links[(ids[parts[1]], ids[parts[2]])] = (points, label)
+            found[(ids[parts[1]], ids[parts[2]])] = (points, label)
+    links = {ends: (_extend_to_borders(points, boxes[ends[0]], boxes[ends[1]]), label) for ends, (points, label) in found.items()}
     return size[0], size[1], boxes, links
 
 
@@ -355,6 +407,7 @@ def concept_map(spec: dict) -> str:
     graph_w, graph_h, boxes, links = _dot(model)
     families = model["families"]
     entries = [Entry(key, item["label"], MEANING_COLOURS[item["colour"]], item["meaning"]) for key, item in families.items()]
+    _guard_legend(entries)
     inner = graph_w
     xs = _legend_positions(entries, inner)
     width = max(graph_w + 2 * PAD_X, _header_end(model["title"]) + PAD_X, _legend_end(entries, xs) + PAD_X)
@@ -522,6 +575,10 @@ def process_map(spec: dict) -> str:
     model = _process_model(spec)
     columns = [*model["lanes"], *([model["artifact_lane"]] if model["artifact_lane"] else [])]
     n = len(columns)
+    entries = [Entry(c["id"], c["short"], LANE_COLOURS[c["colour"]]) for c in columns]
+    if any(s["decision"] for s in model["steps"]):
+        entries.append(Entry("decision", "DECISIÓN", SAFFRON, swatch="diamond"))
+    _guard_legend(entries)
     box_need = max(_box_need(s) for s in model["steps"])
     corridor_slots, corridors = _corridor_plan(model)
     margin = max(SIDE, CORRIDOR_STEP * (corridors + 1))  # room beside the boxes for every concurrent corridor
@@ -531,9 +588,6 @@ def process_map(spec: dict) -> str:
         lane_need = max(lane_need, max(art_widths) + 50)
     _guard_width(2 * PAD_X + n * lane_need + (n - 1) * LANE_GAP)
 
-    entries = [Entry(c["id"], c["short"], LANE_COLOURS[c["colour"]]) for c in columns]
-    if any(s["decision"] for s in model["steps"]):
-        entries.append(Entry("decision", "DECISIÓN", SAFFRON, swatch="diamond"))
     xs = _legend_positions(entries, MAX_WIDTH - 2 * PAD_X)
     _guard_width(max(_legend_end(entries, xs) + PAD_X, _header_end(model["title"]) + PAD_X))
 
@@ -728,7 +782,9 @@ def _place_labels(model: dict, routes: list, boxes: list, lines: list) -> dict[i
 
 
 def _spots(route: list, width: float):
-    """Candidate label origins beside each segment of ``route``, nearest to the segment's start first."""
+    """Candidate label origins beside each segment of ``route``, nearest to the segment's start first.
+
+    The spots clear of an arrow tip come last, so a label that already had a place keeps it."""
     for (x0, y0), (x1, y1) in zip(route, route[1:]):
         if abs(y0 - y1) < 1e-6:  # horizontal: above the line, then below it
             direction, span = (1 if x1 > x0 else -1), abs(x1 - x0)
@@ -741,6 +797,13 @@ def _spots(route: list, width: float):
             for side in (1, -1):
                 for along in range(12, int(span - 6) + 1, 6):
                     yield (x0 + 7 if side > 0 else x0 - 7 - width), y0 + direction * along + 6
+    # Last resort: clear of the arrow tip's square, for the short stretch between a diamond and the step below it.
+    for (x0, y0), (x1, y1) in zip(route, route[1:]):
+        if abs(y0 - y1) >= 1e-6:
+            direction, span = (1 if y1 > y0 else -1), abs(y1 - y0)
+            for side in (1, -1):
+                for along in range(12, int(span - 6) + 1, 6):
+                    yield (x0 + 10 if side > 0 else x0 - 10 - width), y0 + direction * along + 6
 
 
 def _free(rect: tuple, segments: list, boxes: list) -> bool:
