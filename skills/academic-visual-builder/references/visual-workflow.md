@@ -33,7 +33,8 @@ zoom before insertion; replace or split unreadable evidence.
 
 | Need | Renderer |
 |---|---|
-| Flow, process, or tree | Mermaid |
+| Concept map or process map | `tools/bauhaus_maps.py` from a YAML spec (`bauhaus-maps.md`) |
+| Other flow or tree | Mermaid |
 | Academic chart or comparison | Vega-Lite / Altair / vl-convert |
 | Dashboard-like visual | ECharts SVG SSR |
 | Custom card or infographic | HTML + Playwright screenshot |
@@ -109,8 +110,8 @@ Diseño de Software (use cases, domain/component models, requirements, journeys)
 Complejidad Computacional (automata, graphs, recursion, Big-O, Turing machines),
 Investigación (article matrices, methodology, evidence maps), and Ecuaciones
 Diferenciales (curves, slope fields, sensitivity, model comparisons). Every
-subject uses the editorial technical style (`editorial-style.md`); concept maps
-use its `concept_map` layout.
+subject uses the editorial technical style (`editorial-style.md`) except concept
+and process maps, which use the Bauhaus técnico style (`bauhaus-maps.md`).
 
 ## Commands
 
@@ -118,6 +119,7 @@ Run from the canonical automation root, after setting the content root described
 by the skill. Use the local environment and preserve specs/manifests:
 
 ```bash
+./.venv/bin/python tools/bauhaus_maps.py render <spec.yml> --out <asset.svg> [--png <asset.png>]
 ./.venv/bin/python tools/visual_builder.py mermaid <spec.mmd> --out <asset.svg>
 # PNG at higher density: add --scale <N> (omit it for mmdc's native default)
 ./.venv/bin/python tools/visual_builder.py vegalite <spec.vl.json> --out <asset.svg>

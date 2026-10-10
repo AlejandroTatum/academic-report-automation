@@ -1,0 +1,54 @@
+# Concept map: Spec-Driven Development in the DBP AA01 practice project.
+# Render: bauhaus_maps.py render concept-map-sdd.yml --out concept-map-sdd.svg --png concept-map-sdd.png
+kind: concept_map
+title: Spec-Driven Development en el proyecto de prácticas
+
+# The one core concept: ink box, white name, saffron subtitle.
+core:
+  id: sdd
+  name: Spec-Driven Development
+  subtitle: desarrollo guiado por especificaciones
+
+# Colour encodes the family. Pick blue, red or green; each colour is used once.
+families:
+  que:
+    label: QUÉ
+    color: blue
+    meaning: problema y requisitos
+  reglas:
+    label: REGLAS
+    color: red
+    meaning: principios del proyecto
+  como:
+    label: CÓMO
+    color: green
+    meaning: solución técnica
+
+# level: key is a solid family colour; leaves (the default) are white with a family border.
+concepts:
+  - {id: spec, name: Especificación, detail: "spec.md: qué y por qué", family: que, level: key}
+  - {id: const, name: Constitución, detail: principios del proyecto, family: reglas, level: key}
+  - {id: problema, name: Problema, detail: lo que se quiere cambiar, family: que}
+  - {id: req, name: Requisitos, detail: verificables, family: que}
+  - {id: clar, name: Clarificación, detail: hasta 5 preguntas, family: que}
+  - {id: plan, name: Plan técnico, detail: stack y datos, family: como}
+  - {id: tareas, name: Tareas, detail: unidades verificables, family: como}
+  - {id: codigo, name: Código, detail: se genera o se verifica, family: como}
+
+# Every link needs its linking phrase. The order of the links from one concept is the
+# left-to-right order of its children. cross: true draws a dashed link between branches
+# that does not move any concept to another level.
+links:
+  - {from: sdd, to: spec, label: toma como artefacto principal}
+  - {from: sdd, to: const, label: se rige por}
+  - {from: spec, to: problema, label: se escribe en el dominio del}
+  - {from: spec, to: req, label: reúne}
+  - {from: spec, to: plan, label: se traduce en}
+  - {from: spec, to: clar, label: se depura con}
+  - {from: const, to: plan, label: evalúa, cross: true}
+  - {from: plan, to: tareas, label: se parte en}
+  - {from: tareas, to: req, label: son rastreables a, cross: true}
+  - {from: tareas, to: codigo, label: guían el}
+
+# Optional: the main chain, drawn as one straight central axis.
+spine: [sdd, spec, plan, tareas, codigo]

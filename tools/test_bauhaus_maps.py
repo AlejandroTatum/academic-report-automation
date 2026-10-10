@@ -189,16 +189,54 @@ def test_space_grotesk_ships_in_the_repo_with_its_licence() -> None:
     assert "SIL OPEN FONT LICENSE" in (FONTS / "OFL.txt").read_text(encoding="utf-8").upper()
 
 
-@needs_rsvg
-def test_png_fontconfig_loads_only_the_repo_font_folder(tmp_path: Path) -> None:
+@pytest.fixture(autouse=True)
+def _caller_font_environment_is_out_of_the_picture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Whatever FONTCONFIG_FILE or HOME the caller has, PNG tests start from a clean slate."""
+    for name in ("FONTCONFIG_FILE", "FONTCONFIG_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME"):
+        monkeypatch.setenv(name, str(tmp_path / "caller-home"))
+
+
+def test_png_fontconfig_adds_the_repo_font_folder_to_the_system_fonts(tmp_path: Path) -> None:
     import bauhaus_maps
 
     conf = bauhaus_maps.write_fontconfig(tmp_path)
-    assert f"<dir>{FONTS}</dir>" in conf.read_text(encoding="utf-8")
-    if shutil.which("fc-match"):
-        match = subprocess.run(["fc-match", "Space Grotesk:weight=bold", "family"], capture_output=True, text=True,
-                               env={"FONTCONFIG_FILE": str(conf), "PATH": "/usr/bin:/bin"})
-        assert "Space Grotesk" in match.stdout
+    text_ = conf.read_text(encoding="utf-8")
+    assert f"<dir>{FONTS}</dir>" in text_ and "/etc/fonts/fonts.conf" in text_
+
+
+@pytest.mark.skipif(shutil.which("fc-match") is None, reason="fc-match is not installed")
+def test_generated_fontconfig_resolves_space_grotesk_to_the_repo_file(tmp_path: Path) -> None:
+    import bauhaus_maps
+
+    conf = bauhaus_maps.write_fontconfig(tmp_path)
+    env = {"FONTCONFIG_FILE": str(conf), "PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    for query in ("Space Grotesk:weight=bold", "Space Grotesk"):
+        match = subprocess.run(["fc-match", "-f", "%{family}|%{file}", query], capture_output=True, text=True, env=env)
+        family, _, file = match.stdout.partition("|")
+        assert "Space Grotesk" in family, match.stdout
+        assert Path(file).resolve() == (FONTS / "SpaceGrotesk[wght].ttf").resolve(), match.stdout
+
+
+def fake_tool(directory: Path, name: str, body: str) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    tool = directory / name
+    tool.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    tool.chmod(0o755)
+
+
+def test_png_rasterising_uses_its_own_fontconfig_whatever_the_caller_exports(tmp_path: Path) -> None:
+    seen = tmp_path / "seen.conf"
+    bin_dir = tmp_path / "bin"
+    fake_tool(bin_dir, "rsvg-convert", f'cat > /dev/null\ncp "$FONTCONFIG_FILE" "{seen}"\nprintf PNG > "$4"')
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "FONTCONFIG_FILE": "/nonexistent/caller.conf", "FONTCONFIG_PATH": "/nonexistent",
+           "HOME": "/nonexistent"}
+    out, png = tmp_path / "fig.svg", tmp_path / "fig.png"
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out, "--png", png, env=env)
+    assert result.returncode == 0, result.stderr
+    assert f"<dir>{FONTS}</dir>" in seen.read_text(encoding="utf-8")
+    assert png.read_bytes() == b"PNG"
 
 
 # --------------------------------------------------------------------------
@@ -534,12 +572,30 @@ def connectors(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
     return {e.get("data-edge"): path_points(e.get("d")) for e in find(root, "path") if e.get("data-edge")}
 
 
+def crosses_diamond(points: list[tuple[float, float]], rect: tuple[float, float, float, float]) -> bool:
+    """True when an axis-aligned segment enters the open interior of the diamond inscribed in ``rect``."""
+    x0, y0, x1, y1 = rect
+    cx, cy, hw, hh = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+    for (ax, ay), (bx, by) in zip(points, points[1:]):
+        if abs(ay - by) < 1e-6:  # horizontal: the diamond is |x - cx| < hw * (1 - |y - cy| / hh) at this height
+            reach = hw * (1 - abs(ay - cy) / hh)
+            if reach > 0.05 and min(ax, bx) < cx + reach - 0.05 and max(ax, bx) > cx - reach + 0.05:
+                return True
+        else:
+            reach = hh * (1 - abs(ax - cx) / hw)
+            if reach > 0.05 and min(ay, by) < cy + reach - 0.05 and max(ay, by) > cy - reach + 0.05:
+                return True
+    return False
+
+
 def assert_no_connector_crosses_a_node(root: ET.Element) -> None:
     boxes = all_boxes(root)
+    diamonds = {e.get("data-node") for e in find(root, "polygon") if e.get("data-node")}
     assert connectors(root), "no connectors drawn"
     for name, points in connectors(root).items():
         for node_id, rect in boxes.items():
-            assert not crosses_box(points, rect), f"connector {name} crosses node {node_id}"
+            hit = crosses_diamond(points, rect) if node_id in diamonds else crosses_box(points, rect)
+            assert not hit, f"connector {name} crosses node {node_id}"
 
 
 @pytest.fixture
@@ -654,8 +710,12 @@ def test_row_skipping_edge_runs_along_the_free_edge_of_its_source_lane(process_r
     assert points[2][1] == pytest.approx(points[3][1])
 
 
-def _lattice_spec() -> dict:
-    """Three actor lanes and an artifact lane, boxes and decisions, with every ordered pair as a flow."""
+def _lattice_spec(count: int = 4) -> dict:
+    """Three actor lanes and an artifact lane, boxes and decisions, with every ordered pair of ``count`` steps as a flow.
+
+    Four steps is the densest such map on three lanes plus the artifact lane: with more, five connectors meet
+    one side of a step (four fit apart there) or the corridors no longer fit 860 units.
+    """
     steps = [
         {"id": "a", "lane": "l1", "title": "Alfa", "artifact": "alfa.md"},
         {"id": "b", "lane": "l2", "title": "¿Beta?", "decision": True},
@@ -665,7 +725,7 @@ def _lattice_spec() -> dict:
         {"id": "f", "lane": "l1", "title": "Zeta"},
         {"id": "g", "lane": "l3", "title": "Eta", "artifact": "eta.md"},
         {"id": "h", "lane": "l2", "title": "Theta"},
-    ]
+    ][:count]
     ids = [s["id"] for s in steps]
     return {"kind": "process_map", "title": "Todas las parejas",
             "lanes": [{"id": "l1", "label": "UNO"}, {"id": "l2", "label": "DOS"}, {"id": "l3", "label": "TRES"}],
@@ -675,8 +735,9 @@ def _lattice_spec() -> dict:
 
 def test_no_connector_crosses_a_node_for_any_pair_of_steps(tmp_path: Path) -> None:
     root = svg_root(tmp_path, _lattice_spec())
-    assert len(connectors(root)) == 8 * 7
+    assert len(connectors(root)) == 4 * 3
     assert_no_connector_crosses_a_node(root)
+    assert collinear_overlaps(root) == []
     boxes = all_boxes(root)
     for name, points in connectors(root).items():
         source, target = name.split(">")
@@ -689,7 +750,8 @@ def test_no_connector_crosses_a_node_for_any_pair_of_steps(tmp_path: Path) -> No
 
 
 def test_no_connector_crosses_a_node_with_two_lanes_and_no_artifact_lane(tmp_path: Path) -> None:
-    spec = _lattice_spec()
+    spec = _lattice_spec(8)
+    spec["steps"], spec["flow"] = spec["steps"][:5], [f for f in spec["flow"] if {f["from"], f["to"]} <= set("abcde")]
     spec["lanes"] = spec["lanes"][:2]
     spec.pop("artifact_lane")
     for step in spec["steps"]:
@@ -697,7 +759,178 @@ def test_no_connector_crosses_a_node_with_two_lanes_and_no_artifact_lane(tmp_pat
         step.pop("artifact", None)
     root = svg_root(tmp_path, spec)
     assert not find(root, "rect", data_lane="artifact")
+    assert len(connectors(root)) == 5 * 4
     assert_no_connector_crosses_a_node(root)
+    assert collinear_overlaps(root) == []
+
+
+ROUTES_SPEC = {  # verifier repro: skip edges, back edges and labels competing for the same lanes
+    "kind": "process_map", "title": "Rutas",
+    "lanes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
+    "artifact_lane": {"label": "DOC"},
+    "steps": [
+        {"id": "s1", "lane": "b", "title": "Uno", "artifact": "uno.md"},
+        {"id": "d1", "lane": "c", "title": "¿Sigue?", "decision": True},
+        {"id": "s3", "lane": "a", "title": "Tres"},
+        {"id": "s4", "lane": "b", "title": "Cuatro", "artifact": "cuatro.md"},
+        {"id": "s5", "lane": "c", "title": "Cinco"},
+        {"id": "s6", "lane": "a", "title": "Seis"},
+    ],
+    "flow": [
+        {"from": "s1", "to": "d1"}, {"from": "d1", "to": "s3", "label": "sí"}, {"from": "d1", "to": "s6", "label": "no"},
+        {"from": "s5", "to": "s1", "label": "rehacer"}, {"from": "s4", "to": "d1"}, {"from": "s3", "to": "s5"},
+        {"from": "s6", "to": "s4"},
+    ],
+}
+STRESS_SPEC = {  # three back edges and three skip edges leaving the same lanes at the same time
+    "kind": "process_map", "title": "Corredores",
+    "lanes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
+    "steps": [
+        {"id": "p1", "lane": "c", "title": "Uno"}, {"id": "p2", "lane": "a", "title": "Dos"},
+        {"id": "p3", "lane": "c", "title": "Tres"}, {"id": "p4", "lane": "b", "title": "Cuatro"},
+        {"id": "p5", "lane": "c", "title": "Cinco"}, {"id": "p6", "lane": "a", "title": "Seis"},
+    ],
+    "flow": [
+        {"from": "p1", "to": "p2"}, {"from": "p2", "to": "p3"}, {"from": "p3", "to": "p4"}, {"from": "p4", "to": "p5"},
+        {"from": "p5", "to": "p6"}, {"from": "p5", "to": "p1", "label": "otra vez"}, {"from": "p6", "to": "p2", "label": "no"},
+        {"from": "p4", "to": "p1"}, {"from": "p1", "to": "p3", "label": "sí"}, {"from": "p1", "to": "p5"},
+        {"from": "p2", "to": "p4"},
+    ],
+}
+
+
+def _labelled_lattice() -> dict:
+    spec = _lattice_spec()
+    spec["flow"] = [{**f, **({"label": "sí"} if (f["from"], f["to"]) in {("a", "b"), ("c", "d"), ("e", "f")} else {})}
+                    for f in spec["flow"]]
+    return spec
+
+
+def segments(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
+    """Every connector drawn, the dashed artifact ones included, as polylines."""
+    found = dict(connectors(root))
+    for line in find(root, "line"):
+        if (line.get("data-edge") or "").startswith("artifact:"):
+            found[line.get("data-edge")] = [(float(line.get("x1")), float(line.get("y1"))),
+                                            (float(line.get("x2")), float(line.get("y2")))]
+    return found
+
+
+def label_boxes(root: ET.Element) -> dict[str, tuple[float, float, float, float]]:
+    """Each branch label's box: the text width measured in Space Grotesk at its size, and its cap height."""
+    import bauhaus_maps
+
+    boxes = {}
+    for label in find(root, "text"):
+        if not label.get("data-label"):
+            continue
+        value, size = "".join(label.itertext()), float(label.get("font-size"))
+        width = bauhaus_maps.measure(value, size, int(label.get("font-weight")), float(label.get("letter-spacing")))
+        x, y, anchor = float(label.get("x")), float(label.get("y")), label.get("text-anchor")
+        left = x if anchor == "start" else x - width if anchor == "end" else x - width / 2
+        boxes[label.get("data-label")] = (left, y - size, left + width, y + 1)
+    return boxes
+
+
+def overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def assert_labels_are_clear(root: ET.Element) -> None:
+    labels = label_boxes(root)
+    assert labels, "no labels drawn"
+    nodes = all_boxes(root)
+    lines = segments(root)
+    for name, rect in labels.items():
+        for other, points in lines.items():
+            assert not crosses_box(points, rect), f"label {name} is crossed by connector {other}"
+        for node_id, box_ in nodes.items():
+            assert not overlap(rect, box_), f"label {name} overlaps node {node_id}"
+        for other, box_ in labels.items():
+            assert other == name or not overlap(rect, box_), f"labels {name} and {other} overlap"
+
+
+def collinear_overlaps(root: ET.Element) -> list[str]:
+    """Pairs of distinct connectors that run along the same line over a stretch longer than a stroke."""
+    flat = [(name, a, b) for name, points in segments(root).items() for a, b in zip(points, points[1:])]
+    clashes = []
+    for i, (name, a, b) in enumerate(flat):
+        for other, c, d in flat[i + 1:]:
+            if name == other:
+                continue
+            for axis in (0, 1):  # 0: both vertical (same x), 1: both horizontal (same y)
+                if abs(a[axis] - b[axis]) < 1e-6 and abs(c[axis] - d[axis]) < 1e-6 and abs(a[axis] - c[axis]) < 0.75:
+                    lo, hi = max(min(a[1 - axis], b[1 - axis]), min(c[1 - axis], d[1 - axis])), min(
+                        max(a[1 - axis], b[1 - axis]), max(c[1 - axis], d[1 - axis]))
+                    if hi - lo > 0.75:
+                        clashes.append(f"{name} / {other} at {'x' if axis == 0 else 'y'}={a[axis]:.1f}")
+    return clashes
+
+
+@pytest.mark.parametrize("lane_id", ["artifact", "decision"])
+def test_reserved_lane_ids_are_rejected_naming_the_field(tmp_path: Path, lane_id: str) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][0]["id"] = lane_id
+    for step in spec["steps"]:
+        step["lane"] = lane_id if step["lane"] == "equipo" else step["lane"]
+    result, out = render(tmp_path, spec, "--png", tmp_path / "fig.png")
+    assert result.returncode == 2
+    assert result.stderr == (f"bauhaus_maps: 'lanes[0].id' is {lane_id!r}, which names the "
+                             f"{'artifact lane' if lane_id == 'artifact' else 'decision legend entry'}; use another id\n")
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+def test_an_actor_lane_never_shares_the_artifact_column_in_the_reproduction(tmp_path: Path) -> None:
+    spec = {"kind": "process_map", "title": "T", "lanes": [{"id": "artifact", "label": "A"}, {"id": "b", "label": "B"}],
+            "artifact_lane": {"label": "DOC"},
+            "steps": [{"id": "s1", "lane": "artifact", "title": "Uno", "artifact": "x.md"}, {"id": "s2", "lane": "b", "title": "Dos"}],
+            "flow": [{"from": "s1", "to": "s2"}]}
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2 and not out.exists()
+
+
+@pytest.mark.parametrize("spec", [PROCESS_SPEC, ROUTES_SPEC, STRESS_SPEC, _labelled_lattice()], ids=["spec-kit", "routes", "stress", "lattice"])
+def test_no_label_touches_a_connector_a_node_or_another_label(tmp_path: Path, spec: dict) -> None:
+    assert_labels_are_clear(svg_root(tmp_path, spec))
+
+
+def test_a_label_with_no_free_spot_fails_naming_the_flow_field(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["flow"][0]["label"] = "una etiqueta imposiblemente larga para el hueco de la ruta " * 3
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2 and not out.exists()
+    assert result.stderr.startswith("bauhaus_maps: 'flow[0].label' has no free spot beside its connector"), result.stderr
+
+
+@pytest.mark.parametrize("spec", [PROCESS_SPEC, ROUTES_SPEC, STRESS_SPEC], ids=["spec-kit", "routes", "stress"])
+def test_no_two_connectors_share_a_collinear_stretch(tmp_path: Path, spec: dict) -> None:
+    root = svg_root(tmp_path, spec)
+    assert collinear_overlaps(root) == []
+    assert_no_connector_crosses_a_node(root)
+
+
+def test_concurrent_corridors_stay_inside_the_lane_margin(tmp_path: Path) -> None:
+    root = svg_root(tmp_path, STRESS_SPEC)
+    lane = box(find(root, "rect", data_lane="c")[0])
+    for name in ("p5>p1", "p4>p1"):
+        corridor = connectors(root)[name][1][0]
+        assert lane[0] < corridor < lane[2]
+        assert corridor > node_box(root, "p1")[2], name  # right of the nodes of the lane
+    assert connectors(root)["p5>p1"][1][0] != connectors(root)["p4>p1"][1][0]
+
+
+def test_more_connectors_than_a_step_side_can_keep_apart_fail_naming_the_step(tmp_path: Path) -> None:
+    result, out = render(tmp_path, _lattice_spec(6))
+    assert result.returncode == 2 and not out.exists()
+    assert result.stderr == ("bauhaus_maps: step 'a' has 5 connectors on its right side and only 4 fit apart; "
+                             "split the map or route some flows through another step\n")
+
+
+def test_corridors_that_cannot_fit_fail_with_the_width_message_instead_of_overlapping(tmp_path: Path) -> None:
+    result, out = render(tmp_path, _lattice_spec(8))
+    assert result.returncode == 2 and not out.exists()
+    assert re.fullmatch(r"bauhaus_maps: layout is \d+ units wide, over the 860-unit limit; the figure is never shrunk, "
+                        r"so split the map or shorten names and details\n", result.stderr), result.stderr
 
 
 def test_the_legend_names_each_lane_and_the_decision(process_root: ET.Element) -> None:
@@ -759,9 +992,10 @@ PROCESS_CASES = [
     (_with(PROCESS_SPEC, "equipo", "lanes", 1, "id"), "'lanes[1].id' repeats id 'equipo'"),
     (_with(PROCESS_SPEC, "saffron", "lanes", 0, "color"),
      "'lanes[0].color' is 'saffron'; use one of ['blue', 'green', 'ink', 'red']"),
-    (_with(PROCESS_SPEC, "red", "lanes", 1, "color"), "'lanes[1].color' repeats colour 'red'"),
+    (_with(_with(PROCESS_SPEC, "red", "lanes", 0, "color"), "red", "lanes", 1, "color"),
+     "'lanes[1].color' repeats colour 'red'"),
     (_with(PROCESS_SPEC, {"label": ""}, "artifact_lane"), "'artifact_lane.label' is required"),
-    (_with(PROCESS_SPEC, {"label": "ARTEFACTO", "color": "red"}, "artifact_lane"),
+    (_with(_with(PROCESS_SPEC, "red", "lanes", 0, "color"), {"label": "ARTEFACTO", "color": "red"}, "artifact_lane"),
      "'artifact_lane.color' repeats colour 'red'"),
     (_without(PROCESS_SPEC, "steps"), "'steps' is required"),
     (_with(PROCESS_SPEC, PROCESS_SPEC["steps"][:1], "steps"), "'steps' needs at least 2 steps"),
@@ -795,6 +1029,20 @@ def test_a_repeated_flow_pair_is_rejected(tmp_path: Path) -> None:
     spec["flow"].append({"from": "s1", "to": "s2", "label": "otra vez"})
     result, out = render(tmp_path, spec)
     assert (result.returncode, result.stderr) == (2, "bauhaus_maps: 'flow[7]' repeats the flow 's1' -> 's2'\n")
+    assert not out.exists()
+
+
+def test_an_unquoted_yaml_no_is_reported_with_the_quoting_hint(tmp_path: Path) -> None:
+    out = tmp_path / "fig.svg"
+    spec = tmp_path / "spec.yml"
+    # YAML 1.1 reads a bare "no" as false, so a branch label written "label: no" arrives as a boolean.
+    text = yaml.safe_dump(PROCESS_SPEC, allow_unicode=True, sort_keys=False).replace("label: 'no'", "label: no")
+    assert "label: no\n" in text
+    spec.write_text(text, encoding="utf-8")
+    result = run_cli("render", spec, "--out", out)
+    assert result.returncode == 2
+    assert result.stderr == ("bauhaus_maps: 'flow[4].label' must be text; YAML reads an unquoted yes/no as true/false, "
+                             "so put the word in quotes\n")
     assert not out.exists()
 
 
@@ -847,3 +1095,208 @@ def test_editorial_actor_and_concept_maps_render_byte_for_byte_as_before() -> No
         svg = editorial_svg.render(spec)
         assert hashlib.sha256(svg.encode("utf-8")).hexdigest() == digest, kind
         assert editorial_svg.check(svg) == []
+
+
+# --------------------------------------------------------------------------
+# hardening: atomic output, unreadable specs, wrong types, quoting, tool failures, colours
+# --------------------------------------------------------------------------
+
+def leftovers(directory: Path) -> list[str]:
+    return sorted(p.name for p in directory.iterdir())
+
+
+@needs_rsvg
+@pytest.mark.parametrize("make_target", ["svg-is-a-directory", "svg-parent-is-a-file"])
+def test_a_failed_svg_write_leaves_no_png_and_no_temporary_file(tmp_path: Path, make_target: str) -> None:
+    spec, png_dir = write_spec(tmp_path, PROCESS_SPEC), tmp_path / "png"
+    png_dir.mkdir()
+    if make_target == "svg-is-a-directory":
+        out = tmp_path / "taken"
+        out.mkdir()
+    else:
+        (tmp_path / "plain").write_text("not a folder", encoding="utf-8")
+        out = tmp_path / "plain" / "fig.svg"
+    result = run_cli("render", spec, "--out", out, "--png", png_dir / "fig.png")
+    assert result.returncode == 2 and result.stderr.startswith("bauhaus_maps: ") and "Traceback" not in result.stderr
+    assert leftovers(png_dir) == [], "no PNG, no temporary file"
+    assert leftovers(tmp_path / "taken") == [] if make_target == "svg-is-a-directory" else True
+
+
+@needs_rsvg
+def test_a_failed_png_write_leaves_no_svg(tmp_path: Path) -> None:
+    (tmp_path / "plain").write_text("not a folder", encoding="utf-8")
+    out_dir = tmp_path / "svg"
+    out_dir.mkdir()
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out_dir / "fig.svg", "--png", tmp_path / "plain" / "fig.png")
+    assert result.returncode == 2 and "Traceback" not in result.stderr
+    assert leftovers(out_dir) == []
+
+
+def test_a_failing_rsvg_convert_leaves_neither_file(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    fake_tool(bin_dir, "rsvg-convert", "cat > /dev/null\necho boom >&2\nexit 1")
+    out_dir = tmp_path / "dest"
+    out_dir.mkdir()
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out_dir / "fig.svg", "--png", out_dir / "fig.png",
+                     env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)})
+    assert (result.returncode, result.stderr) == (2, "bauhaus_maps: rsvg-convert failed: boom\n")
+    assert leftovers(out_dir) == []
+
+
+@needs_rsvg
+def test_a_good_render_leaves_exactly_the_two_requested_files(tmp_path: Path) -> None:
+    out_dir = tmp_path / "dest"
+    out_dir.mkdir()
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out_dir / "fig.svg", "--png", out_dir / "fig.png")
+    assert result.returncode == 0, result.stderr
+    assert leftovers(out_dir) == ["fig.png", "fig.svg"]
+
+
+@pytest.mark.parametrize("payload", [b"\xff\xfe\x00 kind: \x80\x81", b"kind: \xc3("], ids=["binary", "bad-utf8"])
+def test_an_undecodable_spec_is_a_clean_error_without_a_traceback(tmp_path: Path, payload: bytes) -> None:
+    spec = tmp_path / "spec.yml"
+    spec.write_bytes(payload)
+    out = tmp_path / "fig.svg"
+    result = run_cli("render", spec, "--out", out)
+    assert result.returncode == 2 and "Traceback" not in result.stderr
+    assert result.stderr.startswith("bauhaus_maps: cannot read the spec: ") and result.stderr.endswith("\n")
+    assert not out.exists()
+
+
+def test_a_spec_that_is_a_folder_is_a_clean_error(tmp_path: Path) -> None:
+    out = tmp_path / "fig.svg"
+    result = run_cli("render", tmp_path, "--out", out)
+    assert result.returncode == 2 and "Traceback" not in result.stderr and not out.exists()
+
+
+WRONG_TYPES = [
+    ({"kind": ["concept_map"]}, "'kind' must be text; use one of ['concept_map', 'process_map']"),
+    ({"kind": {"a": 1}}, "'kind' must be text; use one of ['concept_map', 'process_map']"),
+    (("concept", ["concepts", 0, "family"], ["que"]), "'concepts[0].family' must be text"),
+    (("concept", ["families", "que", "color"], ["blue"]), "'families.que.color' must be text"),
+    (("concept", ["families", "que", "color"], {"a": 1}), "'families.que.color' must be text"),
+    (("concept", ["links", 0, "from"], ["sdd"]), "'links[0].from' must be text"),
+    (("process", ["lanes", 0, "color"], ["red"]), "'lanes[0].color' must be text"),
+    (("process", ["steps", 1, "lane"], ["ia"]), "'steps[1].lane' must be text"),
+    (("process", ["flow", 0, "to"], {"x": 1}), "'flow[0].to' must be text"),
+]
+
+
+@pytest.mark.parametrize(("case", "message"), WRONG_TYPES, ids=[m for _, m in WRONG_TYPES])
+def test_a_list_or_mapping_where_text_is_expected_names_the_field(tmp_path: Path, case: object, message: str) -> None:
+    if isinstance(case, dict):
+        spec = case
+    else:
+        which, path, value = case
+        spec = _with(CONCEPT_SPEC if which == "concept" else PROCESS_SPEC, value, *path)
+    result, out = render(tmp_path, spec)
+    assert (result.returncode, result.stderr) == (2, f"bauhaus_maps: {message}\n")
+    assert not out.exists()
+
+
+QUOTED = 'a"b&c<d'
+
+
+@needs_dot
+def test_quotes_ampersands_and_brackets_in_ids_and_names_keep_the_concept_svg_well_formed(tmp_path: Path) -> None:
+    spec = {"kind": "concept_map", "title": f"Título {QUOTED}", "core": {"id": f"core{QUOTED}", "name": f"Núcleo {QUOTED}", "subtitle": QUOTED},
+            "families": {f"fam{QUOTED}": {"label": f"F{QUOTED}", "color": "blue", "meaning": QUOTED}},
+            "concepts": [{"id": f"x{QUOTED}", "name": f"Uno {QUOTED}", "detail": QUOTED, "family": f"fam{QUOTED}", "level": "key"},
+                         {"id": f"y{QUOTED}", "name": "Dos", "family": f"fam{QUOTED}"}],
+            "links": [{"from": f"core{QUOTED}", "to": f"x{QUOTED}", "label": f"rel {QUOTED}"},
+                      {"from": f"x{QUOTED}", "to": f"y{QUOTED}", "label": "otro", "cross": True}]}
+    root = svg_root(tmp_path, spec)
+    assert len(find(root, "rect", data_node=f"x{QUOTED}")) == 1
+    assert len(find(root, "rect", data_node=f"core{QUOTED}")) == 1
+    assert len(find(root, "rect", data_corner=f"y{QUOTED}")) == 1
+    assert len(find(root, "path", data_link=f"core{QUOTED}>x{QUOTED}")) == 1
+    assert len(find(root, "text", data_label=f"x{QUOTED}>y{QUOTED}")) == 1
+    assert len(find(root, "line", data_legend=f"fam{QUOTED}")) == 1
+    assert "".join(text_of(root, f"rel {QUOTED}").itertext()) == f"rel {QUOTED}"
+
+
+def test_quotes_ampersands_and_brackets_in_ids_and_names_keep_the_process_svg_well_formed(tmp_path: Path) -> None:
+    lane_a, lane_b, step_a, step_d = f"l1{QUOTED}", f"l2{QUOTED}", f"s{QUOTED}", f"d{QUOTED}"
+    spec = {"kind": "process_map", "title": QUOTED, "lanes": [{"id": lane_a, "label": QUOTED}, {"id": lane_b, "label": "B"}],
+            "artifact_lane": {"label": "DOC"},
+            "steps": [{"id": step_a, "lane": lane_a, "title": QUOTED, "detail": QUOTED, "artifact": QUOTED},
+                      {"id": step_d, "lane": lane_b, "title": "¿?", "decision": True}],
+            "flow": [{"from": step_a, "to": step_d, "label": QUOTED}]}
+    root = svg_root(tmp_path, spec)
+    for attribute, element in (("data_node", "rect"), ("data_corner", "rect"), ("data_lane", "rect"), ("data_lane_header", "rect")):
+        assert find(root, element, **{attribute: step_a if "lane" not in attribute else lane_a}), attribute
+    assert find(root, "polygon", data_node=step_d)
+    assert find(root, "path", data_artifact=step_a) and find(root, "path", data_fold=step_a)
+    assert find(root, "line", data_edge=f"artifact:{step_a}")
+    assert find(root, "path", data_edge=f"{step_a}>{step_d}")
+    assert find(root, "text", data_label=f"{step_a}>{step_d}")
+    assert find(root, "text", data_number=step_a) and find(root, "line", data_legend=lane_a)
+
+
+def test_dot_that_never_finishes_fails_naming_the_tool_and_writes_nothing(tmp_path: Path, monkeypatch, capsys) -> None:
+    import bauhaus_maps
+
+    fake_tool(tmp_path / "bin", "dot", "exec sleep 30")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    monkeypatch.setattr(bauhaus_maps, "TOOL_TIMEOUT", 0.5)
+    out = tmp_path / "fig.svg"
+    assert bauhaus_maps.main(["render", str(write_spec(tmp_path, CONCEPT_SPEC)), "--out", str(out)]) == 2
+    assert capsys.readouterr().err == "bauhaus_maps: Graphviz 'dot' did not finish within 0.5 s; simplify the map\n"
+    assert not out.exists()
+
+
+@needs_rsvg
+def test_rsvg_convert_that_never_finishes_fails_naming_the_tool_and_writes_nothing(tmp_path: Path, monkeypatch, capsys) -> None:
+    import bauhaus_maps
+
+    fake_tool(tmp_path / "bin", "rsvg-convert", "exec sleep 30")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    monkeypatch.setattr(bauhaus_maps, "TOOL_TIMEOUT", 0.5)
+    out, png = tmp_path / "fig.svg", tmp_path / "fig.png"
+    assert bauhaus_maps.main(["render", str(write_spec(tmp_path, PROCESS_SPEC)), "--out", str(out), "--png", str(png)]) == 2
+    assert capsys.readouterr().err == "bauhaus_maps: rsvg-convert did not finish within 0.5 s\n"
+    assert not out.exists() and not png.exists()
+
+
+@pytest.mark.parametrize(("tool", "spec", "extra"), [("dot", CONCEPT_SPEC, []), ("rsvg-convert", PROCESS_SPEC, ["--png"])])
+def test_a_tool_that_cannot_be_executed_fails_naming_the_tool(tmp_path: Path, tool: str, spec: dict, extra: list) -> None:
+    fake_tool(tmp_path / "bin", tool, "exit 0")
+    (tmp_path / "bin" / tool).write_text("#!/nonexistent/interpreter\n", encoding="utf-8")
+    out = tmp_path / "fig.svg"
+    args = ["--png", tmp_path / "fig.png"] if extra else []
+    result = run_cli("render", write_spec(tmp_path, spec), "--out", out, *args, env={"PATH": str(tmp_path / "bin")})
+    assert result.returncode == 2 and "Traceback" not in result.stderr
+    name = "Graphviz 'dot'" if tool == "dot" else "rsvg-convert"
+    assert result.stderr.startswith(f"bauhaus_maps: {name} could not be run: ")
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+def lane_fills(root: ET.Element) -> dict[str, str]:
+    return {e.get("data-lane-header"): e.get("fill") for e in find(root, "rect") if e.get("data-lane-header")}
+
+
+def test_lanes_without_a_colour_avoid_the_colours_other_lanes_chose(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"] = [{"id": "a", "label": "A"}, {"id": "b", "label": "B", "color": "red"}, {"id": "c", "label": "C"}]
+    spec["steps"] = [{"id": "s1", "lane": "a", "title": "Uno"}, {"id": "s2", "lane": "b", "title": "Dos", "artifact": "x.md"},
+                     {"id": "s3", "lane": "c", "title": "Tres"}]
+    spec["flow"] = [{"from": "s1", "to": "s2"}, {"from": "s2", "to": "s3"}]
+    fills = lane_fills(svg_root(tmp_path, spec))
+    assert fills == {"a": BLUE, "b": RED, "c": GREEN, "artifact": INK}
+    assert len(set(fills.values())) == 4
+
+
+def test_an_explicit_colour_on_a_late_lane_does_not_collide_with_an_earlier_default(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][1]["color"] = "red"
+    fills = lane_fills(svg_root(tmp_path, spec))
+    assert fills["ia"] == RED and fills["equipo"] != RED
+    assert len(set(fills.values())) == len(fills)
+
+
+def test_the_artifact_lane_takes_a_colour_nobody_chose(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][0]["color"] = "green"
+    spec["lanes"][1]["color"] = "ink"
+    fills = lane_fills(svg_root(tmp_path, spec))
+    assert fills == {"equipo": GREEN, "ia": INK, "artifact": RED}
