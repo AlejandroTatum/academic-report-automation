@@ -225,14 +225,13 @@ def _incremental_section(since: Path, criteria: list[dict], hashes: dict[str, st
     carried = [str(c.get("id")) for c in criteria
                if str(c.get("id")) in hashes and old.get(str(c.get("id"))) == hashes[str(c.get("id"))]]
     recheck = [str(c.get("id")) for c in criteria if str(c.get("id")) not in carried]
-    kept = [r for r in previous["requirements"] if r["criterion"] in carried]
     text = (f"Incremental re-verify against {name}: only the sections of the re-checked criteria changed.\n"
             f"Re-check only these criteria: {', '.join(recheck) or '(none)'}\n"
-            f"Carried over unchanged (copy these requirements verbatim): {', '.join(carried) or '(none)'}\n")
-    if kept:
-        text += yaml.safe_dump(kept, sort_keys=False, allow_unicode=True)
-    return text + ("List unmapped paragraphs only for the re-checked sections; the tool still checks every "
-                   "carried evidence quote against body.md.\n")
+            f"Carried over unchanged (the tool merges them from the previous check; do not list them): "
+            f"{', '.join(carried) or '(none)'}\n")
+    return text + ("Return requirements only for the re-checked criteria (an empty list when there are none) and "
+                   "list unmapped paragraphs only for their sections; the tool still checks every carried "
+                   "evidence quote against body.md.\n")
 
 
 VERIFY_EXAMPLE_NOTE = (
@@ -285,6 +284,46 @@ def _criteria_section(criteria: list[dict]) -> str:
             line += "; deliverables: " + "; ".join(str(d) for d in deliverables)
         lines.append(line)
     return "\n".join(lines) + "\n"
+
+
+def _carried_requirements(folder: Path, criteria: list[dict], rubric_hash: str, body_text: str,
+                          answered: set[str]) -> list[dict]:
+    """Requirements the previous content-check.yml settled and the verifier skipped.
+
+    A criterion is carried only when the verifier gave it no requirement, the
+    rubric is unchanged and its mapped section hashes the same as when the
+    previous marker verified it, so an incremental answer lists only what
+    changed. Legacy markers without ``section_sha256`` carry nothing.
+    """
+    try:
+        previous = yaml.safe_load((folder / CONTENT_CHECK_NAME).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return []
+    if (not isinstance(previous, dict) or previous.get("schema") != CONTENT_CHECK_SCHEMA
+            or previous.get("rubric_sha256") != rubric_hash
+            or not isinstance(previous.get("section_sha256"), dict)
+            or not isinstance(previous.get("requirements"), list)):
+        return []
+    current = section_hashes(body_text, criteria)
+    old = previous["section_sha256"]
+    keep = {cid for cid, digest in current.items() if cid not in answered and old.get(cid) == digest}
+    records = [record for record in previous["requirements"] if _carryable(record, keep)]
+    return [{key: str(record.get(key) or "") for key in ("criterion", "requirement", "status", "location", "evidence")}
+            for record in records]
+
+
+def _carryable(record: object, keep: set[str]) -> bool:
+    """The marker is now an input, so a carried record meets parse_verification's
+    rules: a kept criterion, a non-blank demand, a valid status and, when found,
+    a non-blank quote (an empty quote would pass the in-body check)."""
+    if not isinstance(record, dict):
+        return False
+    criterion, demand, evidence = record.get("criterion"), record.get("requirement"), record.get("evidence")
+    if not isinstance(criterion, str) or criterion not in keep:
+        return False
+    if not isinstance(demand, str) or not demand.strip() or record.get("status") not in REQUIREMENT_STATUSES:
+        return False
+    return record["status"] != "found" or (isinstance(evidence, str) and bool(evidence.strip()))
 
 
 def verify_brief(folder: Path, since: Path | None = None) -> str:
@@ -379,7 +418,9 @@ def parse_verification(path: Path) -> tuple[dict, list[str]]:
         return {}, [f"{name} schema must be {VERIFICATION_SCHEMA}"]
 
     records = data.get("requirements")
-    if not isinstance(records, list) or not records:
+    # An empty list is legal on an incremental re-verify where every criterion
+    # is carried over; run_check rejects it when nothing fills it.
+    if not isinstance(records, list):
         return {}, [f"{name} requirements must be a non-empty list"]
 
     errors: list[str] = []
@@ -744,7 +785,12 @@ def run_check(
     if errors:
         return CheckOutcome("", {}, tuple(errors))
 
-    requirements, downgrade_findings = downgrade_unquoted_evidence(verification["requirements"], body_text)
+    answered = {item["criterion"] for item in verification["requirements"]}
+    carried = _carried_requirements(folder, criteria, rubric_hash, body_text, answered)
+    if not verification["requirements"] and not carried:
+        return CheckOutcome("", {}, (f"{name} requirements must be a non-empty list",))
+    requirements, downgrade_findings = downgrade_unquoted_evidence(
+        [*verification["requirements"], *carried], body_text)
     derived = derive_criteria(criteria, requirements)
     link_entry, link_warnings = links_resolve_check(body_text, fetcher)
     findings = list(dict.fromkeys([*verification["findings"], *downgrade_findings, *link_warnings]))
@@ -782,6 +828,10 @@ def run_check(
         "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "criteria": derived,
         "requirements": requirements,
+        # What the next incremental re-verify compares against (S3): the
+        # sections these requirements were verified on, and which were carried.
+        "section_sha256": section_hashes(body_text, criteria),
+        "carried_criteria": sorted({item["criterion"] for item in carried}),
         # Deletion candidates: reported, never blocking.
         "unmapped_paragraphs": verification["unmapped_paragraphs"],
         # The verifier's free-text findings verbatim, plus every mechanical

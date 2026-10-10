@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import approval_marker
 from approval_marker import (
     approval_state,
     draft_record_path,
@@ -25,8 +26,6 @@ from approval_marker import (
     write_draft_record,
     write_render_record,
 )
-# Separate name for the body.md hash so it stays distinct from the PDF hash checks.
-from approval_marker import sha256_file as body_digest
 from report_config import load_report_config
 from validate_report import validate
 
@@ -125,7 +124,8 @@ def main() -> None:
         draft_body = config.folder / "body.md"
         record_draft = args.no_approval_check and not args.tex_only and draft_body.is_file()
         if record_draft:
-            rendered = body_digest(draft_body)
+            # Through the module, so tests that fake the PDF hash leave this one real.
+            rendered = approval_marker.sha256_file(draft_body)
             draft_record_path(config.pdf_path).unlink(missing_ok=True)
         # Same idea for report.yml: record the render settings this build used,
         # so doc_status can tell a delivery-only edit from one needing a rebuild.

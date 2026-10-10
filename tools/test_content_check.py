@@ -1695,8 +1695,8 @@ def test_since_brief_rechecks_only_changed_sections_and_carries_the_rest(tmp_pat
     brief = content_check.verify_brief(folder, since=previous)
     assert "Incremental re-verify" in brief
     assert "Re-check only these criteria: metodologia" in brief
-    assert "Carried over unchanged (copy these requirements verbatim): objetivo" in brief
-    assert "evidence: Medir la deriva" in brief
+    assert "Carried over unchanged (the tool merges them from the previous check; do not list them): objetivo" in brief
+    assert "evidence: Medir la deriva" not in brief
     assert "evidence: Se usaron" not in brief
 
 
@@ -1705,7 +1705,7 @@ def test_since_brief_with_unchanged_body_carries_everything(tmp_path: Path) -> N
     previous = _sectioned_verification(folder)
     brief = content_check.verify_brief(folder, since=previous)
     assert "Re-check only these criteria: (none)" in brief
-    assert "Carried over unchanged (copy these requirements verbatim): objetivo, metodologia" in brief
+    assert "Carried over unchanged (the tool merges them from the previous check; do not list them): objetivo, metodologia" in brief
 
 
 def test_since_brief_after_rubric_change_is_a_full_verify(tmp_path: Path) -> None:
@@ -1724,7 +1724,7 @@ def test_since_brief_without_previous_section_hashes_rechecks_everything(tmp_pat
                                                    _req("metodologia", evidence="Se usaron")])
     brief = content_check.verify_brief(folder, since=previous)
     assert "Re-check only these criteria: objetivo, metodologia" in brief
-    assert "Carried over unchanged (copy these requirements verbatim): (none)" in brief
+    assert "Carried over unchanged (the tool merges them from the previous check; do not list them): (none)" in brief
 
 
 def test_since_brief_rejects_an_unusable_previous_verification(tmp_path: Path, capsys) -> None:
@@ -1740,6 +1740,127 @@ def test_since_requires_verify_brief(tmp_path: Path, capsys) -> None:
     previous = _sectioned_verification(folder)
     assert content_check.main([str(folder), "--verification", str(previous), "--since", str(previous)]) == 2
     assert "--since only applies to --verify-brief" in capsys.readouterr().err
+
+
+def _recheck(folder: Path, body: str, requirements: list[dict]) -> Path:
+    """Edit body.md and write the verifier's incremental answer for the new bytes."""
+    _body(folder, body)
+    hashes = content_check.section_hashes(body, content_check.rubric_plan.load_rubric(folder))
+    return _verification(folder, requirements=requirements, section_sha256=hashes)
+
+
+def test_marker_records_the_section_hashes_it_verified(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    verification = _sectioned_verification(folder)
+    assert _run(folder, verification) == 0
+    hashes = content_check.section_hashes(SECTIONED_BODY, content_check.rubric_plan.load_rubric(folder))
+    assert _marker(folder)["section_sha256"] == hashes
+
+
+def test_check_merges_carried_requirements_from_the_previous_marker(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    edited = SECTIONED_BODY.replace("Se usaron", "Se midieron con")
+    answer = _recheck(folder, edited, [_req("metodologia", evidence="Se midieron con")])
+
+    assert _run(folder, answer) == 0
+    marker = _marker(folder)
+    assert [(r["criterion"], r["evidence"]) for r in marker["requirements"]] == [
+        ("metodologia", "Se midieron con"), ("objetivo", "Medir la deriva")]
+    assert [(c["id"], c["status"]) for c in marker["criteria"]] == [("objetivo", "cumple"), ("metodologia", "cumple")]
+    assert answer.read_text(encoding="utf-8").count("criterion:") == 1  # the verifier's file stays unchanged
+
+
+def test_check_does_not_carry_a_criterion_whose_section_changed(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    edited = SECTIONED_BODY.replace("Medir la deriva", "Estimar la deriva").replace("Se usaron", "Se midieron con")
+    answer = _recheck(folder, edited, [_req("metodologia", evidence="Se midieron con")])
+
+    assert _run(folder, answer) == 1
+    marker = _marker(folder)
+    assert [r["criterion"] for r in marker["requirements"]] == ["metodologia"]
+    assert dict((c["id"], c["status"]) for c in marker["criteria"])["objetivo"] == "falta"
+
+
+def test_check_does_not_carry_after_a_rubric_change(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    _rubric(folder, source="otra guia")
+    answer = _recheck(folder, SECTIONED_BODY, [_req("metodologia", evidence="Se usaron")])
+
+    assert _run(folder, answer) == 1
+    assert [r["criterion"] for r in _marker(folder)["requirements"]] == ["metodologia"]
+
+
+def test_check_accepts_an_empty_answer_when_every_criterion_is_carried(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    answer = _recheck(folder, SECTIONED_BODY.replace("\n\n## Metodologia", "\n\n\n## Metodologia"), [])
+
+    assert _run(folder, answer) == 0
+    assert len(_marker(folder)["requirements"]) == 2
+
+
+def test_empty_answer_without_anything_to_carry_is_still_an_input_error(tmp_path: Path, capsys) -> None:
+    folder = _verify_folder(tmp_path / "wf")
+    before = (folder / "body.md").read_bytes()
+    assert _run(folder, _verification(folder, requirements=[])) == 2
+    assert "verification.yml requirements must be a non-empty list" in capsys.readouterr().err
+    assert not (folder / "content-check.yml").exists()
+    assert (folder / "body.md").read_bytes() == before
+
+
+def _tamper_marker(folder: Path, record: dict) -> None:
+    """Replace the previous marker's objetivo requirement, as a hand edit would."""
+    import yaml
+
+    path = folder / "content-check.yml"
+    marker = yaml.safe_load(path.read_text(encoding="utf-8"))
+    marker["requirements"] = [r for r in marker["requirements"] if r["criterion"] != "objetivo"] + [record]
+    path.write_text(yaml.safe_dump(marker, sort_keys=False), encoding="utf-8")
+
+
+def test_a_carried_found_requirement_without_a_quote_is_not_carried(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    _tamper_marker(folder, {"criterion": "objetivo", "requirement": "Demand", "status": "found",
+                            "location": "", "evidence": ""})
+    answer = _recheck(folder, SECTIONED_BODY.replace("Se usaron", "Se midieron con"),
+                      [_req("metodologia", evidence="Se midieron con")])
+
+    assert _run(folder, answer) == 1
+    marker = _marker(folder)
+    assert dict((c["id"], c["status"]) for c in marker["criteria"])["objetivo"] == "falta"
+    assert marker["carried_criteria"] == []
+
+
+def test_a_malformed_previous_marker_record_carries_nothing_instead_of_crashing(tmp_path: Path) -> None:
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    _tamper_marker(folder, {"criterion": ["objetivo"], "requirement": "Demand", "status": "found",
+                            "location": "", "evidence": "Medir la deriva"})
+    answer = _recheck(folder, SECTIONED_BODY.replace("Se usaron", "Se midieron con"),
+                      [_req("metodologia", evidence="Se midieron con")])
+
+    assert _run(folder, answer) == 1
+    assert [r["criterion"] for r in _marker(folder)["requirements"]] == ["metodologia"]
+
+
+def test_a_legacy_marker_without_section_hashes_carries_nothing(tmp_path: Path) -> None:
+    import yaml
+
+    folder = tmp_path / "wf"
+    assert _run(folder, _sectioned_verification(folder)) == 0
+    path = folder / "content-check.yml"
+    marker = yaml.safe_load(path.read_text(encoding="utf-8"))
+    del marker["section_sha256"]
+    path.write_text(yaml.safe_dump(marker, sort_keys=False), encoding="utf-8")
+    answer = _recheck(folder, SECTIONED_BODY.replace("Se usaron", "Se midieron con"),
+                      [_req("metodologia", evidence="Se midieron con")])
+
+    assert _run(folder, answer) == 1
+    assert [r["criterion"] for r in _marker(folder)["requirements"]] == ["metodologia"]
 
 
 def test_verification_with_section_hashes_still_passes(tmp_path: Path) -> None:

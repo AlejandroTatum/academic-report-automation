@@ -340,7 +340,10 @@ def _has_final_build(folder: Path, config: ReportConfig) -> bool:
 
     The preview (``--no-approval-check``) writes the same path and always
     predates ``approval.yml``; a final build never does. A PDF from a report
-    without an approval marker (legacy) counts as built.
+    without an approval marker (legacy) counts as built, and an equal mtime
+    counts as final, as in ``_phase_generate``. Rewriting ``approval.yml`` after
+    a final build turns that PDF back into a preview on purpose: generate needs
+    a rebuild then anyway, and format waits for ``delivery_dir`` until it does.
     """
     pdf = config.pdf_path
     if not pdf.is_file():

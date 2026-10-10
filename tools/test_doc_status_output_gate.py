@@ -290,3 +290,29 @@ def test_final_build_after_approval_keeps_its_course_folder_status(tmp_path: Pat
     _mtime(_pdf(folder), 2_000)
 
     assert _format_phase(folder, documents).state == doc_status.DONE
+
+
+def test_final_build_with_the_same_mtime_as_approval_counts_as_final(tmp_path: Path) -> None:
+    """#72 R3-mtime-tie-coverage: ``>=`` counts a tie as final, as _phase_generate does."""
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _approval(folder)
+    _mtime(folder / "approval.yml", 1_500)
+    _mtime(_pdf(folder), 1_500)
+
+    assert _format_phase(folder, documents).state == doc_status.DONE
+
+
+def test_rewriting_approval_after_a_final_build_reopens_format_and_generate(tmp_path: Path) -> None:
+    """#72 R3-mtime-marker-rewrite: a newer approval.yml turns the PDF back into a
+    preview, so format waits for delivery_dir and generate asks for a rebuild."""
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _approval(folder)
+    _mtime(_pdf(folder), 1_000)
+    _mtime(folder / "approval.yml", 2_000)
+
+    assert _format_phase(folder, documents).state == doc_status.PENDING
+    assert doc_status._phase_generate(folder, _config(folder), documents).state != doc_status.DONE
