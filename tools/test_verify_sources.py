@@ -252,3 +252,94 @@ def test_latex_accent_escapes_do_not_cause_a_title_mismatch(tmp_path):
         )
         remote = escaped.replace("{\\'e}", "é").replace("\\'e", "é").replace("{\\~n}", "ñ")
         assert verify_sources(folder, fetch=lambda *_: doi_response(title=remote)) == 0, escaped
+
+
+def datacite_response(year=2026, title="A Study of Trees", family="García"):
+    return {"data": {"attributes": {"titles": [{"title": title}], "publicationYear": year,
+                                    "creators": [{"name": f"{family}, Ana", "familyName": family}]}}}
+
+
+def not_found(request):
+    return HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+
+def crossref_404_then(*answers):
+    calls = iter(answers)
+    urls = []
+
+    def fetch(request, timeout):
+        urls.append(request.full_url)
+        if request.full_url.startswith("https://api.crossref.org/"):
+            raise not_found(request)
+        answer = next(calls)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    return fetch, urls
+
+
+def test_datacite_doi_verifies_when_crossref_has_no_record(tmp_path):
+    folder = report(tmp_path, '@article{x, title={A Study of Trees}, year={2026}, author={García, Ana}, doi={10.48550/arXiv.2602.00180}}')
+    fetch, urls = crossref_404_then(datacite_response())
+    assert verify_sources(folder, fetch=fetch) == 0
+    assert urls == ['https://api.crossref.org/works/10.48550/arXiv.2602.00180',
+                    'https://api.datacite.org/dois/10.48550/arXiv.2602.00180']
+    assert result_rows(folder)[0]['status'] == 'VERIFIED'
+
+
+def test_datacite_record_is_compared_like_crossref(tmp_path):
+    folder = report(tmp_path, '@article{x, title={A Study of Trees}, year={2026}, author={García, Ana}, doi={10.48550/x}}')
+    fetch, _ = crossref_404_then(datacite_response(title="Something Else Entirely", family="Pérez"))
+    assert verify_sources(folder, fetch=fetch) == 1
+    row = result_rows(folder)[0]
+    assert row['status'] == 'MISMATCH' and set(row['mismatches']) == {'title', 'author'}
+
+
+def test_doi_missing_from_both_registries_is_not_found(tmp_path):
+    folder = report(tmp_path, '@article{x, title={A Study of Trees}, year={2026}, doi={10.48550/x}}')
+    fetch, urls = crossref_404_then(HTTPError('https://api.datacite.org/dois/10.48550/x', 404, 'Not Found', {}, None))
+    assert verify_sources(folder, fetch=fetch) == 1
+    assert result_rows(folder)[0]['status'] == 'NOT_FOUND'
+    assert len(urls) == 2
+
+
+def test_web_entry_with_a_reachable_url_is_verified_url(tmp_path, capsys):
+    folder = report(tmp_path, '@misc{w, title={Spec Kit reference}, howpublished={\\url{https://example.org/doc}}}\n'
+                              '@online{o, title={Docs}, url={https://example.org/b}}')
+    probed = []
+    assert verify_sources(folder, fetch=lambda *_: (_ for _ in ()).throw(AssertionError()),
+                          probe=lambda url, timeout: (probed.append(url), 200)[1]) == 0
+    assert probed == ['https://example.org/doc', 'https://example.org/b']
+    assert [row['status'] for row in result_rows(folder)] == ['VERIFIED_URL', 'VERIFIED_URL']
+    assert 'w: VERIFIED_URL' in capsys.readouterr().out
+
+
+def test_web_entry_with_a_dead_or_unreachable_url_fails(tmp_path):
+    folder = report(tmp_path, '@misc{a, title={A}, url={https://example.org/gone}}\n@misc{b, title={B}, url={https://example.org/down}}')
+
+    def probe(url, timeout):
+        if url.endswith('gone'):
+            raise HTTPError(url, 404, 'Not Found', {}, None)
+        raise URLError('no route')
+    assert verify_sources(folder, probe=probe) == 1
+    assert [row['status'] for row in result_rows(folder)] == ['NOT_FOUND', 'NETWORK_ERROR']
+
+
+def test_scholarly_entry_with_only_a_url_stays_unidentified(tmp_path):
+    folder = report(tmp_path, '@book{b, title={A Book}, year={2020}, url={https://example.org/book}}\n@misc{m, title={No link}}')
+    probed = []
+    assert verify_sources(folder, probe=lambda url, timeout: (probed.append(url), 200)[1]) == 1
+    assert [row['status'] for row in result_rows(folder)] == ['NO_IDENTIFIER', 'NO_IDENTIFIER']
+    assert probed == []
+
+
+def test_datacite_record_without_creators_or_attributes(tmp_path):
+    folder = report(tmp_path, '@article{x, title={A Study of Trees}, year={2026}, author={García, Ana}, doi={10.48550/x}}\n'
+                              '@article{y, title={A Study of Trees}, year={2026}, doi={10.48550/y}}')
+    no_creators = datacite_response()
+    no_creators['data']['attributes']['creators'] = []
+    fetch, _ = crossref_404_then(no_creators, {'data': {}})
+    assert verify_sources(folder, fetch=fetch) == 1
+    rows = result_rows(folder)
+    assert rows[0]['status'] == 'VERIFIED'
+    assert rows[1]['status'] == 'MISMATCH' and 'DataCite' in rows[1]['detail']
