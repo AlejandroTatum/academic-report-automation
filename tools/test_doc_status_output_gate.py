@@ -16,6 +16,7 @@ from conftest import (
     _rubric,
     _sources_bib,
     _validation,
+    _mtime,
 )
 
 SLUG = "informe-de-laboratorio"
@@ -192,3 +193,100 @@ def test_research_guidance_for_uncited_bibliography_does_not_ask_for_five(tmp_pa
 
     assert "at least 5" not in guidance
     assert "at least 1 entry" in guidance
+
+
+def _course_repo(documents: Path, subject: str = "redes") -> Path:
+    repo = documents / "Academicos" / subject
+    repo.mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("- `unidad-<n>/<tipo>-<m>-<tema>/`\n", encoding="utf-8")
+    return repo
+
+
+def _course_report(folder: Path) -> Path:
+    _report(folder, subject="Redes")
+    _choose_format(folder, "aa")
+    return folder
+
+
+def test_course_repo_without_delivery_dir_keeps_format_pending(tmp_path: Path) -> None:
+    """The destination is fixed before the build, never moved after approval."""
+    documents = tmp_path / "Documents"
+    repo = _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+
+    phase = _format_phase(folder, documents)
+
+    assert phase.state == doc_status.PENDING
+    assert "delivery_dir" in phase.detail and str(repo) in phase.detail
+
+
+def test_course_repo_with_delivery_dir_completes_format(tmp_path: Path) -> None:
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    report = folder / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + 'delivery_dir: "/x/unidad-1/aa-1-t/documento/"\n')
+
+    assert _format_phase(folder, documents).state == doc_status.DONE
+
+
+def test_course_repo_rule_does_not_reopen_an_already_built_report(tmp_path: Path) -> None:
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _pdf(folder)
+
+    assert _format_phase(folder, documents).state == doc_status.DONE
+
+
+def test_no_course_repo_keeps_the_previous_format_rule(tmp_path: Path) -> None:
+    documents = tmp_path / "Documents"
+    documents.mkdir()
+    folder = _course_report(tmp_path / "wf")
+
+    assert _format_phase(folder, documents).state == doc_status.DONE
+
+
+def test_libre_report_is_not_held_for_a_course_folder(tmp_path: Path) -> None:
+    """The course layout names practices (aa/ape); a libre document has no slot."""
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = tmp_path / "wf"
+    _report(folder, subject="Redes")
+    _choose_format(folder, "libre", format_spec="documento sobrio")
+
+    assert _format_phase(folder, documents).state == doc_status.DONE
+
+
+def test_course_folder_pending_message_offers_the_manual_way_out(tmp_path: Path) -> None:
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+
+    assert "or set delivery_dir by hand" in _format_phase(folder, documents).detail
+
+
+def test_preview_built_before_approval_does_not_waive_the_course_folder(tmp_path: Path) -> None:
+    """#72: the draft preview shares the final path and always predates approval."""
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _approval(folder)
+    _mtime(folder / "approval.yml", 2_000)
+    _mtime(_pdf(folder), 1_000)
+
+    phase = _format_phase(folder, documents)
+
+    assert phase.state == doc_status.PENDING
+    assert "delivery_dir" in phase.detail
+
+
+def test_final_build_after_approval_keeps_its_course_folder_status(tmp_path: Path) -> None:
+    documents = tmp_path / "Documents"
+    _course_repo(documents)
+    folder = _course_report(tmp_path / "wf")
+    _approval(folder)
+    _mtime(folder / "approval.yml", 1_000)
+    _mtime(_pdf(folder), 2_000)
+
+    assert _format_phase(folder, documents).state == doc_status.DONE

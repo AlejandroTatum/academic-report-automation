@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import approval_marker
 import doc_status
 from conftest import _approval, _choose_format, _config, _mtime, _pdf, _report
 
@@ -154,3 +155,41 @@ def test_preview_built_before_approval_never_satisfies_generate(tmp_path: Path) 
 
     assert phase.state == doc_status.PENDING
     assert "older than approval.yml" in phase.detail
+
+
+def _append(report: Path, text: str, mtime: float) -> None:
+    report.write_text(report.read_text(encoding="utf-8") + text, encoding="utf-8")
+    _mtime(report, mtime)
+
+
+def test_generate_delivery_only_change_after_build_keeps_pdf_done(tmp_path: Path) -> None:
+    """Choosing where to deliver does not change the PDF, so it is not a rebuild."""
+    folder = tmp_path / "wf"
+    _generate_fixtures(folder)
+    pdf = _pdf(folder, mtime=T0 + 120)
+    approval_marker.write_render_record(folder)
+    _append(
+        folder / "report.yml",
+        'delivery_dir: "~/Documents/Academicos/x/unidad-1/aa-1-tema/documento/"\n'
+        "deliver_bibliography: true\n",
+        T0 + 200,
+    )
+
+    phase = doc_status._phase_generate(folder, _config(folder), None)
+
+    assert phase.state == doc_status.DONE, phase.detail
+    assert pdf.name in phase.detail
+
+
+def test_generate_render_change_after_build_still_needs_a_rebuild(tmp_path: Path) -> None:
+    """A recorded build does not excuse a change that alters the rendered PDF."""
+    folder = tmp_path / "wf"
+    _generate_fixtures(folder)
+    _pdf(folder, mtime=T0 + 120)
+    approval_marker.write_render_record(folder)
+    _append(folder / "report.yml", "figure_placement: here\n", T0 + 200)
+
+    phase = doc_status._phase_generate(folder, _config(folder), None)
+
+    assert phase.state == doc_status.PENDING
+    assert "report.yml" in phase.detail

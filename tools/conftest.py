@@ -20,7 +20,26 @@ import hashlib
 import os
 from pathlib import Path
 
+import pytest
+
 from report_config import ReportConfig, read_yaml
+
+
+@pytest.fixture(autouse=True)
+def _no_real_course_repos(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Course-repo lookups never read the real ~/Documents library.
+
+    An explicit ``documents_root`` still wins, so tests that build a course
+    repo under a tmp root keep exercising it.
+    """
+    import course_profile
+
+    empty = tmp_path_factory.mktemp("no-documents")
+    monkeypatch.setattr(
+        course_profile,
+        "resolve_documents_root",
+        lambda root=None: Path(root) if root is not None else empty,
+    )
 
 DEFAULT_BODY = "# Informe\n\nCuerpo del documento con fuentes [@key1], [@key2], [@key3], [@key4] y [@key5].\n"
 DEFAULT_MATRIX = "| claim | source |\n| --- | --- |\n"

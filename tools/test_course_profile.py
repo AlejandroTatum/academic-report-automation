@@ -136,3 +136,72 @@ def test_real_simulacion_profile_applies_valid_keys(tmp_path):
     assert config.delivery_dir == Path(
         "~/Documents/Academicos/simulacion/unidad-2/ape-3-modelo-de-colas/documento/"
     ).expanduser()
+
+
+COURSE_REPORT = """route: academic
+format: aa
+metadata:
+  title: "Análisis de actores y fundamentos de Spec-Driven Development"
+  subject: "Desarrollo Basado en Plataformas"
+  unit: "Unidad 1"
+  practice_number: "1"
+  topic: "actores-sdd"
+"""
+
+
+def _course_repo(tmp_path: Path) -> Path:
+    documents = tmp_path / "Documents"
+    repo = documents / "Academicos" / "desarrollo-basado-en-plataformas"
+    repo.mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("- `unidad-<n>/<tipo>-<m>-<tema>/`\n", encoding="utf-8")
+    return documents
+
+
+def _run_docs(folder: Path, profiles: Path, documents: Path, *flags: str) -> int:
+    return course_profile.main(
+        [str(folder), "--profiles", str(profiles), "--documents-root", str(documents), *flags]
+    )
+
+
+def test_course_repo_convention_sets_delivery_dir_without_a_profile(tmp_path, capsys):
+    documents = _course_repo(tmp_path)
+    folder = _folder(tmp_path, COURSE_REPORT)
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    data = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    expected = documents / "Academicos/desarrollo-basado-en-plataformas/unidad-1/aa-1-actores-sdd/documento"
+    assert data["delivery_dir"] == f"{expected}/"
+    assert "delivery_dir" in capsys.readouterr().out
+
+
+def test_course_repo_convention_names_the_missing_fields(tmp_path, capsys):
+    documents = _course_repo(tmp_path)
+    text = COURSE_REPORT.replace('  topic: "actores-sdd"\n', "")
+    folder = _folder(tmp_path, text)
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert (folder / "report.yml").read_text(encoding="utf-8") == text
+    assert "topic" in capsys.readouterr().out
+
+
+def test_without_a_course_repo_nothing_is_applied(tmp_path, capsys):
+    documents = tmp_path / "Documents"
+    documents.mkdir()
+    folder = _folder(tmp_path, COURSE_REPORT)
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert (folder / "report.yml").read_text(encoding="utf-8") == COURSE_REPORT
+    assert "no profile" in capsys.readouterr().out
+
+
+def test_course_repo_convention_accepts_an_uppercase_format(tmp_path):
+    documents = _course_repo(tmp_path)
+    folder = _folder(tmp_path, COURSE_REPORT.replace("format: aa", "format: AA"))
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    data = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    assert "/unidad-1/aa-1-actores-sdd/documento/" in data["delivery_dir"]

@@ -33,10 +33,18 @@ from report_config import load_report_config  # noqa: E402
 A4_PAGE_SIZE = "595.276 x 841.89 pts (A4)"
 
 
-def _report(tmp_path: Path, *, cover_required: bool, route: str = "technical") -> Path:
+def _report(
+    tmp_path: Path,
+    *,
+    cover_required: bool,
+    route: str = "technical",
+    subject: str = "",
+    title: str = "Contrato del router",
+) -> Path:
     folder = tmp_path / "informe"
     folder.mkdir()
     cover_block = "" if cover_required else "cover:\n  required: false\n  logo_required: false\n"
+    subject_line = f'  subject: "{subject}"\n' if subject else ""
     (folder / "report.yml").write_text(
         f"route: {route}\n"
         "type: technical_report\n"
@@ -45,7 +53,8 @@ def _report(tmp_path: Path, *, cover_required: bool, route: str = "technical") -
         f"{cover_block}"
         "pdf: build/main.pdf\n"
         "metadata:\n"
-        '  title: "Contrato del router"\n'
+        f'  title: "{title}"\n'
+        f"{subject_line}"
         '  student: "Plataforma"\n'
         '  date: "7 de agosto de 2026"\n',
         encoding="utf-8",
@@ -118,6 +127,52 @@ def test_report_with_a_cover_still_rejects_body_bleeding_onto_page_one(
 ) -> None:
     folder = _report(tmp_path, cover_required=True, route="academic")
     stub_pdf_tools(["Universidad Nacional de Loja\nAntecedentes del trabajo", "Tema\nCuerpo."])
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert any("portada parece mezclada" in e for e in result.errors), result.errors
+
+
+def test_cover_naming_a_subject_that_contains_a_body_marker_is_not_mixed(
+    tmp_path: Path, stub_pdf_tools
+) -> None:
+    """The subject 'Desarrollo Basado en Plataformas' belongs on the cover."""
+    folder = _report(
+        tmp_path,
+        cover_required=True,
+        route="academic",
+        subject="Desarrollo Basado en Plataformas",
+        title="Descripción de actores del sistema",
+    )
+    stub_pdf_tools(
+        [
+            "Universidad Nacional de Loja\nDescripción de actores\ndel sistema\n"
+            "Desarrollo Basado en Plataformas.\nInforme académico.",
+            "1. Introducción\nCuerpo.",
+        ]
+    )
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert not any("portada parece mezclada" in e for e in result.errors), result.errors
+
+
+def test_cover_with_a_subject_still_rejects_body_markers_outside_the_metadata(
+    tmp_path: Path, stub_pdf_tools
+) -> None:
+    folder = _report(
+        tmp_path,
+        cover_required=True,
+        route="academic",
+        subject="Desarrollo Basado en Plataformas",
+    )
+    stub_pdf_tools(
+        [
+            "Universidad Nacional de Loja\nDesarrollo Basado en Plataformas\n"
+            "Antecedentes del trabajo",
+            "Tema\nCuerpo.",
+        ]
+    )
 
     result = validate_report.pdf_layout_validation(load_report_config(folder))
 

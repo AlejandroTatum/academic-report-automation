@@ -88,6 +88,49 @@ def write_draft_record(pdf_path: Path, body_path: Path, digest: str | None = Non
     return record
 
 
+# report.yml keys that only say where and what to publish; changing them after
+# a build leaves the rendered PDF exactly as it was.
+DELIVERY_ONLY_KEYS = ("delivery_dir", "deliver_bibliography")
+
+
+def render_digest(report_yml: Path) -> str:
+    """SHA-256 of the ``report.yml`` settings that shape the rendered PDF."""
+    import json
+
+    import yaml
+
+    data = yaml.safe_load(Path(report_yml).read_text(encoding="utf-8")) or {}
+    if isinstance(data, dict):
+        data = {k: v for k, v in data.items() if k not in DELIVERY_ONLY_KEYS}
+    canonical = json.dumps(data, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def render_record_path(folder: Path) -> Path:
+    """Record of the ``report.yml`` settings the last build rendered."""
+    return Path(folder) / "build" / "report.render.sha256"
+
+
+def write_render_record(folder: Path, digest: str | None = None) -> Path:
+    """Record the render settings a build used (``digest`` taken before it ran)."""
+    record = render_record_path(folder)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text((digest or render_digest(Path(folder) / "report.yml")) + "\n", encoding="utf-8")
+    return record
+
+
+def render_settings_unchanged(folder: Path) -> bool:
+    """True when the last build recorded the current render settings of ``report.yml``."""
+    record = render_record_path(folder)
+    report_yml = Path(folder) / "report.yml"
+    if not (record.is_file() and report_yml.is_file()):
+        return False
+    try:
+        return record.read_text(encoding="utf-8").strip() == render_digest(report_yml)
+    except Exception:
+        return False
+
+
 def draft_is_fresh(pdf_path: Path, body_path: Path) -> bool:
     """True when the draft PDF exists and its record matches the current ``body.md``."""
     record = draft_record_path(pdf_path)
