@@ -108,8 +108,9 @@ Operativos (VMs, containers, process flows, memory, scheduling, security),
 Diseño de Software (use cases, domain/component models, requirements, journeys),
 Complejidad Computacional (automata, graphs, recursion, Big-O, Turing machines),
 Investigación (article matrices, methodology, evidence maps), and Ecuaciones
-Diferenciales (curves, slope fields, sensitivity, model comparisons). Apply the
-approved conceptual-map aesthetic for Sistemas Operativos only when requested.
+Diferenciales (curves, slope fields, sensitivity, model comparisons). Every
+subject uses the editorial technical style (`editorial-style.md`); concept maps
+use its `concept_map` layout.
 
 ## Commands
 

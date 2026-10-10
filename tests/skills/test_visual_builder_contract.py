@@ -121,3 +121,15 @@ def test_visual_workflow_replaces_eyeball_instruction_with_automated_gate() -> N
     assert "connector_pdf_stage" in normalized
     assert "0.80" in workflow
     assert "precheck" in normalized and "final" in normalized and "block" in normalized
+
+
+def test_visual_skill_defaults_to_the_editorial_style() -> None:
+    """#63: one documented house style with layouts and a print-size check, not a vague aesthetic."""
+    skill = VISUAL_SKILL.read_text(encoding="utf-8")
+    style = (VISUAL_ROOT / "references" / "editorial-style.md").read_text(encoding="utf-8")
+    workflow = (VISUAL_ROOT / "references" / "visual-workflow.md").read_text(encoding="utf-8")
+    assert "references/editorial-style.md" in skill and "editorial_svg.py check" in skill
+    for phrase in ("actor_map", "concept_map", "5.5 pt", "860 SVG units", "## Never", "rsvg-convert"):
+        assert phrase in style, phrase
+    assert "approved conceptual-map aesthetic" not in workflow
+    assert (ROOT / "tools" / "editorial_svg.py").is_file()
