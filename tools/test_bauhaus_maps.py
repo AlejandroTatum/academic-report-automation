@@ -189,16 +189,54 @@ def test_space_grotesk_ships_in_the_repo_with_its_licence() -> None:
     assert "SIL OPEN FONT LICENSE" in (FONTS / "OFL.txt").read_text(encoding="utf-8").upper()
 
 
-@needs_rsvg
+@pytest.fixture(autouse=True)
+def _caller_font_environment_is_out_of_the_picture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Whatever FONTCONFIG_FILE or HOME the caller has, PNG tests start from a clean slate."""
+    for name in ("FONTCONFIG_FILE", "FONTCONFIG_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME"):
+        monkeypatch.setenv(name, str(tmp_path / "caller-home"))
+
+
 def test_png_fontconfig_adds_the_repo_font_folder_to_the_system_fonts(tmp_path: Path) -> None:
     import bauhaus_maps
 
     conf = bauhaus_maps.write_fontconfig(tmp_path)
-    assert f"<dir>{FONTS}</dir>" in conf.read_text(encoding="utf-8")
-    if shutil.which("fc-match"):
-        match = subprocess.run(["fc-match", "Space Grotesk:weight=bold", "family"], capture_output=True, text=True,
-                               env={"FONTCONFIG_FILE": str(conf), "PATH": "/usr/bin:/bin"})
-        assert "Space Grotesk" in match.stdout
+    text_ = conf.read_text(encoding="utf-8")
+    assert f"<dir>{FONTS}</dir>" in text_ and "/etc/fonts/fonts.conf" in text_
+
+
+@pytest.mark.skipif(shutil.which("fc-match") is None, reason="fc-match is not installed")
+def test_generated_fontconfig_resolves_space_grotesk_to_the_repo_file(tmp_path: Path) -> None:
+    import bauhaus_maps
+
+    conf = bauhaus_maps.write_fontconfig(tmp_path)
+    env = {"FONTCONFIG_FILE": str(conf), "PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    for query in ("Space Grotesk:weight=bold", "Space Grotesk"):
+        match = subprocess.run(["fc-match", "-f", "%{family}|%{file}", query], capture_output=True, text=True, env=env)
+        family, _, file = match.stdout.partition("|")
+        assert "Space Grotesk" in family, match.stdout
+        assert Path(file).resolve() == (FONTS / "SpaceGrotesk[wght].ttf").resolve(), match.stdout
+
+
+def fake_tool(directory: Path, name: str, body: str) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    tool = directory / name
+    tool.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    tool.chmod(0o755)
+
+
+def test_png_rasterising_uses_its_own_fontconfig_whatever_the_caller_exports(tmp_path: Path) -> None:
+    seen = tmp_path / "seen.conf"
+    bin_dir = tmp_path / "bin"
+    fake_tool(bin_dir, "rsvg-convert", f'cat > /dev/null\ncp "$FONTCONFIG_FILE" "{seen}"\nprintf PNG > "$4"')
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "FONTCONFIG_FILE": "/nonexistent/caller.conf", "FONTCONFIG_PATH": "/nonexistent",
+           "HOME": "/nonexistent"}
+    out, png = tmp_path / "fig.svg", tmp_path / "fig.png"
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out, "--png", png, env=env)
+    assert result.returncode == 0, result.stderr
+    assert f"<dir>{FONTS}</dir>" in seen.read_text(encoding="utf-8")
+    assert png.read_bytes() == b"PNG"
 
 
 # --------------------------------------------------------------------------
@@ -954,9 +992,10 @@ PROCESS_CASES = [
     (_with(PROCESS_SPEC, "equipo", "lanes", 1, "id"), "'lanes[1].id' repeats id 'equipo'"),
     (_with(PROCESS_SPEC, "saffron", "lanes", 0, "color"),
      "'lanes[0].color' is 'saffron'; use one of ['blue', 'green', 'ink', 'red']"),
-    (_with(PROCESS_SPEC, "red", "lanes", 1, "color"), "'lanes[1].color' repeats colour 'red'"),
+    (_with(_with(PROCESS_SPEC, "red", "lanes", 0, "color"), "red", "lanes", 1, "color"),
+     "'lanes[1].color' repeats colour 'red'"),
     (_with(PROCESS_SPEC, {"label": ""}, "artifact_lane"), "'artifact_lane.label' is required"),
-    (_with(PROCESS_SPEC, {"label": "ARTEFACTO", "color": "red"}, "artifact_lane"),
+    (_with(_with(PROCESS_SPEC, "red", "lanes", 0, "color"), {"label": "ARTEFACTO", "color": "red"}, "artifact_lane"),
      "'artifact_lane.color' repeats colour 'red'"),
     (_without(PROCESS_SPEC, "steps"), "'steps' is required"),
     (_with(PROCESS_SPEC, PROCESS_SPEC["steps"][:1], "steps"), "'steps' needs at least 2 steps"),
@@ -1056,3 +1095,208 @@ def test_editorial_actor_and_concept_maps_render_byte_for_byte_as_before() -> No
         svg = editorial_svg.render(spec)
         assert hashlib.sha256(svg.encode("utf-8")).hexdigest() == digest, kind
         assert editorial_svg.check(svg) == []
+
+
+# --------------------------------------------------------------------------
+# hardening: atomic output, unreadable specs, wrong types, quoting, tool failures, colours
+# --------------------------------------------------------------------------
+
+def leftovers(directory: Path) -> list[str]:
+    return sorted(p.name for p in directory.iterdir())
+
+
+@needs_rsvg
+@pytest.mark.parametrize("make_target", ["svg-is-a-directory", "svg-parent-is-a-file"])
+def test_a_failed_svg_write_leaves_no_png_and_no_temporary_file(tmp_path: Path, make_target: str) -> None:
+    spec, png_dir = write_spec(tmp_path, PROCESS_SPEC), tmp_path / "png"
+    png_dir.mkdir()
+    if make_target == "svg-is-a-directory":
+        out = tmp_path / "taken"
+        out.mkdir()
+    else:
+        (tmp_path / "plain").write_text("not a folder", encoding="utf-8")
+        out = tmp_path / "plain" / "fig.svg"
+    result = run_cli("render", spec, "--out", out, "--png", png_dir / "fig.png")
+    assert result.returncode == 2 and result.stderr.startswith("bauhaus_maps: ") and "Traceback" not in result.stderr
+    assert leftovers(png_dir) == [], "no PNG, no temporary file"
+    assert leftovers(tmp_path / "taken") == [] if make_target == "svg-is-a-directory" else True
+
+
+@needs_rsvg
+def test_a_failed_png_write_leaves_no_svg(tmp_path: Path) -> None:
+    (tmp_path / "plain").write_text("not a folder", encoding="utf-8")
+    out_dir = tmp_path / "svg"
+    out_dir.mkdir()
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out_dir / "fig.svg", "--png", tmp_path / "plain" / "fig.png")
+    assert result.returncode == 2 and "Traceback" not in result.stderr
+    assert leftovers(out_dir) == []
+
+
+def test_a_failing_rsvg_convert_leaves_neither_file(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    fake_tool(bin_dir, "rsvg-convert", "cat > /dev/null\necho boom >&2\nexit 1")
+    out_dir = tmp_path / "dest"
+    out_dir.mkdir()
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out_dir / "fig.svg", "--png", out_dir / "fig.png",
+                     env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)})
+    assert (result.returncode, result.stderr) == (2, "bauhaus_maps: rsvg-convert failed: boom\n")
+    assert leftovers(out_dir) == []
+
+
+@needs_rsvg
+def test_a_good_render_leaves_exactly_the_two_requested_files(tmp_path: Path) -> None:
+    out_dir = tmp_path / "dest"
+    out_dir.mkdir()
+    result = run_cli("render", write_spec(tmp_path, PROCESS_SPEC), "--out", out_dir / "fig.svg", "--png", out_dir / "fig.png")
+    assert result.returncode == 0, result.stderr
+    assert leftovers(out_dir) == ["fig.png", "fig.svg"]
+
+
+@pytest.mark.parametrize("payload", [b"\xff\xfe\x00 kind: \x80\x81", b"kind: \xc3("], ids=["binary", "bad-utf8"])
+def test_an_undecodable_spec_is_a_clean_error_without_a_traceback(tmp_path: Path, payload: bytes) -> None:
+    spec = tmp_path / "spec.yml"
+    spec.write_bytes(payload)
+    out = tmp_path / "fig.svg"
+    result = run_cli("render", spec, "--out", out)
+    assert result.returncode == 2 and "Traceback" not in result.stderr
+    assert result.stderr.startswith("bauhaus_maps: cannot read the spec: ") and result.stderr.endswith("\n")
+    assert not out.exists()
+
+
+def test_a_spec_that_is_a_folder_is_a_clean_error(tmp_path: Path) -> None:
+    out = tmp_path / "fig.svg"
+    result = run_cli("render", tmp_path, "--out", out)
+    assert result.returncode == 2 and "Traceback" not in result.stderr and not out.exists()
+
+
+WRONG_TYPES = [
+    ({"kind": ["concept_map"]}, "'kind' must be text; use one of ['concept_map', 'process_map']"),
+    ({"kind": {"a": 1}}, "'kind' must be text; use one of ['concept_map', 'process_map']"),
+    (("concept", ["concepts", 0, "family"], ["que"]), "'concepts[0].family' must be text"),
+    (("concept", ["families", "que", "color"], ["blue"]), "'families.que.color' must be text"),
+    (("concept", ["families", "que", "color"], {"a": 1}), "'families.que.color' must be text"),
+    (("concept", ["links", 0, "from"], ["sdd"]), "'links[0].from' must be text"),
+    (("process", ["lanes", 0, "color"], ["red"]), "'lanes[0].color' must be text"),
+    (("process", ["steps", 1, "lane"], ["ia"]), "'steps[1].lane' must be text"),
+    (("process", ["flow", 0, "to"], {"x": 1}), "'flow[0].to' must be text"),
+]
+
+
+@pytest.mark.parametrize(("case", "message"), WRONG_TYPES, ids=[m for _, m in WRONG_TYPES])
+def test_a_list_or_mapping_where_text_is_expected_names_the_field(tmp_path: Path, case: object, message: str) -> None:
+    if isinstance(case, dict):
+        spec = case
+    else:
+        which, path, value = case
+        spec = _with(CONCEPT_SPEC if which == "concept" else PROCESS_SPEC, value, *path)
+    result, out = render(tmp_path, spec)
+    assert (result.returncode, result.stderr) == (2, f"bauhaus_maps: {message}\n")
+    assert not out.exists()
+
+
+QUOTED = 'a"b&c<d'
+
+
+@needs_dot
+def test_quotes_ampersands_and_brackets_in_ids_and_names_keep_the_concept_svg_well_formed(tmp_path: Path) -> None:
+    spec = {"kind": "concept_map", "title": f"Título {QUOTED}", "core": {"id": f"core{QUOTED}", "name": f"Núcleo {QUOTED}", "subtitle": QUOTED},
+            "families": {f"fam{QUOTED}": {"label": f"F{QUOTED}", "color": "blue", "meaning": QUOTED}},
+            "concepts": [{"id": f"x{QUOTED}", "name": f"Uno {QUOTED}", "detail": QUOTED, "family": f"fam{QUOTED}", "level": "key"},
+                         {"id": f"y{QUOTED}", "name": "Dos", "family": f"fam{QUOTED}"}],
+            "links": [{"from": f"core{QUOTED}", "to": f"x{QUOTED}", "label": f"rel {QUOTED}"},
+                      {"from": f"x{QUOTED}", "to": f"y{QUOTED}", "label": "otro", "cross": True}]}
+    root = svg_root(tmp_path, spec)
+    assert len(find(root, "rect", data_node=f"x{QUOTED}")) == 1
+    assert len(find(root, "rect", data_node=f"core{QUOTED}")) == 1
+    assert len(find(root, "rect", data_corner=f"y{QUOTED}")) == 1
+    assert len(find(root, "path", data_link=f"core{QUOTED}>x{QUOTED}")) == 1
+    assert len(find(root, "text", data_label=f"x{QUOTED}>y{QUOTED}")) == 1
+    assert len(find(root, "line", data_legend=f"fam{QUOTED}")) == 1
+    assert "".join(text_of(root, f"rel {QUOTED}").itertext()) == f"rel {QUOTED}"
+
+
+def test_quotes_ampersands_and_brackets_in_ids_and_names_keep_the_process_svg_well_formed(tmp_path: Path) -> None:
+    lane_a, lane_b, step_a, step_d = f"l1{QUOTED}", f"l2{QUOTED}", f"s{QUOTED}", f"d{QUOTED}"
+    spec = {"kind": "process_map", "title": QUOTED, "lanes": [{"id": lane_a, "label": QUOTED}, {"id": lane_b, "label": "B"}],
+            "artifact_lane": {"label": "DOC"},
+            "steps": [{"id": step_a, "lane": lane_a, "title": QUOTED, "detail": QUOTED, "artifact": QUOTED},
+                      {"id": step_d, "lane": lane_b, "title": "¿?", "decision": True}],
+            "flow": [{"from": step_a, "to": step_d, "label": QUOTED}]}
+    root = svg_root(tmp_path, spec)
+    for attribute, element in (("data_node", "rect"), ("data_corner", "rect"), ("data_lane", "rect"), ("data_lane_header", "rect")):
+        assert find(root, element, **{attribute: step_a if "lane" not in attribute else lane_a}), attribute
+    assert find(root, "polygon", data_node=step_d)
+    assert find(root, "path", data_artifact=step_a) and find(root, "path", data_fold=step_a)
+    assert find(root, "line", data_edge=f"artifact:{step_a}")
+    assert find(root, "path", data_edge=f"{step_a}>{step_d}")
+    assert find(root, "text", data_label=f"{step_a}>{step_d}")
+    assert find(root, "text", data_number=step_a) and find(root, "line", data_legend=lane_a)
+
+
+def test_dot_that_never_finishes_fails_naming_the_tool_and_writes_nothing(tmp_path: Path, monkeypatch, capsys) -> None:
+    import bauhaus_maps
+
+    fake_tool(tmp_path / "bin", "dot", "exec sleep 30")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    monkeypatch.setattr(bauhaus_maps, "TOOL_TIMEOUT", 0.5)
+    out = tmp_path / "fig.svg"
+    assert bauhaus_maps.main(["render", str(write_spec(tmp_path, CONCEPT_SPEC)), "--out", str(out)]) == 2
+    assert capsys.readouterr().err == "bauhaus_maps: Graphviz 'dot' did not finish within 0.5 s; simplify the map\n"
+    assert not out.exists()
+
+
+@needs_rsvg
+def test_rsvg_convert_that_never_finishes_fails_naming_the_tool_and_writes_nothing(tmp_path: Path, monkeypatch, capsys) -> None:
+    import bauhaus_maps
+
+    fake_tool(tmp_path / "bin", "rsvg-convert", "exec sleep 30")
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    monkeypatch.setattr(bauhaus_maps, "TOOL_TIMEOUT", 0.5)
+    out, png = tmp_path / "fig.svg", tmp_path / "fig.png"
+    assert bauhaus_maps.main(["render", str(write_spec(tmp_path, PROCESS_SPEC)), "--out", str(out), "--png", str(png)]) == 2
+    assert capsys.readouterr().err == "bauhaus_maps: rsvg-convert did not finish within 0.5 s\n"
+    assert not out.exists() and not png.exists()
+
+
+@pytest.mark.parametrize(("tool", "spec", "extra"), [("dot", CONCEPT_SPEC, []), ("rsvg-convert", PROCESS_SPEC, ["--png"])])
+def test_a_tool_that_cannot_be_executed_fails_naming_the_tool(tmp_path: Path, tool: str, spec: dict, extra: list) -> None:
+    fake_tool(tmp_path / "bin", tool, "exit 0")
+    (tmp_path / "bin" / tool).write_text("#!/nonexistent/interpreter\n", encoding="utf-8")
+    out = tmp_path / "fig.svg"
+    args = ["--png", tmp_path / "fig.png"] if extra else []
+    result = run_cli("render", write_spec(tmp_path, spec), "--out", out, *args, env={"PATH": str(tmp_path / "bin")})
+    assert result.returncode == 2 and "Traceback" not in result.stderr
+    name = "Graphviz 'dot'" if tool == "dot" else "rsvg-convert"
+    assert result.stderr.startswith(f"bauhaus_maps: {name} could not be run: ")
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+def lane_fills(root: ET.Element) -> dict[str, str]:
+    return {e.get("data-lane-header"): e.get("fill") for e in find(root, "rect") if e.get("data-lane-header")}
+
+
+def test_lanes_without_a_colour_avoid_the_colours_other_lanes_chose(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"] = [{"id": "a", "label": "A"}, {"id": "b", "label": "B", "color": "red"}, {"id": "c", "label": "C"}]
+    spec["steps"] = [{"id": "s1", "lane": "a", "title": "Uno"}, {"id": "s2", "lane": "b", "title": "Dos", "artifact": "x.md"},
+                     {"id": "s3", "lane": "c", "title": "Tres"}]
+    spec["flow"] = [{"from": "s1", "to": "s2"}, {"from": "s2", "to": "s3"}]
+    fills = lane_fills(svg_root(tmp_path, spec))
+    assert fills == {"a": BLUE, "b": RED, "c": GREEN, "artifact": INK}
+    assert len(set(fills.values())) == 4
+
+
+def test_an_explicit_colour_on_a_late_lane_does_not_collide_with_an_earlier_default(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][1]["color"] = "red"
+    fills = lane_fills(svg_root(tmp_path, spec))
+    assert fills["ia"] == RED and fills["equipo"] != RED
+    assert len(set(fills.values())) == len(fills)
+
+
+def test_the_artifact_lane_takes_a_colour_nobody_chose(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][0]["color"] = "green"
+    spec["lanes"][1]["color"] = "ink"
+    fills = lane_fills(svg_root(tmp_path, spec))
+    assert fills == {"equipo": GREEN, "ia": INK, "artifact": RED}

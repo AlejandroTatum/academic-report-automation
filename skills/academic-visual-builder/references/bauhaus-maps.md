@@ -13,7 +13,7 @@ Scope: concept maps and process maps only. Data charts (Matplotlib, Vega-Lite, .
 
 - Keep the spec in `visuals/specs/<materia>/<tarea>/` and the render in `assets/generated/<materia>/<tarea>/`, like any other figure.
 - `render` already runs the print-size check; run `editorial_svg.py check` again only on a hand-edited SVG.
-- Graphviz (`dot`) places concept maps; `--png` needs `rsvg-convert`. Both missing tools fail with a message and write nothing.
+- Graphviz (`dot`) places concept maps; `--png` needs `rsvg-convert`. A missing, unrunnable or hung tool (60 s limit) fails with a message naming it and writes nothing. SVG and PNG are written together or not at all.
 - `--png` rasterises at 2x under a generated fontconfig that loads `assets/fonts` (Space Grotesk, OFL), so the PNG looks the same on any machine. Nothing is installed system-wide.
 - Show the user the PNG at full size before inserting it into the report.
 
@@ -38,7 +38,7 @@ A figure prints at about 13.5 cm, so every text must print at 5.5 pt or more: th
 
 ## Errors
 
-A malformed spec raises a `SpecError` that names the field (`'concepts[2].family' is 'x'; use one of [...]`), prints `bauhaus_maps: <message>` on stderr, exits with exit code 2 and writes no file. YAML reads a bare `yes`/`no` as true/false: quote branch labels (`label: "no"`).
+A malformed spec raises a `SpecError` that names the field (`'concepts[2].family' is 'x'; use one of [...]`), prints `bauhaus_maps: <message>` on stderr, exits with exit code 2 and writes no file; an unreadable or non-UTF-8 spec and a list or mapping where text is expected get the same treatment. YAML reads a bare `yes`/`no` as true/false: quote branch labels (`label: "no"`).
 
 ## `concept_map`
 
@@ -85,7 +85,7 @@ flow:
 | Field | Rule |
 |---|---|
 | `title` | required |
-| `lanes` | required, 2 or 3 actor lanes as columns: `id`, `label` (solid coloured header), optional `short` (legend name), optional `color` (blue, red, green or ink; defaults by column to red, blue, green, ink; never repeated) |
+| `lanes` | required, 2 or 3 actor lanes as columns: `id`, `label` (solid coloured header), optional `short` (legend name), optional `color` (blue, red, green or ink; lanes without one take the first of red, blue, green, ink that no lane chose, in column order; never repeated) |
 | `artifact_lane` | optional last column for documents: `label`, optional `short`, `color` |
 | `steps` | required, at least 2, one per row in the given order: `id`, `lane`, `title`, optional `detail`, optional `artifact` (a document with a folded corner, joined by a dashed connector), optional `decision: true` (saffron diamond, no number, no artifact) |
 | `flow` | required list: `from`, `to`, optional `label` (printed in uppercase, e.g. "sí" becomes SÍ); a pair appears once |

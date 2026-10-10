@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -42,10 +43,16 @@ LANE_DEFAULTS = ("red", "blue", "green", "ink")  # by column; saffron is for dec
 MAX_WIDTH = 860
 PAD_X = 24
 DASH = "6 5"
+TOOL_TIMEOUT = 60  # seconds Graphviz or rsvg-convert may take before the render gives up
 
 
 def text(x, y, value, size, weight, fill, anchor="middle", style="normal", spacing=0) -> str:
     return _svg_text(x, y, value, size, weight, fill, anchor, FONT, style, spacing)
+
+
+def attr(value: object) -> str:
+    """``value`` made safe inside a double-quoted XML attribute."""
+    return escape(str(value), {'"': "&quot;"})
 
 
 # --------------------------------------------------------------------------
@@ -171,11 +178,11 @@ def _legend(entries: list[Entry], xs: list[float], y: float) -> list[str]:
     parts = []
     for entry, x in zip(entries, xs):
         if entry.swatch == "diamond":
-            parts.append(f'<polygon data-legend="{entry.key}" points="{x + 12:g},{y - 12:g} {x + 24:g},{y - 4:g} '
+            parts.append(f'<polygon data-legend="{attr(entry.key)}" points="{x + 12:g},{y - 12:g} {x + 24:g},{y - 4:g} '
                          f'{x + 12:g},{y + 4:g} {x:g},{y - 4:g}" fill="{entry.colour}"/>')
             label_colour = INK
         else:
-            parts.append(f'<line data-legend="{entry.key}" x1="{x:g}" y1="{y - 4:g}" x2="{x + 22:g}" y2="{y - 4:g}" '
+            parts.append(f'<line data-legend="{attr(entry.key)}" x1="{x:g}" y1="{y - 4:g}" x2="{x + 22:g}" y2="{y - 4:g}" '
                          f'stroke="{entry.colour}" stroke-width="4"/>')
             label_colour = entry.colour
         parts.append(text(x + entry.label_x, y, entry.label, 12.5, 700, label_colour, "start", spacing=1.2))
@@ -198,7 +205,10 @@ def _guard_width(width: float) -> None:
 def _finish(parts: list[str]) -> str:
     parts.append("</svg>")
     svg = "\n".join(parts) + "\n"
-    problems = check(svg)
+    try:
+        problems = check(svg)
+    except ET.ParseError as error:
+        raise SpecError(f"the drawing is not well-formed XML ({error}); check the spec for control characters") from error
     if problems:
         raise SpecError(f"the figure fails the print-size check: {problems[0]}")
     return svg
@@ -285,6 +295,17 @@ def _box_size(concept: dict) -> tuple[float, float]:
     return width, NODE_H if detail else 48
 
 
+def _run_tool(tool: str, label: str, args: list[str], **options) -> subprocess.CompletedProcess:
+    """Run an external tool with a timeout; a missing, unrunnable or hung tool is a SpecError naming it."""
+    try:
+        return subprocess.run([tool, *args], capture_output=True, timeout=TOOL_TIMEOUT, **options)
+    except subprocess.TimeoutExpired as error:
+        hint = "; simplify the map" if tool == "dot" else ""
+        raise SpecError(f"{label} did not finish within {TOOL_TIMEOUT:g} s{hint}") from error
+    except OSError as error:
+        raise SpecError(f"{label} could not be run: {error}") from error
+
+
 def _dot(model: dict) -> tuple[float, float, dict, dict]:
     """Run Graphviz on fixed-size boxes and fixed-size link labels; return graph size, boxes and links."""
     if shutil.which("dot") is None:
@@ -302,7 +323,7 @@ def _dot(model: dict) -> tuple[float, float, dict, dict]:
         extra = " constraint=false" if link["cross"] else ""
         lines.append(f'{name[link["from"]]} -> {name[link["to"]]} [label={cell}{extra}];')
     lines.append("}")
-    done = subprocess.run(["dot", "-Tplain"], input="\n".join(lines), capture_output=True, text=True)
+    done = _run_tool("dot", "Graphviz 'dot'", ["-Tplain"], input="\n".join(lines), text=True)
     if done.returncode != 0:
         raise SpecError(f"Graphviz failed: {done.stderr.strip()}")
     ids = {v: k for k, v in name.items()}
@@ -363,17 +384,17 @@ def concept_map(spec: dict) -> str:
         name, colour = colour_of(link["from"])
         key = f"{link['from']}>{link['to']}"
         dash = f' stroke-dasharray="{DASH}"' if link["cross"] else ""
-        out.append(f'<path data-link="{escape(key)}" d="{_bezier([pt(*q) for q in points])}" fill="none" stroke="{colour}" '
+        out.append(f'<path data-link="{attr(key)}" d="{_bezier([pt(*q) for q in points])}" fill="none" stroke="{colour}" '
                    f'stroke-width="1.6"{dash} marker-end="url(#tip-{name})"/>')
         lx, ly = pt(*label)
         shade = MUTED if name == "ink" else mix(colour, 0.85, "#000000")
-        out.append(text(lx, ly + 4, link["label"], 12.5, 500, shade).replace("<text ", f'<text data-label="{escape(key)}" ', 1))
+        out.append(text(lx, ly + 4, link["label"], 12.5, 500, shade).replace("<text ", f'<text data-label="{attr(key)}" ', 1))
 
     for concept in model["concepts"]:
         cx, cy, w, h = boxes[concept["id"]]
         x, y = pt(cx, cy)
         x, y = x - w / 2, y - h / 2
-        mid, node_id = x + w / 2, escape(concept["id"])
+        mid, node_id = x + w / 2, attr(concept["id"])
         if concept["level"] == "core":
             out.append(f'<rect data-node="{node_id}" x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" fill="{INK}"/>')
             if concept["subtitle"]:
@@ -415,9 +436,11 @@ def _process_model(spec: dict) -> dict:
         raise SpecError(f"'lanes' needs 2 or 3 actor lanes, not {len(raw_lanes)}")
     lanes, lane_ids, used = [], set(), {}
 
-    def colour_for(item: dict, here: str, column: int) -> str:
+    def chosen_colour(item: dict, here: str) -> str | None:
         name = _text(item, "color", here, required=False)
-        name = LANE_DEFAULTS[column] if name is None else _choice(name, LANE_COLOURS, f"{here}.color")
+        if name is None:
+            return None
+        _choice(name, LANE_COLOURS, f"{here}.color")
         if name in used:
             raise SpecError(f"'{here}.color' repeats colour {name!r}")
         used[name] = here
@@ -434,14 +457,18 @@ def _process_model(spec: dict) -> dict:
         lane_ids.add(lane_id)
         label = _text(item, "label", here)
         lanes.append({"id": lane_id, "label": label, "short": _text(item, "short", here, required=False) or label,
-                      "colour": colour_for(item, here, index)})
+                      "colour": chosen_colour(item, here)})
     artifact_lane = None
     if spec.get("artifact_lane"):
         item = _mapping(spec["artifact_lane"], "artifact_lane")
         label = _text(item, "label", "artifact_lane")
         artifact_lane = {"id": "artifact", "label": label,
                          "short": _text(item, "short", "artifact_lane", required=False) or label,
-                         "colour": colour_for(item, "artifact_lane", len(lanes))}
+                         "colour": chosen_colour(item, "artifact_lane")}
+
+    spare = iter(name for name in LANE_DEFAULTS if name not in used)  # lanes without a colour, in column order
+    for lane in [*lanes, *([artifact_lane] if artifact_lane else [])]:
+        lane["colour"] = lane["colour"] or next(spare)
 
     raw_steps = _list(spec, "steps")
     if len(raw_steps) < 2:
@@ -521,9 +548,9 @@ def process_map(spec: dict) -> str:
     out += _header("MAPA DE PROCESO", model["title"], width)
     for c in columns:
         colour, x = LANE_COLOURS[c["colour"]], lane_x[c["id"]]
-        out.append(f'<rect data-lane-header="{escape(c["id"])}" x="{x:.1f}" y="{TOP - 44}" width="{lane_w:.1f}" height="34" fill="{colour}"/>')
+        out.append(f'<rect data-lane-header="{attr(c["id"])}" x="{x:.1f}" y="{TOP - 44}" width="{lane_w:.1f}" height="34" fill="{colour}"/>')
         out.append(text(x + lane_w / 2, TOP - 22, c["label"], 12.5, 700, WHITE, spacing=1.4))
-        out.append(f'<rect data-lane="{escape(c["id"])}" x="{x:.1f}" y="{TOP - 10}" width="{lane_w:.1f}" height="{height - TOP - 40}" '
+        out.append(f'<rect data-lane="{attr(c["id"])}" x="{x:.1f}" y="{TOP - 10}" width="{lane_w:.1f}" height="{height - TOP - 40}" '
                    f'fill="{mix(colour, 0.05, BG)}"/>')
 
     nodes, number, obstacles, art_lines = {}, 0, [], []
@@ -536,7 +563,7 @@ def process_map(spec: dict) -> str:
         nodes[step["id"]] = {"row": row, "lane": lane["id"], "cx": cx, "cy": cy, "hw": half_w,
                              "hh": DIAMOND_H if step["decision"] else BOX_H / 2, "decision": step["decision"],
                              "artifact": bool(step["artifact"])}
-        sid = escape(step["id"])
+        sid = attr(step["id"])
         if step["decision"]:
             out.append(f'<polygon data-node="{sid}" points="{cx:.1f},{cy - DIAMOND_H:.1f} {cx + half_w:.1f},{cy:.1f} '
                        f'{cx:.1f},{cy + DIAMOND_H:.1f} {cx - half_w:.1f},{cy:.1f}" fill="{SAFFRON}"/>')
@@ -572,7 +599,7 @@ def process_map(spec: dict) -> str:
     for index, (link, route) in enumerate(zip(model["flow"], routes)):
         d = f"M{route[0][0]:.1f},{route[0][1]:.1f}" + "".join(
             f" H{x:.1f}" if abs(y - route[i][1]) < 1e-6 else f" V{y:.1f}" for i, (x, y) in enumerate(route[1:]))
-        key = escape(f"{link['from']}>{link['to']}")
+        key = attr(f"{link['from']}>{link['to']}")
         out.append(f'<path data-edge="{key}" d="{d}" fill="none" stroke="{INK}" stroke-width="1.8" marker-end="url(#tip-ink)"/>')
         if index in spots:
             x, y = spots[index]
@@ -736,6 +763,8 @@ def render(spec: dict) -> str:
     kind = spec.get("kind")
     if kind in (None, ""):
         raise SpecError(f"'kind' is required; use one of {sorted(LAYOUTS)}")
+    if not isinstance(kind, str):
+        raise SpecError(f"'kind' must be text; use one of {sorted(LAYOUTS)}")
     if kind not in LAYOUTS:
         raise SpecError(f"unknown kind {kind!r}; use one of {sorted(LAYOUTS)}")
     return LAYOUTS[kind](spec)
@@ -751,23 +780,50 @@ def write_fontconfig(directory: Path) -> Path:
     return conf
 
 
-def rasterize(svg: str, png: Path) -> None:
-    """Write ``png`` at twice the SVG size, using the repo font through a generated fontconfig."""
+def rasterize(svg: str) -> bytes:
+    """The PNG at twice the SVG size, drawn with the repo font through a generated fontconfig."""
     with tempfile.TemporaryDirectory(prefix="bauhaus-maps-") as scratch:
         scratch_dir = Path(scratch)
         env = dict(os.environ, FONTCONFIG_FILE=str(write_fontconfig(scratch_dir)))
-        done = subprocess.run(["rsvg-convert", "-z", "2", "-o", str(scratch_dir / "fig.png")], input=svg.encode("utf-8"),
-                              capture_output=True, env=env)
+        done = _run_tool("rsvg-convert", "rsvg-convert", ["-z", "2", "-o", str(scratch_dir / "fig.png")],
+                         input=svg.encode("utf-8"), env=env)
         if done.returncode != 0:
             raise SpecError(f"rsvg-convert failed: {done.stderr.decode('utf-8', 'replace').strip()}")
-        png.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(scratch_dir / "fig.png"), png)
+        return (scratch_dir / "fig.png").read_bytes()
+
+
+def publish(files: list[tuple[Path, bytes]]) -> None:
+    """Write every file or none: each goes to a temporary file beside its destination, then all move into place."""
+    for path, _ in files:
+        if path.is_dir():
+            raise SpecError(f"cannot write {path}: it is a directory")
+    staged: list[tuple[Path, Path]] = []
+    placed: list[Path] = []
+    try:
+        for path, data in files:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False)
+            staged.append((Path(handle.name), path))
+            with handle:
+                handle.write(data)
+        for temporary, path in staged:
+            fresh = not path.exists()
+            os.replace(temporary, path)
+            if fresh:
+                placed.append(path)
+    except OSError as error:
+        for path in placed:
+            path.unlink(missing_ok=True)
+        raise SpecError(f"cannot write the output: {error}") from error
+    finally:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
 
 
 def load_spec(path: Path) -> dict:
     try:
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         raise SpecError(f"cannot read the spec: {error}") from error
     except yaml.YAMLError as error:
         raise SpecError(f"the spec is not valid YAML: {error}") from error
@@ -790,10 +846,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.png and shutil.which("rsvg-convert") is None:
             raise SpecError("rsvg-convert was not found on PATH; install librsvg to use --png")
         svg = render(load_spec(args.spec))
+        files = [(args.out, svg.encode("utf-8"))]
         if args.png:
-            rasterize(svg, args.png)
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(svg, encoding="utf-8")
+            files.append((args.png, rasterize(svg)))
+        publish(files)
     except (SpecError, OSError) as error:
         print(f"bauhaus_maps: {error}", file=sys.stderr)
         return 2
