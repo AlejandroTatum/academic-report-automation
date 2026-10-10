@@ -1110,3 +1110,13 @@ def test_verify_runs_before_approval_and_the_gate_shows_one_packet() -> None:
     assert "requirement matrix, the missing items" in approval
     assert "before `approval`" in production
     assert "approval_packet.py <folder>" in production
+
+
+def test_edit_rounds_recheck_only_what_changed() -> None:
+    """A small edit never re-reviews the whole document: scoped verify and changed preview pages only."""
+    flat = re.sub(r"\s+", " ", read(APPROVAL_MD))
+    assert "fresh independent verifier" not in flat
+    assert "--since verification.yml" in flat
+    assert "visual_pdf_auditor.py" in flat
+    assert "Changed pages" in flat
+    assert "every page on the first preview" in flat
