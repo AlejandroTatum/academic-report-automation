@@ -12,13 +12,14 @@ concept maps and a deterministic grid places process maps.
 
 A layout wider than 860 SVG units is never shrunk: a smaller scale would print the 12.5-unit
 labels below 5.5 pt (``editorial_svg.check``), so the render fails and tells the author to
-split the map or shorten names and details. ``--png`` rasterises with ``rsvg-convert -z 2``
+split the map or shorten names and details, or to shorten the widest legend entry when the legend is what is too wide. ``--png`` rasterises with ``rsvg-convert -z 2``
 under a generated fontconfig that loads ``assets/fonts``, so the PNG looks the same on any
 machine and nothing is installed system-wide.
 """
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import shutil
 import subprocess
@@ -69,6 +70,16 @@ def _face(weight: int) -> ImageFont.FreeTypeFont:
 def measure(value: str, size: float, weight: int, spacing: float = 0) -> float:
     """Advance width of ``value`` in Space Grotesk, in SVG units."""
     return _face(weight).getlength(value) * size / 100 + spacing * len(value)
+
+
+@lru_cache(maxsize=None)
+def ink(value: str, size: float, weight: int, spacing: float = 0) -> tuple[float, float, float]:
+    """Advance width, and the highest and lowest ink of ``value`` relative to its baseline (up is negative).
+
+    The extents are the real glyph outlines (accents, ascenders, descenders), not a nominal line box.
+    """
+    _, top, _, bottom = (v * size / 100 for v in _face(weight).getbbox(value, anchor="ls"))
+    return measure(value, size, weight, spacing), top, bottom
 
 
 def mix(colour: str, amount: float, base: str = WHITE) -> str:
@@ -196,6 +207,16 @@ def _legend_end(entries: list[Entry], xs: list[float]) -> float:
     return xs[-1] + entries[-1].width if entries else 0
 
 
+def _guard_legend(entries: list[Entry]) -> None:
+    """Fail naming the widest entry when the legend alone, packed tight, is wider than the limit."""
+    width = 2 * PAD_X + sum(entry.width for entry in entries) + 36 * max(len(entries) - 1, 0)
+    if width > MAX_WIDTH:
+        widest = max(entries, key=lambda entry: entry.width)
+        name = f"{widest.label}: {widest.meaning}" if widest.meaning else widest.label
+        raise SpecError(f"the legend is {width:.0f} units wide, over the {MAX_WIDTH}-unit limit; the figure is never "
+                        f"shrunk, so shorten its widest entry '{name}' or the other legend entries")
+
+
 def _guard_width(width: float) -> None:
     if width > MAX_WIDTH:
         raise SpecError(f"layout is {width:.0f} units wide, over the {MAX_WIDTH}-unit limit; the figure is never "
@@ -219,6 +240,13 @@ def _finish(parts: list[str]) -> str:
 # --------------------------------------------------------------------------
 
 CORE_PAD, NODE_PAD, CORE_H, NODE_H = 56, 44, 74, 62
+# Graphviz sees every box this much bigger on each side, so its splines keep that distance from it: 10 units to the
+# sides; 22 above and below, where an arrowhead (11.5 units deep) may sit and other links still keep 10 from it.
+LINK_AIR_X, LINK_AIR_Y = 10, 22
+# Graphviz also reserves each link phrase a cell this much wider and taller than its text, so the phrase keeps its
+# 8 units from the splines routed past it. These are the smallest values that clear every rule on the SDD and
+# Engram examples with the phrases measured by their real ink (descenders reach 2.5 units below the baseline).
+LABEL_AIR_X, LABEL_AIR_Y = 23, 2
 
 
 def _concept_model(spec: dict) -> dict:
@@ -306,20 +334,57 @@ def _run_tool(tool: str, label: str, args: list[str], **options) -> subprocess.C
         raise SpecError(f"{label} could not be run: {error}") from error
 
 
+def _reach_border(end: tuple[float, float], toward: tuple[float, float], rect: tuple[float, float, float, float]) -> tuple[float, float]:
+    """Where the ray from ``end`` along ``end -> toward`` first meets ``rect`` (x0, y0, x1, y1), else the nearest border point."""
+    dx, dy = toward[0] - end[0], toward[1] - end[1]
+    near, far = 0.0, float("inf")
+    for origin, step, low, high in ((end[0], dx, rect[0], rect[2]), (end[1], dy, rect[1], rect[3])):
+        if abs(step) < 1e-9:
+            if not low <= origin <= high:
+                near, far = 1.0, 0.0
+            continue
+        t0, t1 = sorted(((low - origin) / step, (high - origin) / step))
+        near, far = max(near, t0), min(far, t1)
+    if near <= far and near > 0:
+        return end[0] + near * dx, end[1] + near * dy
+    return min(max(end[0], rect[0]), rect[2]), min(max(end[1], rect[1]), rect[3])
+
+
+def _extend_to_borders(points: list, tail: tuple, head: tuple) -> list:
+    """Lengthen a spline that stops at the padded boxes so it starts and ends on the drawn borders."""
+    def real(box: tuple) -> tuple[float, float, float, float]:
+        cx, cy, w, h = box
+        return cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+
+    def straight(a: tuple, b: tuple) -> list:
+        return [(a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3), (a[0] + 2 * (b[0] - a[0]) / 3, a[1] + 2 * (b[1] - a[1]) / 3), b]
+
+    start = _reach_border(points[0], (2 * points[0][0] - points[1][0], 2 * points[0][1] - points[1][1]), real(tail))
+    end = _reach_border(points[-1], (2 * points[-1][0] - points[-2][0], 2 * points[-1][1] - points[-2][1]), real(head))
+    lead = [start, *straight(start, points[0])[:2]]
+    return [*lead, *points, *straight(points[-1], end)]
+
+
 def _dot(model: dict) -> tuple[float, float, dict, dict]:
-    """Run Graphviz on fixed-size boxes and fixed-size link labels; return graph size, boxes and links."""
+    """Run Graphviz on padded boxes and fixed-size link labels; return graph size, drawn boxes and links.
+
+    Graphviz routes splines around boxes ``LINK_AIR`` bigger than the drawn ones, so a link keeps that distance
+    from every box it does not connect; each link is then lengthened to the drawn border of its own boxes.
+    """
     if shutil.which("dot") is None:
         raise SpecError("Graphviz 'dot' was not found on PATH; install graphviz")
     name = {c["id"]: f"n{i}" for i, c in enumerate(model["concepts"])}
-    lines = ["digraph G {", "rankdir=TB; nodesep=0.16; ranksep=0.55; splines=spline; ordering=out;",
+    air_x, air_y = 2 * LINK_AIR_X / 72, 2 * LINK_AIR_Y / 72
+    lines = ["digraph G {", f"rankdir=TB; nodesep={max(0.16 - air_x, 0.02):.3f}; ranksep={max(0.55 - air_y, 0.02):.3f}; "
+             "splines=spline; ordering=out;",
              'node [shape=box fixedsize=true label=""];', "edge [arrowhead=none fontsize=14];"]
     for concept in model["concepts"]:
         w, h = _box_size(concept)
         group = ' group="spine"' if concept["id"] in model["spine"] else ""
-        lines.append(f"{name[concept['id']]} [width={w / 72:.3f} height={h / 72:.3f}{group}];")
+        lines.append(f"{name[concept['id']]} [width={w / 72 + air_x:.3f} height={h / 72 + air_y:.3f}{group}];")
     for link in model["links"]:
-        cell = (f'<<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="0"><TR><TD WIDTH="{round(measure(link["label"], 12.5, 500) + 14)}" '
-                'HEIGHT="20"></TD></TR></TABLE>>')
+        cell = (f'<<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="0"><TR><TD WIDTH="{round(measure(link["label"], 12.5, 500) + LABEL_AIR_X)}" '
+                f'HEIGHT="{20 + LABEL_AIR_Y}"></TD></TR></TABLE>>')
         extra = " constraint=false" if link["cross"] else ""
         lines.append(f'{name[link["from"]]} -> {name[link["to"]]} [label={cell}{extra}];')
     lines.append("}")
@@ -327,20 +392,22 @@ def _dot(model: dict) -> tuple[float, float, dict, dict]:
     if done.returncode != 0:
         raise SpecError(f"Graphviz failed: {done.stderr.strip()}")
     ids = {v: k for k, v in name.items()}
-    size, boxes, links = (0.0, 0.0), {}, {}
+    size, boxes, found = (0.0, 0.0), {}, {}
     for row in done.stdout.splitlines():
         parts = row.split()
         if parts[0] == "graph":
             size = (float(parts[2]) * 72, float(parts[3]) * 72)
         elif parts[0] == "node":
-            boxes[ids[parts[1]]] = tuple(float(v) * 72 for v in parts[2:6])
+            cx, cy, w, h = (float(v) * 72 for v in parts[2:6])
+            boxes[ids[parts[1]]] = (cx, cy, w - 2 * LINK_AIR_X, h - 2 * LINK_AIR_Y)
         elif parts[0] == "edge":
             count = int(parts[3])
             points = [(float(parts[4 + 2 * i]) * 72, float(parts[5 + 2 * i]) * 72) for i in range(count)]
             rest = parts[4 + 2 * count:]
             # Trailing fields are "style color"; a label adds "<name> xl yl" before them.
             label = (float(rest[-4]) * 72, float(rest[-3]) * 72) if len(rest) > 2 else None
-            links[(ids[parts[1]], ids[parts[2]])] = (points, label)
+            found[(ids[parts[1]], ids[parts[2]])] = (points, label)
+    links = {ends: (_extend_to_borders(points, boxes[ends[0]], boxes[ends[1]]), label) for ends, (points, label) in found.items()}
     return size[0], size[1], boxes, links
 
 
@@ -350,11 +417,107 @@ def _bezier(points: list[tuple[float, float]]) -> str:
                         for i in range(1, len(points) - 2, 3))
 
 
+LABEL_CLEARANCE, PARALLEL_CLEARANCE, PARALLEL_STRETCH, PARALLEL_ANGLE = 8, 8, 12, 30  # units, units, units, degrees
+BRANCH_CLEARANCE = 8  # units a process-map branch label keeps from every arrowhead and box; its own line may stay close
+
+
+def _sample(points: list[tuple[float, float]], per_curve: int = 24) -> list[tuple[float, float]]:
+    """Points along a drawn link: the start plus every cubic bézier of ``points`` sampled."""
+    out = [points[0]]
+    for i in range(0, len(points) - 3, 3):
+        (x0, y0), (x1, y1), (x2, y2), (x3, y3) = points[i:i + 4]
+        for step in range(1, per_curve + 1):
+            t = step / per_curve
+            a, b, c, d = (1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t * t * (1 - t), t ** 3
+            out.append((a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3))
+    return out
+
+
+def _arrow_corners(tip: tuple[float, float], direction: tuple[float, float], stroke: float) -> list[tuple[float, float]]:
+    """The triangle a marker draws at ``tip``: its path is 8 units deep and 4 to each side of a 10-unit box at
+    ``markerWidth`` 9 x stroke width / 10 scale, pointing along ``direction``."""
+    scale = 9 * stroke / 10
+    length, half = 8 * scale, 4 * scale
+    size = math.hypot(*direction)
+    ux, uy = direction[0] / size, direction[1] / size
+    bx, by = tip[0] - length * ux, tip[1] - length * uy
+    return [tip, (bx - half * uy, by + half * ux), (bx + half * uy, by - half * ux)]
+
+
+def _arrow_outline(samples: list[tuple[float, float]], per_edge: int = 8) -> list[tuple[float, float]]:
+    """The arrowhead the marker draws at the end of a link, as points along its triangle."""
+    tx, ty = samples[-1]
+    ax, ay = next(p for p in reversed(samples) if math.hypot(p[0] - tx, p[1] - ty) > 3)
+    corners = _arrow_corners((tx, ty), (tx - ax, ty - ay), 1.6)
+    return [(p[0] + (q[0] - p[0]) * i / per_edge, p[1] + (q[1] - p[1]) * i / per_edge)
+            for p, q in zip(corners, corners[1:] + corners[:1]) for i in range(per_edge)]
+
+
+def _to_rect(point: tuple[float, float], rect: tuple[float, float, float, float]) -> float:
+    return math.hypot(max(rect[0] - point[0], 0, point[0] - rect[2]), max(rect[1] - point[1], 0, point[1] - rect[3]))
+
+
+def _by_arc(samples: list[tuple[float, float]], step: float = 3.0) -> list[tuple[float, float, float, float]]:
+    """x, y and unit tangent every ``step`` units of arc length."""
+    out, carry = [], 0.0
+    for (ax, ay), (bx, by) in zip(samples, samples[1:]):
+        length = math.hypot(bx - ax, by - ay)
+        if length < 1e-9:
+            continue
+        position = step - carry if carry else 0.0
+        while position <= length:
+            out.append((ax + (bx - ax) / length * position, ay + (by - ay) / length * position,
+                        (bx - ax) / length, (by - ay) / length))
+            position += step
+        carry = (carry + length) % step
+    return out
+
+
+def _guard_links(model: dict, paths: dict[int, list], labels: dict[int, tuple]) -> None:
+    """Fail naming the link when a phrase or a link is too close to another link or phrase.
+
+    Every phrase keeps ``LABEL_CLEARANCE`` units from every other link (path and arrowhead) and phrase; no two links
+    run side by side closer than ``PARALLEL_CLEARANCE`` for more than ``PARALLEL_STRETCH`` units (crossings are fine).
+    """
+    def name(i: int) -> str:
+        return f"links[{i}] ({model['links'][i]['from']} -> {model['links'][i]['to']})"
+
+    outlines = {i: _arrow_outline(path) for i, path in paths.items()}
+    for i, rect in labels.items():
+        for j, path in paths.items():
+            if j == i:
+                continue
+            near = min(_to_rect(p, rect) for p in [*path, *outlines[j]])
+            if near < LABEL_CLEARANCE:
+                raise SpecError(f"'links[{i}].label' is {math.floor(near * 10) / 10:.1f} units from {name(j)}, under the {LABEL_CLEARANCE}-unit "
+                                "minimum; shorten it, or move the concepts or the link")
+        for j, other in labels.items():
+            gap = math.hypot(max(other[0] - rect[2], rect[0] - other[2], 0), max(other[1] - rect[3], rect[1] - other[3], 0))
+            if j > i and gap < LABEL_CLEARANCE:
+                raise SpecError(f"'links[{i}].label' is {math.floor(gap * 10) / 10:.1f} units from the phrase of {name(j)}, under the "
+                                f"{LABEL_CLEARANCE}-unit minimum; shorten one of them")
+    arcs = {i: _by_arc(path) for i, path in paths.items()}
+    for i, mine in arcs.items():
+        for j, theirs in arcs.items():
+            if i == j:
+                continue
+            run = 0.0
+            for x, y, ux, uy in mine:
+                qx, qy, vx, vy = min(theirs, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)
+                if math.hypot(qx - x, qy - y) < PARALLEL_CLEARANCE and \
+                        math.degrees(math.acos(min(1.0, abs(ux * vx + uy * vy)))) < PARALLEL_ANGLE:
+                    run += 3.0
+            if run > PARALLEL_STRETCH:
+                raise SpecError(f"{name(i)} runs side by side with {name(j)} for {run:.0f} units within "
+                                f"{PARALLEL_CLEARANCE}; move a concept or drop one of the links")
+
+
 def concept_map(spec: dict) -> str:
     model = _concept_model(spec)
     graph_w, graph_h, boxes, links = _dot(model)
     families = model["families"]
     entries = [Entry(key, item["label"], MEANING_COLOURS[item["colour"]], item["meaning"]) for key, item in families.items()]
+    _guard_legend(entries)
     inner = graph_w
     xs = _legend_positions(entries, inner)
     width = max(graph_w + 2 * PAD_X, _header_end(model["title"]) + PAD_X, _legend_end(entries, xs) + PAD_X)
@@ -379,17 +542,23 @@ def concept_map(spec: dict) -> str:
                            for c in model["concepts"] if c["family"]}}
     out = _open(width, height, used)
     out += _header("MAPA CONCEPTUAL", model["title"], width)
-    for link in model["links"]:
+    paths: dict[int, list] = {}
+    label_rects: dict[int, tuple] = {}
+    for index, link in enumerate(model["links"]):
         points, label = links[(link["from"], link["to"])]
         name, colour = colour_of(link["from"])
         key = f"{link['from']}>{link['to']}"
         dash = f' stroke-dasharray="{DASH}"' if link["cross"] else ""
         out.append(f'<path data-link="{attr(key)}" d="{_bezier([pt(*q) for q in points])}" fill="none" stroke="{colour}" '
                    f'stroke-width="1.6"{dash} marker-end="url(#tip-{name})"/>')
+        paths[index] = _sample([pt(*q) for q in points])
         lx, ly = pt(*label)
+        width, top, bottom = ink(link["label"], 12.5, 500)
+        label_rects[index] = (lx - width / 2, ly + 4 + top, lx + width / 2, ly + 4 + bottom)
         shade = MUTED if name == "ink" else mix(colour, 0.85, "#000000")
         out.append(text(lx, ly + 4, link["label"], 12.5, 500, shade).replace("<text ", f'<text data-label="{attr(key)}" ', 1))
 
+    _guard_links(model, paths, label_rects)
     for concept in model["concepts"]:
         cx, cy, w, h = boxes[concept["id"]]
         x, y = pt(cx, cy)
@@ -426,7 +595,7 @@ TOP, ROW_H, BOX_H, DIAMOND_H, LANE_GAP, SIDE = 112, 92, 60, 38, 10, 15
 RESERVED_LANE_IDS = {"artifact": "artifact lane", "decision": "decision legend entry"}  # ids the drawing already uses
 SLOT_Y = (0, -14, 14, -24, 24)  # where connectors meet a step side, from its middle; one slot per connector
 CORRIDOR_STEP = 5  # gap between two connectors that run side by side down a lane margin
-LABEL_SIZE, LABEL_ABOVE, LABEL_BELOW = 12.5, 12, 1  # a label's box spans baseline - 12 .. baseline + 1
+LABEL_SIZE, LABEL_ABOVE = 12.5, 12  # a branch label's box is its real ink; LABEL_ABOVE only spaces the candidate spots
 
 
 def _process_model(spec: dict) -> dict:
@@ -522,6 +691,10 @@ def process_map(spec: dict) -> str:
     model = _process_model(spec)
     columns = [*model["lanes"], *([model["artifact_lane"]] if model["artifact_lane"] else [])]
     n = len(columns)
+    entries = [Entry(c["id"], c["short"], LANE_COLOURS[c["colour"]]) for c in columns]
+    if any(s["decision"] for s in model["steps"]):
+        entries.append(Entry("decision", "DECISIÓN", SAFFRON, swatch="diamond"))
+    _guard_legend(entries)
     box_need = max(_box_need(s) for s in model["steps"])
     corridor_slots, corridors = _corridor_plan(model)
     margin = max(SIDE, CORRIDOR_STEP * (corridors + 1))  # room beside the boxes for every concurrent corridor
@@ -531,9 +704,6 @@ def process_map(spec: dict) -> str:
         lane_need = max(lane_need, max(art_widths) + 50)
     _guard_width(2 * PAD_X + n * lane_need + (n - 1) * LANE_GAP)
 
-    entries = [Entry(c["id"], c["short"], LANE_COLOURS[c["colour"]]) for c in columns]
-    if any(s["decision"] for s in model["steps"]):
-        entries.append(Entry("decision", "DECISIÓN", SAFFRON, swatch="diamond"))
     xs = _legend_positions(entries, MAX_WIDTH - 2 * PAD_X)
     _guard_width(max(_legend_end(entries, xs) + PAD_X, _header_end(model["title"]) + PAD_X))
 
@@ -582,7 +752,7 @@ def process_map(spec: dict) -> str:
             art = model["artifact_lane"]
             art_colour = LANE_COLOURS[art["colour"]]
             ax, aw, fold = lane_x["artifact"] + 25, lane_w - 50, 16
-            obstacles.append((ax - 2, cy - 21, ax + aw + 2, cy + 21))
+            obstacles.append([(ax, cy - 19), (ax + aw, cy - 19), (ax + aw, cy + 19), (ax, cy + 19)])
             art_lines.append([(x + box_w + 2, cy), (ax, cy)])
             out.append(f'<line data-edge="artifact:{sid}" x1="{x + box_w + 2:.1f}" y1="{cy:.1f}" x2="{ax:.1f}" y2="{cy:.1f}" '
                        f'stroke="{art_colour}" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#tip-{art["colour"]})"/>')
@@ -593,9 +763,11 @@ def process_map(spec: dict) -> str:
             out.append(text(ax + 14, cy + 5, step["artifact"], 13.5, 500, INK, "start"))
 
     routes = _plan_routes(model, nodes, lane_x, lane_w, margin, corridor_slots, corridors)
-    obstacles += [(n["cx"] - n["hw"] - 2, n["cy"] - n["hh"] - 2, n["cx"] + n["hw"] + 2, n["cy"] + n["hh"] + 2)
-                  for n in nodes.values()]
-    spots = _place_labels(model, routes, obstacles, art_lines)
+    obstacles += [[(n["cx"], n["cy"] - n["hh"]), (n["cx"] + n["hw"], n["cy"]), (n["cx"], n["cy"] + n["hh"]), (n["cx"] - n["hw"], n["cy"])]
+                  if n["decision"] else
+                  [(n["cx"] - n["hw"], n["cy"] - n["hh"]), (n["cx"] + n["hw"], n["cy"] - n["hh"]),
+                   (n["cx"] + n["hw"], n["cy"] + n["hh"]), (n["cx"] - n["hw"], n["cy"] + n["hh"])] for n in nodes.values()]
+    spots = _place_labels(model, routes, obstacles, art_lines, width)
     for index, (link, route) in enumerate(zip(model["flow"], routes)):
         d = f"M{route[0][0]:.1f},{route[0][1]:.1f}" + "".join(
             f" H{x:.1f}" if abs(y - route[i][1]) < 1e-6 else f" V{y:.1f}" for i, (x, y) in enumerate(route[1:]))
@@ -702,23 +874,26 @@ def _plan_routes(model: dict, nodes: dict, lane_x: dict, lane_w: float, margin: 
     return routes
 
 
-def _place_labels(model: dict, routes: list, boxes: list, lines: list) -> dict[int, tuple[float, float]]:
+def _place_labels(model: dict, routes: list, shapes: list, lines: list, width: float) -> dict[int, tuple[float, float]]:
     """Left x and baseline for every branch label, in flow order.
 
-    A label sits beside its own connector, nearest the source first, on the first spot where its box
-    touches no connector, arrow tip, step, document or earlier label. No spot is an error, never an overlap.
+    A label sits beside its own connector, nearest the source first, on the first spot where its ink box
+    touches no connector or earlier label, stays inside the ``width``-unit canvas and keeps ``BRANCH_CLEARANCE``
+    units from every arrowhead (its own included), step and document. No spot is an error, never a cramped label.
     """
     segments = [seg for route in routes for seg in zip(route, route[1:])] + [tuple(line) for line in lines]
-    tips = [(x - 9, y - 9, x + 9, y + 9) for x, y in [route[-1] for route in routes] + [line[-1] for line in lines]]
-    taken = [*boxes, *tips]
+    heads = [_arrow_corners(route[-1], (route[-1][0] - route[-2][0], route[-1][1] - route[-2][1]), 1.8) for route in routes]
+    heads += [_arrow_corners(line[-1], (line[-1][0] - line[-2][0], line[-1][1] - line[-2][1]), 1.6) for line in lines]
+    solids = [*shapes, *heads]
+    taken: list[tuple] = []
     spots: dict[int, tuple[float, float]] = {}
     for index, (link, route) in enumerate(zip(model["flow"], routes)):
         if not link["label"]:
             continue
-        width = measure(link["label"].upper(), LABEL_SIZE, 700, 1.2)
-        for left, baseline in _spots(route, width):
-            rect = (left, baseline - LABEL_ABOVE, left + width, baseline + LABEL_BELOW)
-            if _free(rect, segments, taken):
+        text_w, top, bottom = ink(link["label"].upper(), LABEL_SIZE, 700, 1.2)
+        for left, baseline in _spots(route, text_w):
+            rect = (left, baseline + top, left + text_w, baseline + bottom)
+            if rect[0] >= 0 and rect[2] <= width and _free(rect, segments, taken, solids):
                 spots[index] = (left, baseline)
                 taken.append(rect)
                 break
@@ -728,7 +903,9 @@ def _place_labels(model: dict, routes: list, boxes: list, lines: list) -> dict[i
 
 
 def _spots(route: list, width: float):
-    """Candidate label origins beside each segment of ``route``, nearest to the segment's start first."""
+    """Candidate label origins beside each segment of ``route``, nearest to the segment's start first.
+
+    The spots further from the line come last, so a label that already had a place keeps it."""
     for (x0, y0), (x1, y1) in zip(route, route[1:]):
         if abs(y0 - y1) < 1e-6:  # horizontal: above the line, then below it
             direction, span = (1 if x1 > x0 else -1), abs(x1 - x0)
@@ -741,15 +918,57 @@ def _spots(route: list, width: float):
             for side in (1, -1):
                 for along in range(12, int(span - 6) + 1, 6):
                     yield (x0 + 7 if side > 0 else x0 - 7 - width), y0 + direction * along + 6
+    # Last resort, for the short stretch between a diamond and the step below it: finer steps, further from the line.
+    for (x0, y0), (x1, y1) in zip(route, route[1:]):
+        if abs(y0 - y1) >= 1e-6:
+            direction, span = (1 if y1 > y0 else -1), abs(y1 - y0)
+            for offset in range(7, 25):
+                for side in (1, -1):
+                    for along in range(6, int(span) + 1):
+                        yield (x0 + offset if side > 0 else x0 - offset - width), y0 + direction * along + 6
 
 
-def _free(rect: tuple, segments: list, boxes: list) -> bool:
+def _free(rect: tuple, segments: list, taken: list, solids: list) -> bool:
     x0, y0, x1, y1 = rect
     reach = 2.5  # half a connector stroke plus a hair of air
     for (ax, ay), (bx, by) in segments:
         if min(ax, bx) - reach < x1 and max(ax, bx) + reach > x0 and min(ay, by) - reach < y1 and max(ay, by) + reach > y0:
             return False
-    return not any(bx0 < x1 and x0 < bx1 and by0 < y1 and y0 < by1 for bx0, by0, bx1, by1 in boxes)
+    if any(bx0 < x1 and x0 < bx1 and by0 < y1 and y0 < by1 for bx0, by0, bx1, by1 in taken):
+        return False
+    return all(_gap(rect, shape) >= BRANCH_CLEARANCE for shape in solids)
+
+
+def _gap(rect: tuple, polygon: list[tuple[float, float]]) -> float:
+    """Distance between a rectangle and a convex polygon (0 when they touch or overlap)."""
+    x0, y0, x1, y1 = rect
+    corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    edges = list(zip(polygon, polygon[1:] + polygon[:1]))
+
+    def inside(point: tuple[float, float]) -> bool:
+        turns = [(bx - ax) * (point[1] - ay) - (by - ay) * (point[0] - ax) for (ax, ay), (bx, by) in edges]
+        return all(t >= 0 for t in turns) or all(t <= 0 for t in turns)
+
+    def crosses(a: tuple[float, float], b: tuple[float, float]) -> bool:
+        """Liang-Barsky: does segment a-b meet the rectangle?"""
+        near, far = 0.0, 1.0
+        for delta, start, low, high in ((b[0] - a[0], a[0], x0, x1), (b[1] - a[1], a[1], y0, y1)):
+            if abs(delta) < 1e-12:
+                if not low <= start <= high:
+                    return False
+                continue
+            t0, t1 = sorted(((low - start) / delta, (high - start) / delta))
+            near, far = max(near, t0), min(far, t1)
+        return near <= far
+
+    def to_segment(point: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        along = max(0.0, min(1.0, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+        return math.hypot(point[0] - a[0] - along * dx, point[1] - a[1] - along * dy)
+
+    if any(inside(c) for c in corners) or any(crosses(a, b) for a, b in edges):
+        return 0.0
+    return min(*(to_segment(c, a, b) for c in corners for a, b in edges), *(_to_rect(v, rect) for v in polygon))
 
 
 # --------------------------------------------------------------------------
