@@ -190,7 +190,7 @@ def test_space_grotesk_ships_in_the_repo_with_its_licence() -> None:
 
 
 @needs_rsvg
-def test_png_fontconfig_loads_only_the_repo_font_folder(tmp_path: Path) -> None:
+def test_png_fontconfig_adds_the_repo_font_folder_to_the_system_fonts(tmp_path: Path) -> None:
     import bauhaus_maps
 
     conf = bauhaus_maps.write_fontconfig(tmp_path)
@@ -534,12 +534,30 @@ def connectors(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
     return {e.get("data-edge"): path_points(e.get("d")) for e in find(root, "path") if e.get("data-edge")}
 
 
+def crosses_diamond(points: list[tuple[float, float]], rect: tuple[float, float, float, float]) -> bool:
+    """True when an axis-aligned segment enters the open interior of the diamond inscribed in ``rect``."""
+    x0, y0, x1, y1 = rect
+    cx, cy, hw, hh = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+    for (ax, ay), (bx, by) in zip(points, points[1:]):
+        if abs(ay - by) < 1e-6:  # horizontal: the diamond is |x - cx| < hw * (1 - |y - cy| / hh) at this height
+            reach = hw * (1 - abs(ay - cy) / hh)
+            if reach > 0.05 and min(ax, bx) < cx + reach - 0.05 and max(ax, bx) > cx - reach + 0.05:
+                return True
+        else:
+            reach = hh * (1 - abs(ax - cx) / hw)
+            if reach > 0.05 and min(ay, by) < cy + reach - 0.05 and max(ay, by) > cy - reach + 0.05:
+                return True
+    return False
+
+
 def assert_no_connector_crosses_a_node(root: ET.Element) -> None:
     boxes = all_boxes(root)
+    diamonds = {e.get("data-node") for e in find(root, "polygon") if e.get("data-node")}
     assert connectors(root), "no connectors drawn"
     for name, points in connectors(root).items():
         for node_id, rect in boxes.items():
-            assert not crosses_box(points, rect), f"connector {name} crosses node {node_id}"
+            hit = crosses_diamond(points, rect) if node_id in diamonds else crosses_box(points, rect)
+            assert not hit, f"connector {name} crosses node {node_id}"
 
 
 @pytest.fixture
@@ -654,8 +672,12 @@ def test_row_skipping_edge_runs_along_the_free_edge_of_its_source_lane(process_r
     assert points[2][1] == pytest.approx(points[3][1])
 
 
-def _lattice_spec() -> dict:
-    """Three actor lanes and an artifact lane, boxes and decisions, with every ordered pair as a flow."""
+def _lattice_spec(count: int = 4) -> dict:
+    """Three actor lanes and an artifact lane, boxes and decisions, with every ordered pair of ``count`` steps as a flow.
+
+    Four steps is the densest such map on three lanes plus the artifact lane: with more, five connectors meet
+    one side of a step (four fit apart there) or the corridors no longer fit 860 units.
+    """
     steps = [
         {"id": "a", "lane": "l1", "title": "Alfa", "artifact": "alfa.md"},
         {"id": "b", "lane": "l2", "title": "¿Beta?", "decision": True},
@@ -665,7 +687,7 @@ def _lattice_spec() -> dict:
         {"id": "f", "lane": "l1", "title": "Zeta"},
         {"id": "g", "lane": "l3", "title": "Eta", "artifact": "eta.md"},
         {"id": "h", "lane": "l2", "title": "Theta"},
-    ]
+    ][:count]
     ids = [s["id"] for s in steps]
     return {"kind": "process_map", "title": "Todas las parejas",
             "lanes": [{"id": "l1", "label": "UNO"}, {"id": "l2", "label": "DOS"}, {"id": "l3", "label": "TRES"}],
@@ -675,8 +697,9 @@ def _lattice_spec() -> dict:
 
 def test_no_connector_crosses_a_node_for_any_pair_of_steps(tmp_path: Path) -> None:
     root = svg_root(tmp_path, _lattice_spec())
-    assert len(connectors(root)) == 8 * 7
+    assert len(connectors(root)) == 4 * 3
     assert_no_connector_crosses_a_node(root)
+    assert collinear_overlaps(root) == []
     boxes = all_boxes(root)
     for name, points in connectors(root).items():
         source, target = name.split(">")
@@ -689,7 +712,8 @@ def test_no_connector_crosses_a_node_for_any_pair_of_steps(tmp_path: Path) -> No
 
 
 def test_no_connector_crosses_a_node_with_two_lanes_and_no_artifact_lane(tmp_path: Path) -> None:
-    spec = _lattice_spec()
+    spec = _lattice_spec(8)
+    spec["steps"], spec["flow"] = spec["steps"][:5], [f for f in spec["flow"] if {f["from"], f["to"]} <= set("abcde")]
     spec["lanes"] = spec["lanes"][:2]
     spec.pop("artifact_lane")
     for step in spec["steps"]:
@@ -697,7 +721,178 @@ def test_no_connector_crosses_a_node_with_two_lanes_and_no_artifact_lane(tmp_pat
         step.pop("artifact", None)
     root = svg_root(tmp_path, spec)
     assert not find(root, "rect", data_lane="artifact")
+    assert len(connectors(root)) == 5 * 4
     assert_no_connector_crosses_a_node(root)
+    assert collinear_overlaps(root) == []
+
+
+ROUTES_SPEC = {  # verifier repro: skip edges, back edges and labels competing for the same lanes
+    "kind": "process_map", "title": "Rutas",
+    "lanes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
+    "artifact_lane": {"label": "DOC"},
+    "steps": [
+        {"id": "s1", "lane": "b", "title": "Uno", "artifact": "uno.md"},
+        {"id": "d1", "lane": "c", "title": "¿Sigue?", "decision": True},
+        {"id": "s3", "lane": "a", "title": "Tres"},
+        {"id": "s4", "lane": "b", "title": "Cuatro", "artifact": "cuatro.md"},
+        {"id": "s5", "lane": "c", "title": "Cinco"},
+        {"id": "s6", "lane": "a", "title": "Seis"},
+    ],
+    "flow": [
+        {"from": "s1", "to": "d1"}, {"from": "d1", "to": "s3", "label": "sí"}, {"from": "d1", "to": "s6", "label": "no"},
+        {"from": "s5", "to": "s1", "label": "rehacer"}, {"from": "s4", "to": "d1"}, {"from": "s3", "to": "s5"},
+        {"from": "s6", "to": "s4"},
+    ],
+}
+STRESS_SPEC = {  # three back edges and three skip edges leaving the same lanes at the same time
+    "kind": "process_map", "title": "Corredores",
+    "lanes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
+    "steps": [
+        {"id": "p1", "lane": "c", "title": "Uno"}, {"id": "p2", "lane": "a", "title": "Dos"},
+        {"id": "p3", "lane": "c", "title": "Tres"}, {"id": "p4", "lane": "b", "title": "Cuatro"},
+        {"id": "p5", "lane": "c", "title": "Cinco"}, {"id": "p6", "lane": "a", "title": "Seis"},
+    ],
+    "flow": [
+        {"from": "p1", "to": "p2"}, {"from": "p2", "to": "p3"}, {"from": "p3", "to": "p4"}, {"from": "p4", "to": "p5"},
+        {"from": "p5", "to": "p6"}, {"from": "p5", "to": "p1", "label": "otra vez"}, {"from": "p6", "to": "p2", "label": "no"},
+        {"from": "p4", "to": "p1"}, {"from": "p1", "to": "p3", "label": "sí"}, {"from": "p1", "to": "p5"},
+        {"from": "p2", "to": "p4"},
+    ],
+}
+
+
+def _labelled_lattice() -> dict:
+    spec = _lattice_spec()
+    spec["flow"] = [{**f, **({"label": "sí"} if (f["from"], f["to"]) in {("a", "b"), ("c", "d"), ("e", "f")} else {})}
+                    for f in spec["flow"]]
+    return spec
+
+
+def segments(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
+    """Every connector drawn, the dashed artifact ones included, as polylines."""
+    found = dict(connectors(root))
+    for line in find(root, "line"):
+        if (line.get("data-edge") or "").startswith("artifact:"):
+            found[line.get("data-edge")] = [(float(line.get("x1")), float(line.get("y1"))),
+                                            (float(line.get("x2")), float(line.get("y2")))]
+    return found
+
+
+def label_boxes(root: ET.Element) -> dict[str, tuple[float, float, float, float]]:
+    """Each branch label's box: the text width measured in Space Grotesk at its size, and its cap height."""
+    import bauhaus_maps
+
+    boxes = {}
+    for label in find(root, "text"):
+        if not label.get("data-label"):
+            continue
+        value, size = "".join(label.itertext()), float(label.get("font-size"))
+        width = bauhaus_maps.measure(value, size, int(label.get("font-weight")), float(label.get("letter-spacing")))
+        x, y, anchor = float(label.get("x")), float(label.get("y")), label.get("text-anchor")
+        left = x if anchor == "start" else x - width if anchor == "end" else x - width / 2
+        boxes[label.get("data-label")] = (left, y - size, left + width, y + 1)
+    return boxes
+
+
+def overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def assert_labels_are_clear(root: ET.Element) -> None:
+    labels = label_boxes(root)
+    assert labels, "no labels drawn"
+    nodes = all_boxes(root)
+    lines = segments(root)
+    for name, rect in labels.items():
+        for other, points in lines.items():
+            assert not crosses_box(points, rect), f"label {name} is crossed by connector {other}"
+        for node_id, box_ in nodes.items():
+            assert not overlap(rect, box_), f"label {name} overlaps node {node_id}"
+        for other, box_ in labels.items():
+            assert other == name or not overlap(rect, box_), f"labels {name} and {other} overlap"
+
+
+def collinear_overlaps(root: ET.Element) -> list[str]:
+    """Pairs of distinct connectors that run along the same line over a stretch longer than a stroke."""
+    flat = [(name, a, b) for name, points in segments(root).items() for a, b in zip(points, points[1:])]
+    clashes = []
+    for i, (name, a, b) in enumerate(flat):
+        for other, c, d in flat[i + 1:]:
+            if name == other:
+                continue
+            for axis in (0, 1):  # 0: both vertical (same x), 1: both horizontal (same y)
+                if abs(a[axis] - b[axis]) < 1e-6 and abs(c[axis] - d[axis]) < 1e-6 and abs(a[axis] - c[axis]) < 0.75:
+                    lo, hi = max(min(a[1 - axis], b[1 - axis]), min(c[1 - axis], d[1 - axis])), min(
+                        max(a[1 - axis], b[1 - axis]), max(c[1 - axis], d[1 - axis]))
+                    if hi - lo > 0.75:
+                        clashes.append(f"{name} / {other} at {'x' if axis == 0 else 'y'}={a[axis]:.1f}")
+    return clashes
+
+
+@pytest.mark.parametrize("lane_id", ["artifact", "decision"])
+def test_reserved_lane_ids_are_rejected_naming_the_field(tmp_path: Path, lane_id: str) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"][0]["id"] = lane_id
+    for step in spec["steps"]:
+        step["lane"] = lane_id if step["lane"] == "equipo" else step["lane"]
+    result, out = render(tmp_path, spec, "--png", tmp_path / "fig.png")
+    assert result.returncode == 2
+    assert result.stderr == (f"bauhaus_maps: 'lanes[0].id' is {lane_id!r}, which names the "
+                             f"{'artifact lane' if lane_id == 'artifact' else 'decision legend entry'}; use another id\n")
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+def test_an_actor_lane_never_shares_the_artifact_column_in_the_reproduction(tmp_path: Path) -> None:
+    spec = {"kind": "process_map", "title": "T", "lanes": [{"id": "artifact", "label": "A"}, {"id": "b", "label": "B"}],
+            "artifact_lane": {"label": "DOC"},
+            "steps": [{"id": "s1", "lane": "artifact", "title": "Uno", "artifact": "x.md"}, {"id": "s2", "lane": "b", "title": "Dos"}],
+            "flow": [{"from": "s1", "to": "s2"}]}
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2 and not out.exists()
+
+
+@pytest.mark.parametrize("spec", [PROCESS_SPEC, ROUTES_SPEC, STRESS_SPEC, _labelled_lattice()], ids=["spec-kit", "routes", "stress", "lattice"])
+def test_no_label_touches_a_connector_a_node_or_another_label(tmp_path: Path, spec: dict) -> None:
+    assert_labels_are_clear(svg_root(tmp_path, spec))
+
+
+def test_a_label_with_no_free_spot_fails_naming_the_flow_field(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["flow"][0]["label"] = "una etiqueta imposiblemente larga para el hueco de la ruta " * 3
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2 and not out.exists()
+    assert result.stderr.startswith("bauhaus_maps: 'flow[0].label' has no free spot beside its connector"), result.stderr
+
+
+@pytest.mark.parametrize("spec", [PROCESS_SPEC, ROUTES_SPEC, STRESS_SPEC], ids=["spec-kit", "routes", "stress"])
+def test_no_two_connectors_share_a_collinear_stretch(tmp_path: Path, spec: dict) -> None:
+    root = svg_root(tmp_path, spec)
+    assert collinear_overlaps(root) == []
+    assert_no_connector_crosses_a_node(root)
+
+
+def test_concurrent_corridors_stay_inside_the_lane_margin(tmp_path: Path) -> None:
+    root = svg_root(tmp_path, STRESS_SPEC)
+    lane = box(find(root, "rect", data_lane="c")[0])
+    for name in ("p5>p1", "p4>p1"):
+        corridor = connectors(root)[name][1][0]
+        assert lane[0] < corridor < lane[2]
+        assert corridor > node_box(root, "p1")[2], name  # right of the nodes of the lane
+    assert connectors(root)["p5>p1"][1][0] != connectors(root)["p4>p1"][1][0]
+
+
+def test_more_connectors_than_a_step_side_can_keep_apart_fail_naming_the_step(tmp_path: Path) -> None:
+    result, out = render(tmp_path, _lattice_spec(6))
+    assert result.returncode == 2 and not out.exists()
+    assert result.stderr == ("bauhaus_maps: step 'a' has 5 connectors on its right side and only 4 fit apart; "
+                             "split the map or route some flows through another step\n")
+
+
+def test_corridors_that_cannot_fit_fail_with_the_width_message_instead_of_overlapping(tmp_path: Path) -> None:
+    result, out = render(tmp_path, _lattice_spec(8))
+    assert result.returncode == 2 and not out.exists()
+    assert re.fullmatch(r"bauhaus_maps: layout is \d+ units wide, over the 860-unit limit; the figure is never shrunk, "
+                        r"so split the map or shorten names and details\n", result.stderr), result.stderr
 
 
 def test_the_legend_names_each_lane_and_the_decision(process_root: ET.Element) -> None:

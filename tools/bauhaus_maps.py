@@ -402,6 +402,10 @@ def concept_map(spec: dict) -> str:
 # --------------------------------------------------------------------------
 
 TOP, ROW_H, BOX_H, DIAMOND_H, LANE_GAP, SIDE = 112, 92, 60, 38, 10, 15
+RESERVED_LANE_IDS = {"artifact": "artifact lane", "decision": "decision legend entry"}  # ids the drawing already uses
+SLOT_Y = (0, -14, 14, -24, 24)  # where connectors meet a step side, from its middle; one slot per connector
+CORRIDOR_STEP = 5  # gap between two connectors that run side by side down a lane margin
+LABEL_SIZE, LABEL_ABOVE, LABEL_BELOW = 12.5, 12, 1  # a label's box spans baseline - 12 .. baseline + 1
 
 
 def _process_model(spec: dict) -> dict:
@@ -423,6 +427,8 @@ def _process_model(spec: dict) -> dict:
         here = f"lanes[{index}]"
         item = _mapping(item, here)
         lane_id = _text(item, "id", here)
+        if lane_id in RESERVED_LANE_IDS:
+            raise SpecError(f"'{here}.id' is {lane_id!r}, which names the {RESERVED_LANE_IDS[lane_id]}; use another id")
         if lane_id in lane_ids:
             raise SpecError(f"'{here}.id' repeats id {lane_id!r}")
         lane_ids.add(lane_id)
@@ -490,7 +496,9 @@ def process_map(spec: dict) -> str:
     columns = [*model["lanes"], *([model["artifact_lane"]] if model["artifact_lane"] else [])]
     n = len(columns)
     box_need = max(_box_need(s) for s in model["steps"])
-    lane_need = max([box_need + 2 * SIDE, *(measure(c["label"], 12.5, 700, 1.4) + 24 for c in columns)])
+    corridor_slots, corridors = _corridor_plan(model)
+    margin = max(SIDE, CORRIDOR_STEP * (corridors + 1))  # room beside the boxes for every concurrent corridor
+    lane_need = max([box_need + 2 * margin, *(measure(c["label"], 12.5, 700, 1.4) + 24 for c in columns)])
     art_widths = [14 + measure(s["artifact"], 13.5, 500) + 16 + 14 for s in model["steps"] if s["artifact"]]
     if art_widths:
         lane_need = max(lane_need, max(art_widths) + 50)
@@ -504,7 +512,7 @@ def process_map(spec: dict) -> str:
 
     width = MAX_WIDTH
     lane_w = (width - 2 * PAD_X - (n - 1) * LANE_GAP) / n
-    box_w = max(min(lane_w - 2 * SIDE, 260), box_need)
+    box_w = max(min(lane_w - 2 * margin, 260), box_need)
     lane_x = {c["id"]: PAD_X + i * (lane_w + LANE_GAP) for i, c in enumerate(columns)}
     height = TOP + 24 + len(model["steps"]) * ROW_H + 56
     by_lane = {c["id"]: c for c in columns}
@@ -518,7 +526,7 @@ def process_map(spec: dict) -> str:
         out.append(f'<rect data-lane="{escape(c["id"])}" x="{x:.1f}" y="{TOP - 10}" width="{lane_w:.1f}" height="{height - TOP - 40}" '
                    f'fill="{mix(colour, 0.05, BG)}"/>')
 
-    nodes, number = {}, 0
+    nodes, number, obstacles, art_lines = {}, 0, [], []
     for row, step in enumerate(model["steps"]):
         lane = by_lane[step["lane"]]
         colour = LANE_COLOURS[lane["colour"]]
@@ -526,7 +534,8 @@ def process_map(spec: dict) -> str:
         cy = top + BOX_H / 2
         half_w = box_w / 2 - 2 if step["decision"] else box_w / 2
         nodes[step["id"]] = {"row": row, "lane": lane["id"], "cx": cx, "cy": cy, "hw": half_w,
-                             "hh": DIAMOND_H if step["decision"] else BOX_H / 2, "decision": step["decision"]}
+                             "hh": DIAMOND_H if step["decision"] else BOX_H / 2, "decision": step["decision"],
+                             "artifact": bool(step["artifact"])}
         sid = escape(step["id"])
         if step["decision"]:
             out.append(f'<polygon data-node="{sid}" points="{cx:.1f},{cy - DIAMOND_H:.1f} {cx + half_w:.1f},{cy:.1f} '
@@ -546,6 +555,8 @@ def process_map(spec: dict) -> str:
             art = model["artifact_lane"]
             art_colour = LANE_COLOURS[art["colour"]]
             ax, aw, fold = lane_x["artifact"] + 25, lane_w - 50, 16
+            obstacles.append((ax - 2, cy - 21, ax + aw + 2, cy + 21))
+            art_lines.append([(x + box_w + 2, cy), (ax, cy)])
             out.append(f'<line data-edge="artifact:{sid}" x1="{x + box_w + 2:.1f}" y1="{cy:.1f}" x2="{ax:.1f}" y2="{cy:.1f}" '
                        f'stroke="{art_colour}" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#tip-{art["colour"]})"/>')
             out.append(f'<path data-artifact="{sid}" d="M{ax:.1f},{cy - 19:.1f} H{ax + aw - fold:.1f} L{ax + aw:.1f},{cy - 19 + fold:.1f} '
@@ -554,49 +565,164 @@ def process_map(spec: dict) -> str:
                        f'fill="{art_colour}" stroke="{art_colour}" stroke-width="2.4"/>')
             out.append(text(ax + 14, cy + 5, step["artifact"], 13.5, 500, INK, "start"))
 
-    for link in model["flow"]:
-        route, label_at = _route(nodes[link["from"]], nodes[link["to"]], lane_x, lane_w, link["label"])
+    routes = _plan_routes(model, nodes, lane_x, lane_w, margin, corridor_slots, corridors)
+    obstacles += [(n["cx"] - n["hw"] - 2, n["cy"] - n["hh"] - 2, n["cx"] + n["hw"] + 2, n["cy"] + n["hh"] + 2)
+                  for n in nodes.values()]
+    spots = _place_labels(model, routes, obstacles, art_lines)
+    for index, (link, route) in enumerate(zip(model["flow"], routes)):
         d = f"M{route[0][0]:.1f},{route[0][1]:.1f}" + "".join(
-            f" H{x:.1f}" if y == route[i][1] else f" V{y:.1f}" for i, (x, y) in enumerate(route[1:]))
+            f" H{x:.1f}" if abs(y - route[i][1]) < 1e-6 else f" V{y:.1f}" for i, (x, y) in enumerate(route[1:]))
         key = escape(f"{link['from']}>{link['to']}")
         out.append(f'<path data-edge="{key}" d="{d}" fill="none" stroke="{INK}" stroke-width="1.8" marker-end="url(#tip-ink)"/>')
-        if link["label"]:
-            x, y, anchor = label_at
-            out.append(text(x, y, link["label"].upper(), 12.5, 700, INK, anchor, spacing=1.2)
+        if index in spots:
+            x, y = spots[index]
+            out.append(text(x, y, link["label"].upper(), LABEL_SIZE, 700, INK, "start", spacing=1.2)
                        .replace("<text ", f'<text data-label="{key}" ', 1))
     out += _legend(entries, xs, height - 22)
     return _finish(out)
 
 
-def _route(a: dict, b: dict, lane_x: dict, lane_w: float, label: str | None):
-    """Orthogonal connector from step ``a`` to step ``b`` as a list of vertices, and its label anchor.
+def _corridor_plan(model: dict) -> tuple[dict, int]:
+    """Give every row-skipping and back edge its own corridor, and count the corridors a lane side needs.
 
-    One step per row means a row holds no other node, so the only obstacles are the vertical
-    runs: those stay in the gaps between rows (adjacent rows) or in the free edge of a lane
-    (rows skipped, or a back edge to an earlier row).
+    A skip edge runs down the left margin of its source lane; a back edge runs up the right margin of
+    the rightmost lane of its two steps. Edges whose rows overlap on the same lane side take different
+    slots (greedy interval colouring), so no two corridors share a line.
     """
-    ax, ay, bx, by = a["cx"], a["cy"], b["cx"], b["cy"]
-    tip = 2  # the arrow stops this far from the node's border
-    if b["row"] == a["row"] + 1:
-        y0, y1 = ay + a["hh"], by - b["hh"]
-        if ax == bx:
-            return [(ax, y0), (bx, y1 - tip)], (ax + 10, (y0 + y1) / 2 + 4, "start")
-        mid = (y0 + y1) / 2
-        return [(ax, y0), (ax, mid), (bx, mid), (bx, y1 - tip)], (ax + 10, mid - 6, "start")
-    if b["row"] > a["row"]:  # skips rows: down the left edge of the source lane
-        run = lane_x[a["lane"]] + SIDE / 2
-        if bx + b["hw"] <= run:
-            entry = (bx + b["hw"] + tip, by + (0 if b["decision"] else 14))
+    row = {s["id"]: i for i, s in enumerate(model["steps"])}
+    lane_of = {s["id"]: s["lane"] for s in model["steps"]}
+    order = {lane["id"]: i for i, lane in enumerate(model["lanes"])}
+    wanted: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
+    for index, link in enumerate(model["flow"]):
+        ra, rb = row[link["from"]], row[link["to"]]
+        if rb == ra + 1:
+            continue
+        if rb > ra:
+            wanted.setdefault((lane_of[link["from"]], "left"), []).append((ra, rb, index))
         else:
-            entry = (bx - b["hw"] - tip, by)
-        return [(ax - a["hw"], ay), (run, ay), (run, entry[1]), entry], (run + 8, ay + a["hh"] + 14, "start")
-    # back edge: loop up the right edge of the rightmost lane of the two
-    right = max(lane_x[a["lane"]], lane_x[b["lane"]]) + lane_w - SIDE / 2
-    start = (ax + a["hw"], ay - (0 if a["decision"] else 14))
-    entry = (bx + b["hw"] + tip, by + (0 if b["decision"] else 14))
-    where = ((right + 6, (start[1] + entry[1]) / 2 + 4, "start")
-             if not label or measure(label.upper(), 12.5, 700, 1.2) <= 24 else (right - 6, entry[1] - 6, "end"))
-    return [start, (right, start[1]), (right, entry[1]), entry], where
+            lane = max(lane_of[link["from"]], lane_of[link["to"]], key=order.get)
+            wanted.setdefault((lane, "right"), []).append((rb, ra, index))
+    slots, widest = {}, 0
+    for key, items in wanted.items():
+        last_rows: list[int] = []  # last row each slot is busy until
+        for first, last, index in sorted(items):
+            for slot, busy_until in enumerate(last_rows):
+                if busy_until < first:
+                    last_rows[slot] = last
+                    break
+            else:
+                slot = len(last_rows)
+                last_rows.append(last)
+            slots[index] = (key, slot)
+        widest = max(widest, len(last_rows))
+    return slots, widest
+
+
+def _plan_routes(model: dict, nodes: dict, lane_x: dict, lane_w: float, margin: float, corridor_slots: dict,
+                 corridors: int) -> list[list[tuple[float, float]]]:
+    """Orthogonal connector from each flow's source step to its target step, as lists of vertices.
+
+    One step per row means a row holds no other node, so the only obstacles are the vertical runs:
+    those stay in the gap between rows (adjacent rows) or in a lane margin (rows skipped, or a back
+    edge to an earlier row). Connectors that meet the same side of a step use different slots, and
+    the slot in the middle of a side stays free for the dashed connector to the step's artifact.
+    """
+    tip = 2  # the arrow stops this far from the border of the step
+    order = {lane["id"]: i for i, lane in enumerate(model["lanes"])}
+    attached: dict[tuple[str, str], list[int]] = {}
+    sides: dict[int, tuple[str, str]] = {}
+    for index, link in enumerate(model["flow"]):
+        a, b = nodes[link["from"]], nodes[link["to"]]
+        if b["row"] == a["row"] + 1:
+            continue
+        if b["row"] > a["row"]:
+            sides[index] = ("left", "left" if order[b["lane"]] >= order[a["lane"]] else "right")
+        else:
+            sides[index] = ("right", "right")
+        attached.setdefault((link["from"], sides[index][0]), []).append(index)
+        attached.setdefault((link["to"], sides[index][1]), []).append(index)
+    slot_y = {}
+    for (step_id, side), indexes in attached.items():
+        free = SLOT_Y[1:] if side == "right" and nodes[step_id]["artifact"] else SLOT_Y
+        if len(indexes) > len(free):
+            raise SpecError(f"step {step_id!r} has {len(indexes)} connectors on its {side} side and only {len(free)} fit "
+                            "apart; split the map or route some flows through another step")
+        for slot, index in zip(free, indexes):
+            slot_y[(index, step_id)] = slot
+
+    def border(node: dict, side: str, dy: float) -> float:
+        reach = node["hw"] * (1 - abs(dy) / node["hh"]) if node["decision"] else node["hw"]
+        return node["cx"] + (reach if side == "right" else -reach)
+
+    routes = []
+    for index, link in enumerate(model["flow"]):
+        a, b = nodes[link["from"]], nodes[link["to"]]
+        if index not in sides:
+            y0, y1 = a["cy"] + a["hh"], b["cy"] - b["hh"]
+            if a["cx"] == b["cx"]:
+                routes.append([(a["cx"], y0), (b["cx"], y1 - tip)])
+            else:
+                mid = (y0 + y1) / 2
+                routes.append([(a["cx"], y0), (a["cx"], mid), (b["cx"], mid), (b["cx"], y1 - tip)])
+            continue
+        (lane_id, side), slot = corridor_slots[index]
+        gap = margin * (slot + 1) / (corridors + 1)
+        run = lane_x[lane_id] + gap if side == "left" else lane_x[lane_id] + lane_w - gap
+        a_side, b_side = sides[index]
+        ya, yb = a["cy"] + slot_y[(index, link["from"])], b["cy"] + slot_y[(index, link["to"])]
+        entry = border(b, b_side, yb - b["cy"]) + (tip if b_side == "right" else -tip)
+        routes.append([(border(a, a_side, ya - a["cy"]), ya), (run, ya), (run, yb), (entry, yb)])
+    return routes
+
+
+def _place_labels(model: dict, routes: list, boxes: list, lines: list) -> dict[int, tuple[float, float]]:
+    """Left x and baseline for every branch label, in flow order.
+
+    A label sits beside its own connector, nearest the source first, on the first spot where its box
+    touches no connector, arrow tip, step, document or earlier label. No spot is an error, never an overlap.
+    """
+    segments = [seg for route in routes for seg in zip(route, route[1:])] + [tuple(line) for line in lines]
+    tips = [(x - 9, y - 9, x + 9, y + 9) for x, y in [route[-1] for route in routes] + [line[-1] for line in lines]]
+    taken = [*boxes, *tips]
+    spots: dict[int, tuple[float, float]] = {}
+    for index, (link, route) in enumerate(zip(model["flow"], routes)):
+        if not link["label"]:
+            continue
+        width = measure(link["label"].upper(), LABEL_SIZE, 700, 1.2)
+        for left, baseline in _spots(route, width):
+            rect = (left, baseline - LABEL_ABOVE, left + width, baseline + LABEL_BELOW)
+            if _free(rect, segments, taken):
+                spots[index] = (left, baseline)
+                taken.append(rect)
+                break
+        else:
+            raise SpecError(f"'flow[{index}].label' has no free spot beside its connector; shorten it or move the steps")
+    return spots
+
+
+def _spots(route: list, width: float):
+    """Candidate label origins beside each segment of ``route``, nearest to the segment's start first."""
+    for (x0, y0), (x1, y1) in zip(route, route[1:]):
+        if abs(y0 - y1) < 1e-6:  # horizontal: above the line, then below it
+            direction, span = (1 if x1 > x0 else -1), abs(x1 - x0)
+            for along in range(8, int(span - width - 4) + 1, 6):
+                left = x0 + along if direction > 0 else x0 - along - width
+                yield left, y0 - 6
+                yield left, y0 + 7 + LABEL_ABOVE
+        else:  # vertical: right of the line, then left of it
+            direction, span = (1 if y1 > y0 else -1), abs(y1 - y0)
+            for side in (1, -1):
+                for along in range(12, int(span - 6) + 1, 6):
+                    yield (x0 + 7 if side > 0 else x0 - 7 - width), y0 + direction * along + 6
+
+
+def _free(rect: tuple, segments: list, boxes: list) -> bool:
+    x0, y0, x1, y1 = rect
+    reach = 2.5  # half a connector stroke plus a hair of air
+    for (ax, ay), (bx, by) in segments:
+        if min(ax, bx) - reach < x1 and max(ax, bx) + reach > x0 and min(ay, by) - reach < y1 and max(ay, by) + reach > y0:
+            return False
+    return not any(bx0 < x1 and x0 < bx1 and by0 < y1 and y0 < by1 for bx0, by0, bx1, by1 in boxes)
 
 
 # --------------------------------------------------------------------------

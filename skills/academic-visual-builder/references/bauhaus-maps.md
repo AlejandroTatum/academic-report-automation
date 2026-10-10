@@ -34,7 +34,7 @@ Colour encodes meaning: a concept family or an actor lane. Never one colour per 
 
 ## Print size and the 860-unit limit
 
-A figure prints at about 13.5 cm, so every text must print at 5.5 pt or more: the layout is at most 860 SVG units wide. A wider layout is never shrunk. The render fails with `layout is N units wide, over the 860-unit limit; the figure is never shrunk, so split the map or shorten names and details`; split the map into two figures or shorten names and details, then render again. Process maps are always 860 units wide, so what fails there is text that no longer fits its lane.
+A figure prints at about 13.5 cm, so every text must print at 5.5 pt or more: the layout is at most 860 SVG units wide. A wider layout is never shrunk. The render fails with `layout is N units wide, over the 860-unit limit; the figure is never shrunk, so split the map or shorten names and details`; split the map into two figures or shorten names and details, then render again. Process maps are always 860 units wide, so what fails there is text or corridors that no longer fit their lanes.
 
 ## Errors
 
@@ -90,7 +90,7 @@ flow:
 | `steps` | required, at least 2, one per row in the given order: `id`, `lane`, `title`, optional `detail`, optional `artifact` (a document with a folded corner, joined by a dashed connector), optional `decision: true` (saffron diamond, no number, no artifact) |
 | `flow` | required list: `from`, `to`, optional `label` (printed in uppercase, e.g. "sí" becomes SÍ); a pair appears once |
 
-Steps are numbered in order in a 30-unit corner square on a white box with a 3-unit lane border; decisions are not numbered. Connectors are orthogonal and ink-coloured, and no connector crosses a step: a flow to the next row goes through the gap between rows, a flow that skips rows runs down the free left edge of its source lane, and a back edge to an earlier row loops up the right edge of the rightmost of the two lanes. Keep branch labels to one short word. With three actor lanes plus an artifact lane there are four narrow columns: keep titles to about 13 characters and details to about 16, or the render fails with the width message.
+Steps are numbered in order in a 30-unit corner square on a white box with a 3-unit lane border; decisions are not numbered. Connectors are orthogonal and ink-coloured, and no connector crosses a step: a flow to the next row goes through the gap between rows, a flow that skips rows runs down the free left edge of its source lane, and a back edge to an earlier row loops up the right edge of the rightmost of the two lanes. Connectors that run side by side down a lane margin each get their own line (the margin widens with the number of concurrent corridors), and connectors that meet one side of a step use separate slots on it: at most 5 per side, 4 when the step has an artifact, otherwise the render fails naming the step. A branch label is placed beside its connector where it touches no connector, step or document; if no spot is free the render fails naming `flow[i].label`, so shorten it. Lane ids `artifact` and `decision` are reserved. Keep branch labels to one short word. With three actor lanes plus an artifact lane there are four narrow columns: keep titles to about 13 characters and details to about 16, or the render fails with the width message.
 
 ## Examples
 
