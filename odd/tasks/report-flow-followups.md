@@ -12,13 +12,14 @@ Repo AlejandroTatum/academic-report-automation; worktree academic-report-automat
 
 ## Tasks
 
-- T1 (S1) merge stack #65-#71 with merge commits — route: parent — commit: merge commits on main
-- T2 (S2) tie-mtime test + documented marker-rewrite behavior — route: parent, test-first — commit: pending
-- T3 (S3) tool-side merge of carried-over requirements — route: parent, test-first, independent verify — commit: pending
-- T4 (S4) body_digest alias; decisions for math normalization and rubric fallback — route: parent — commit: pending
+- T1 (S1) merge stack #65-#71 with merge commits — route: parent — DONE: #65-#71 merged in order, main 8ffa0bf has the stack tip's tree (suite on tip 2117 passed, 1 skipped)
+- T2 (S2) tie-mtime test + documented marker-rewrite behavior — route: parent — DONE fedb831 (pin tests, no meaningful RED: behavior already existed; docstring documents the rewrite case)
+- T3 (S3) tool-side merge of carried-over requirements — route: parent, test-first, independent verify — DONE (commit below); RED 6 failed, GREEN; verifier FAIL D1 blank-quote carry, D2 unhashable criterion; RED 2 failed, fixed by _carryable; re-verify PASS; full suite 2128 passed, 1 skipped; DBP AA01 incremental brief 17.6 KB -> 8.0 KB
+- T4 (S4) body_digest alias; decisions for math normalization and rubric fallback — route: parent — alias a4ee915 (guarded by existing test); math normalization and rubric fallback await the user's decision
 
 ## Log
 
 - L1 (2026-10-10, user): "si dale arma el plan con los 4 puntos y ve trabajandolos hasta completar"
 - L2: Stack is linear (#65 base main ... #71 base feat/editorial-visual-style), main unprotected, history uses merge commits. Issue #72 points 2-7 stay out of scope (not in the 4 points).
 - L3: "rubric fallback" = 5208b57: a contains/matches check bound to a missing section widens to the whole draft. Math normalization is pandoc's own spelling. Both need a user decision.
+- L4: Verifier noted residual risk: carrying also fills a criterion a full (non --since) verify forgot, when its section is unchanged; marker lists it under carried_criteria.
