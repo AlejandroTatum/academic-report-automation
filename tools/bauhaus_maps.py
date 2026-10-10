@@ -19,6 +19,7 @@ machine and nothing is installed system-wide.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import shutil
 import subprocess
@@ -232,6 +233,9 @@ CORE_PAD, NODE_PAD, CORE_H, NODE_H = 56, 44, 74, 62
 # Graphviz sees every box this much bigger on each side, so its splines keep that distance from it: 10 units to the
 # sides; 22 above and below, where an arrowhead (11.5 units deep) may sit and other links still keep 10 from it.
 LINK_AIR_X, LINK_AIR_Y = 10, 22
+# Graphviz also reserves each link phrase a cell this much wider and taller than its text, so the phrase keeps that
+# air from the splines routed past it.
+LABEL_AIR_X, LABEL_AIR_Y = 24, 0
 
 
 def _concept_model(spec: dict) -> dict:
@@ -368,8 +372,8 @@ def _dot(model: dict) -> tuple[float, float, dict, dict]:
         group = ' group="spine"' if concept["id"] in model["spine"] else ""
         lines.append(f"{name[concept['id']]} [width={w / 72 + air_x:.3f} height={h / 72 + air_y:.3f}{group}];")
     for link in model["links"]:
-        cell = (f'<<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="0"><TR><TD WIDTH="{round(measure(link["label"], 12.5, 500) + 14)}" '
-                'HEIGHT="20"></TD></TR></TABLE>>')
+        cell = (f'<<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="0"><TR><TD WIDTH="{round(measure(link["label"], 12.5, 500) + LABEL_AIR_X)}" '
+                f'HEIGHT="{20 + LABEL_AIR_Y}"></TD></TR></TABLE>>')
         extra = " constraint=false" if link["cross"] else ""
         lines.append(f'{name[link["from"]]} -> {name[link["to"]]} [label={cell}{extra}];')
     lines.append("}")
@@ -402,6 +406,93 @@ def _bezier(points: list[tuple[float, float]]) -> str:
                         for i in range(1, len(points) - 2, 3))
 
 
+ARROW_LENGTH, ARROW_HALF = 8 * 1.44, 4 * 1.44  # the marker's path (8 x 4 of its 10 units) at 9 * 1.6 / 10 scale
+LABEL_CLEARANCE, PARALLEL_CLEARANCE, PARALLEL_STRETCH, PARALLEL_ANGLE = 8, 8, 12, 30  # units, units, units, degrees
+
+
+def _sample(points: list[tuple[float, float]], per_curve: int = 24) -> list[tuple[float, float]]:
+    """Points along a drawn link: the start plus every cubic bézier of ``points`` sampled."""
+    out = [points[0]]
+    for i in range(0, len(points) - 3, 3):
+        (x0, y0), (x1, y1), (x2, y2), (x3, y3) = points[i:i + 4]
+        for step in range(1, per_curve + 1):
+            t = step / per_curve
+            a, b, c, d = (1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t * t * (1 - t), t ** 3
+            out.append((a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3))
+    return out
+
+
+def _arrow_outline(samples: list[tuple[float, float]], per_edge: int = 8) -> list[tuple[float, float]]:
+    """The arrowhead the marker draws at the end of a link, as points along its triangle."""
+    tx, ty = samples[-1]
+    ax, ay = next(p for p in reversed(samples) if math.hypot(p[0] - tx, p[1] - ty) > 3)
+    length = math.hypot(tx - ax, ty - ay)
+    ux, uy = (tx - ax) / length, (ty - ay) / length
+    bx, by = tx - ARROW_LENGTH * ux, ty - ARROW_LENGTH * uy
+    corners = [(tx, ty), (bx - ARROW_HALF * uy, by + ARROW_HALF * ux), (bx + ARROW_HALF * uy, by - ARROW_HALF * ux)]
+    return [(p[0] + (q[0] - p[0]) * i / per_edge, p[1] + (q[1] - p[1]) * i / per_edge)
+            for p, q in zip(corners, corners[1:] + corners[:1]) for i in range(per_edge)]
+
+
+def _to_rect(point: tuple[float, float], rect: tuple[float, float, float, float]) -> float:
+    return math.hypot(max(rect[0] - point[0], 0, point[0] - rect[2]), max(rect[1] - point[1], 0, point[1] - rect[3]))
+
+
+def _by_arc(samples: list[tuple[float, float]], step: float = 3.0) -> list[tuple[float, float, float, float]]:
+    """x, y and unit tangent every ``step`` units of arc length."""
+    out, carry = [], 0.0
+    for (ax, ay), (bx, by) in zip(samples, samples[1:]):
+        length = math.hypot(bx - ax, by - ay)
+        if length < 1e-9:
+            continue
+        position = step - carry if carry else 0.0
+        while position <= length:
+            out.append((ax + (bx - ax) / length * position, ay + (by - ay) / length * position,
+                        (bx - ax) / length, (by - ay) / length))
+            position += step
+        carry = (carry + length) % step
+    return out
+
+
+def _guard_links(model: dict, paths: dict[int, list], labels: dict[int, tuple]) -> None:
+    """Fail naming the link when a phrase or a link is too close to another link or phrase.
+
+    Every phrase keeps ``LABEL_CLEARANCE`` units from every other link (path and arrowhead) and phrase; no two links
+    run side by side closer than ``PARALLEL_CLEARANCE`` for more than ``PARALLEL_STRETCH`` units (crossings are fine).
+    """
+    def name(i: int) -> str:
+        return f"links[{i}] ({model['links'][i]['from']} -> {model['links'][i]['to']})"
+
+    outlines = {i: _arrow_outline(path) for i, path in paths.items()}
+    for i, rect in labels.items():
+        for j, path in paths.items():
+            if j == i:
+                continue
+            near = min(_to_rect(p, rect) for p in [*path, *outlines[j]])
+            if near < LABEL_CLEARANCE:
+                raise SpecError(f"'links[{i}].label' is {near:.1f} units from {name(j)}, under the {LABEL_CLEARANCE}-unit "
+                                "minimum; shorten it, or move the concepts or the link")
+        for j, other in labels.items():
+            gap = math.hypot(max(other[0] - rect[2], rect[0] - other[2], 0), max(other[1] - rect[3], rect[1] - other[3], 0))
+            if j > i and gap < LABEL_CLEARANCE:
+                raise SpecError(f"'links[{i}].label' is {gap:.1f} units from the phrase of {name(j)}, under the "
+                                f"{LABEL_CLEARANCE}-unit minimum; shorten one of them")
+    arcs = {i: _by_arc(path) for i, path in paths.items()}
+    for i, mine in arcs.items():
+        for j, theirs in arcs.items():
+            if i == j:
+                continue
+            run = 0.0
+            for x, y, ux, uy in mine:
+                qx, qy, vx, vy = min(theirs, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)
+                if math.hypot(qx - x, qy - y) < PARALLEL_CLEARANCE and \
+                        math.degrees(math.acos(min(1.0, abs(ux * vx + uy * vy)))) < PARALLEL_ANGLE:
+                    run += 3.0
+            if run > PARALLEL_STRETCH:
+                raise SpecError(f"{name(i)} runs side by side with {name(j)} for {run:.0f} units within "
+                                f"{PARALLEL_CLEARANCE}; move a concept or drop one of the links")
+
+
 def concept_map(spec: dict) -> str:
     model = _concept_model(spec)
     graph_w, graph_h, boxes, links = _dot(model)
@@ -432,17 +523,23 @@ def concept_map(spec: dict) -> str:
                            for c in model["concepts"] if c["family"]}}
     out = _open(width, height, used)
     out += _header("MAPA CONCEPTUAL", model["title"], width)
-    for link in model["links"]:
+    paths: dict[int, list] = {}
+    label_rects: dict[int, tuple] = {}
+    for index, link in enumerate(model["links"]):
         points, label = links[(link["from"], link["to"])]
         name, colour = colour_of(link["from"])
         key = f"{link['from']}>{link['to']}"
         dash = f' stroke-dasharray="{DASH}"' if link["cross"] else ""
         out.append(f'<path data-link="{attr(key)}" d="{_bezier([pt(*q) for q in points])}" fill="none" stroke="{colour}" '
                    f'stroke-width="1.6"{dash} marker-end="url(#tip-{name})"/>')
+        paths[index] = _sample([pt(*q) for q in points])
         lx, ly = pt(*label)
+        half = measure(link["label"], 12.5, 500) / 2
+        label_rects[index] = (lx - half, ly + 4 - 12.5, lx + half, ly + 5)
         shade = MUTED if name == "ink" else mix(colour, 0.85, "#000000")
         out.append(text(lx, ly + 4, link["label"], 12.5, 500, shade).replace("<text ", f'<text data-label="{attr(key)}" ', 1))
 
+    _guard_links(model, paths, label_rects)
     for concept in model["concepts"]:
         cx, cy, w, h = boxes[concept["id"]]
         x, y = pt(cx, cy)

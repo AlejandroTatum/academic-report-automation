@@ -374,7 +374,16 @@ def test_spine_is_a_straight_central_axis(tmp_path: Path) -> None:
         return max(centres) - min(centres)
 
     assert spread(svg_root(tmp_path, CONCEPT_SPEC)) < 0.3  # one vertical axis (rounding only)
-    assert spread(svg_root(tmp_path, _without(CONCEPT_SPEC, "spine"))) > 20
+    small = {"kind": "concept_map", "title": "T", "core": {"id": "c", "name": "Centro"},
+             "families": {"f": {"label": "F", "color": "blue"}},
+             "concepts": [{"id": n, "name": n.upper(), "family": "f"} for n in ("x", "a", "b")],
+             "links": [{"from": "c", "to": "x", "label": "incluye"}, {"from": "c", "to": "a", "label": "incluye"},
+                       {"from": "a", "to": "b", "label": "incluye"}], "spine": ["c", "a", "b"]}
+    centres = lambda root: [(node_box(root, n)[0] + node_box(root, n)[2]) / 2 for n in ("c", "a", "b")]  # noqa: E731
+    assert max(centres(svg_root(tmp_path, small))) - min(centres(svg_root(tmp_path, small))) < 0.3
+    small.pop("spine")
+    unspined = centres(svg_root(tmp_path, small))
+    assert max(unspined) - min(unspined) > 20
 
 
 @needs_dot
@@ -383,9 +392,15 @@ def test_sibling_order_follows_the_spec(tmp_path: Path) -> None:
     root = svg_root(tmp_path, spec)
     order = sorted(("problema", "req", "plan", "clar"), key=lambda n: node_box(root, n)[0])
     assert order == ["problema", "req", "plan", "clar"]  # the order of the spec's links from 'spec'
-    spec["links"][2], spec["links"][3] = spec["links"][3], spec["links"][2]
-    flipped = svg_root(tmp_path, spec)
-    assert node_box(flipped, "req")[0] < node_box(flipped, "problema")[0]
+    small = {"kind": "concept_map", "title": "T", "core": {"id": "c", "name": "Centro"},
+             "families": {"f": {"label": "F", "color": "blue"}},
+             "concepts": [{"id": name, "name": name.upper(), "family": "f"} for name in ("a", "b", "z")],
+             "links": [{"from": "c", "to": name, "label": "incluye"} for name in ("a", "b", "z")]}
+    root = svg_root(tmp_path, small)
+    assert sorted("abz", key=lambda n: node_box(root, n)[0]) == ["a", "b", "z"]
+    small["links"].reverse()  # a flipped order of the spec's links flips the children
+    flipped = svg_root(tmp_path, small)
+    assert sorted("abz", key=lambda n: node_box(flipped, n)[0]) == ["z", "b", "a"]
 
 
 @needs_dot
@@ -1523,3 +1538,122 @@ def test_every_concept_link_still_leaves_and_reaches_the_border_of_its_own_boxes
         source, target = name.split(">")
         assert distance_to_box(samples[0], boxes[source]) < 0.5, f"{name} starts away from {source}"
         assert distance_to_box(samples[-1], boxes[target]) < 0.5, f"{name} stops short of {target}"
+
+
+LABEL_CLEARANCE = 8  # SVG units a concept-map link phrase keeps from every other link (path and arrowhead) and phrase
+PARALLEL_CLEARANCE, PARALLEL_STRETCH, PARALLEL_ANGLE = 8, 12, 30  # units apart, longest tolerated run (units), degrees
+
+
+def box_gap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    dx, dy = max(b[0] - a[2], a[0] - b[2], 0), max(b[1] - a[3], a[1] - b[3], 0)
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def triangle_outline(triangle: list[tuple[float, float]], per_edge: int = 40) -> list[tuple[float, float]]:
+    return [(ax + (bx - ax) * i / per_edge, ay + (by - ay) * i / per_edge)
+            for (ax, ay), (bx, by) in zip(triangle, triangle[1:] + triangle[:1]) for i in range(per_edge)]
+
+
+def assert_labels_keep_their_distance(root: ET.Element) -> None:
+    links, labels = drawn_links(root), label_boxes(root)
+    for name, rect in labels.items():
+        for other, samples in links.items():
+            if other == name:
+                continue
+            path = min(distance_to_box(p, rect) for p in samples)
+            assert path >= LABEL_CLEARANCE, f"label {name} is {path:.1f} units from link {other}"
+            head = min(distance_to_box(p, rect) for p in triangle_outline(arrowhead(samples)))
+            assert head >= LABEL_CLEARANCE, f"label {name} is {head:.1f} units from the arrowhead of {other}"
+        for other, other_rect in labels.items():
+            if other != name:
+                gap = box_gap(rect, other_rect)
+                assert gap >= LABEL_CLEARANCE, f"label {name} is {gap:.1f} units from label {other}"
+
+
+def resampled(samples: list[tuple[float, float]], step: float = 2.0) -> list[tuple[float, float, float, float]]:
+    """x, y and the unit tangent every ``step`` units of arc length along a sampled path."""
+    out, travelled, carry = [], 0.0, 0.0
+    for (ax, ay), (bx, by) in zip(samples, samples[1:]):
+        length = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+        if length < 1e-9:
+            continue
+        ux, uy = (bx - ax) / length, (by - ay) / length
+        position = step - carry if carry else 0.0
+        while position <= length:
+            out.append((ax + ux * position, ay + uy * position, ux, uy))
+            position += step
+        carry = (carry + length) % step
+    return out
+
+
+def parallel_runs(root: ET.Element) -> dict[str, float]:
+    """For each ordered pair of links, how many units of the first run within the clearance of the second at a shallow angle."""
+    import math
+
+    links = {name: resampled(samples) for name, samples in drawn_links(root).items()}
+    runs = {}
+    for name, mine in links.items():
+        for other, theirs in links.items():
+            if name == other:
+                continue
+            run = 0.0
+            for x, y, ux, uy in mine:
+                near = min(theirs, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)
+                if ((near[0] - x) ** 2 + (near[1] - y) ** 2) ** 0.5 < PARALLEL_CLEARANCE:
+                    angle = math.degrees(math.acos(min(1.0, abs(ux * near[2] + uy * near[3]))))
+                    run += 2.0 if angle < PARALLEL_ANGLE else 0.0
+            runs[f"{name} / {other}"] = run
+    return runs
+
+
+def assert_no_two_links_run_side_by_side(root: ET.Element) -> None:
+    for pair, run in parallel_runs(root).items():
+        assert run <= PARALLEL_STRETCH, f"links {pair} run side by side for {run:.0f} units within {PARALLEL_CLEARANCE}"
+
+
+@needs_dot
+@pytest.mark.parametrize("spec", [CONCEPT_SPEC, ENGRAM_CONCEPT_SPEC], ids=["sdd", "engram"])
+def test_every_link_phrase_keeps_its_distance_from_the_other_links_and_phrases(tmp_path: Path, spec: dict) -> None:
+    assert_labels_keep_their_distance(svg_root(tmp_path, spec))
+
+
+@needs_dot
+@pytest.mark.parametrize("spec", [CONCEPT_SPEC, ENGRAM_CONCEPT_SPEC], ids=["sdd", "engram"])
+def test_no_two_concept_links_run_side_by_side(tmp_path: Path, spec: dict) -> None:
+    assert_no_two_links_run_side_by_side(svg_root(tmp_path, spec))
+
+
+def _links_svg(*paths: str) -> ET.Element:
+    body = "".join(f'<path data-link="l{i}>x" d="{d}"/>' for i, d in enumerate(paths))
+    return ET.fromstring(f'<svg xmlns="http://www.w3.org/2000/svg">{body}</svg>')
+
+
+def test_the_side_by_side_check_flags_parallel_links_and_lets_crossings_pass() -> None:
+    line = "M0,0 C30,0 60,0 100,0"
+    assert parallel_runs(_links_svg(line, "M0,5 C30,5 60,5 100,5"))["l0>x / l1>x"] > PARALLEL_STRETCH
+    assert parallel_runs(_links_svg(line, "M40,-40 C40,-15 40,15 40,40"))["l0>x / l1>x"] <= PARALLEL_STRETCH
+    assert parallel_runs(_links_svg(line, "M0,12 C30,12 60,12 100,12"))["l0>x / l1>x"] == 0  # 12 units apart is fine
+
+
+def _flipped(first: int, second: int) -> dict:
+    spec = copy.deepcopy(CONCEPT_SPEC)
+    spec["links"][first], spec["links"][second] = spec["links"][second], spec["links"][first]
+    return spec
+
+
+@needs_dot
+def test_links_that_would_hug_each_other_fail_naming_both_links_and_write_nothing(tmp_path: Path) -> None:
+    result, out = render(tmp_path, _flipped(2, 3), "--png", tmp_path / "fig.png")  # Requisitos and Problema swapped
+    assert result.returncode == 2
+    assert re.fullmatch(r"bauhaus_maps: links\[2\] \(spec -> req\) runs side by side with links\[3\] \(spec -> problema\) "
+                        r"for \d+ units within 8; move a concept or drop one of the links\n", result.stderr), result.stderr
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+@needs_dot
+def test_a_phrase_too_close_to_another_link_fails_naming_the_label_and_the_link(tmp_path: Path) -> None:
+    result, out = render(tmp_path, _flipped(2, 5))
+    assert result.returncode == 2
+    assert re.fullmatch(r"bauhaus_maps: 'links\[\d+\]\.label' is \d\.\d units from links\[\d+\] \(\w+ -> \w+\), under the "
+                        r"8-unit minimum; shorten it, or move the concepts or the link\n", result.stderr), result.stderr
+    assert not out.exists()
