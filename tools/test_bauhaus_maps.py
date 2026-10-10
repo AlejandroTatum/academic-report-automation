@@ -437,8 +437,8 @@ CONCEPT_CASES = [
     (_with(CONCEPT_SPEC, ["sdd", "nope"], "spine"), "'spine[1]' refers to unknown id 'nope'"),
     (_with(CONCEPT_SPEC, "sdd", "spine"), "'spine' must be a list of ids"),
     ({**CONCEPT_SPEC, "kind": "actor_map"},
-     "unknown kind 'actor_map'; use one of ['concept_map']"),
-    (_without(CONCEPT_SPEC, "kind"), "'kind' is required; use one of ['concept_map']"),
+     "unknown kind 'actor_map'; use one of ['concept_map', 'process_map']"),
+    (_without(CONCEPT_SPEC, "kind"), "'kind' is required; use one of ['concept_map', 'process_map']"),
 ]
 
 
@@ -508,6 +508,306 @@ def test_png_without_rsvg_convert_fails_cleanly_and_writes_nothing(tmp_path: Pat
     assert result.returncode == 2
     assert result.stderr == "bauhaus_maps: rsvg-convert was not found on PATH; install librsvg to use --png\n"
     assert not out.exists() and not png.exists()
+
+
+# --------------------------------------------------------------------------
+# T2 · process map
+# --------------------------------------------------------------------------
+
+LANE_TINT = {RED: "#F5EBE4", BLUE: "#EBEBEB", GREEN: "#EAEFE8"}  # 5 % of the lane colour over the paper
+
+
+def artifact_box(root: ET.Element, step_id: str) -> tuple[float, float, float, float]:
+    (shape,) = find(root, "path", data_artifact=step_id)
+    xs, ys = zip(*path_points(shape.get("d")))
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def all_boxes(root: ET.Element) -> dict[str, tuple[float, float, float, float]]:
+    boxes = {e.get("data-node"): box(e) for e in root.iter() if tag(e) in ("rect", "polygon") and e.get("data-node")}
+    boxes.update({f"artifact:{e.get('data-artifact')}": artifact_box(root, e.get("data-artifact"))
+                  for e in find(root, "path") if e.get("data-artifact")})
+    return boxes
+
+
+def connectors(root: ET.Element) -> dict[str, list[tuple[float, float]]]:
+    return {e.get("data-edge"): path_points(e.get("d")) for e in find(root, "path") if e.get("data-edge")}
+
+
+def assert_no_connector_crosses_a_node(root: ET.Element) -> None:
+    boxes = all_boxes(root)
+    assert connectors(root), "no connectors drawn"
+    for name, points in connectors(root).items():
+        for node_id, rect in boxes.items():
+            assert not crosses_box(points, rect), f"connector {name} crosses node {node_id}"
+
+
+@pytest.fixture
+def process_root(tmp_path: Path) -> ET.Element:
+    return svg_root(tmp_path, PROCESS_SPEC)
+
+
+def test_process_map_renders_at_860_units_and_passes_the_print_size_check(tmp_path: Path) -> None:
+    result, out = render(tmp_path, PROCESS_SPEC)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"rendered {out}"
+    svg = out.read_text(encoding="utf-8")
+    assert canvas_width(ET.fromstring(svg)) == 860
+    assert editorial_svg.check(svg) == []
+
+
+def test_process_map_uses_the_bauhaus_tokens_and_only_space_grotesk(process_root: ET.Element) -> None:
+    assert {t.get("font-family") for t in texts(process_root)} == {"Space Grotesk, sans-serif"}
+    assert {t.get("font-weight") for t in texts(process_root)} <= {"400", "500", "600", "700"}
+    assert find(process_root, "rect", width="860", fill=BG)
+    kind = text_of(process_root, "MAPA DE PROCESO")
+    assert (kind.get("fill"), kind.get("letter-spacing")) == (RED, "2.2")
+    title = text_of(process_root, PROCESS_SPEC["title"])
+    assert title.get("fill") == MUTED and title.get("y") == kind.get("y")
+
+
+def test_lanes_are_columns_with_solid_headers_and_five_percent_tinted_bodies(process_root: ET.Element) -> None:
+    lanes = {"equipo": RED, "ia": BLUE, "artifact": GREEN}
+    for lane, colour in lanes.items():
+        (head,) = find(process_root, "rect", data_lane_header=lane)
+        (body,) = find(process_root, "rect", data_lane=lane)
+        assert head.get("fill") == colour
+        assert body.get("fill") == LANE_TINT[colour]
+        assert box(body)[0] == box(head)[0] and box(body)[2] == box(head)[2] and box(body)[1] >= box(head)[3]
+    xs = [box(find(process_root, "rect", data_lane=lane)[0])[0] for lane in lanes]
+    assert xs == sorted(xs) and len(set(xs)) == 3
+    label = text_of(process_root, "EQUIPO DE DESARROLLO")
+    assert (label.get("fill"), label.get("font-weight")) == (WHITE, "700")
+
+
+def test_steps_are_white_boxes_with_a_lane_border_and_a_numbered_corner_square(process_root: ET.Element) -> None:
+    expected = {"s1": (RED, "1"), "s2": (BLUE, "2"), "s3": (BLUE, "3"), "s4": (BLUE, "4"), "s5": (BLUE, "5"),
+                "s6": (RED, "6")}
+    for step_id, (colour, number) in expected.items():
+        (rect,) = find(process_root, "rect", data_node=step_id)
+        assert (rect.get("fill"), rect.get("stroke"), rect.get("stroke-width")) == (WHITE, colour, "3")
+        (corner,) = find(process_root, "rect", data_corner=step_id)
+        assert (corner.get("width"), corner.get("height"), corner.get("fill")) == ("30", "30", colour)
+        assert (corner.get("x"), corner.get("y")) == (rect.get("x"), rect.get("y"))
+        digit = find(process_root, "text", data_number=step_id)
+        assert [("".join(d.itertext()), d.get("fill")) for d in digit] == [(number, WHITE)]
+    assert text_of(process_root, "Fijar principios").get("font-weight") == "700"
+    assert text_of(process_root, "/constitution").get("fill") == MUTED
+
+
+def test_decisions_are_saffron_diamonds_and_are_not_numbered(process_root: ET.Element) -> None:
+    (diamond,) = find(process_root, "polygon", data_node="d1")
+    assert diamond.get("fill") == SAFFRON
+    assert not find(process_root, "rect", data_corner="d1") and not find(process_root, "text", data_number="d1")
+    assert text_of(process_root, "¿Quedan ambigüedades?").get("fill") == INK
+    numbers = sorted("".join(t.itertext()) for t in find(process_root, "text") if t.get("data-number"))
+    assert numbers == ["1", "2", "3", "4", "5", "6"]  # six steps, the decision takes no number
+
+
+def test_artifacts_are_folded_documents_joined_by_a_dashed_connector(process_root: ET.Element) -> None:
+    (doc,) = find(process_root, "path", data_artifact="s1")
+    assert (doc.get("fill"), doc.get("stroke")) == (WHITE, GREEN)
+    (fold,) = find(process_root, "path", data_fold="s1")
+    assert fold.get("fill") == GREEN
+    (link,) = find(process_root, "line", data_edge="artifact:s1")
+    assert (link.get("stroke"), link.get("stroke-dasharray")) == (GREEN, "4 4")
+    assert text_of(process_root, "constitution.md").get("fill") == INK
+    assert not find(process_root, "path", data_artifact="s6"), "steps without an artifact get no document"
+    lane = box(find(process_root, "rect", data_lane="artifact")[0])
+    doc_x0, _, doc_x1, _ = artifact_box(process_root, "s1")
+    assert lane[0] < doc_x0 and doc_x1 < lane[2]
+
+
+def test_flow_connectors_are_ink_and_branch_labels_are_uppercase(process_root: ET.Element) -> None:
+    flows = {f"{f['from']}>{f['to']}" for f in PROCESS_SPEC["flow"]}
+    paths = {p.get("data-edge"): p for p in find(process_root, "path") if p.get("data-edge")}
+    assert set(paths) == flows
+    for path in paths.values():
+        assert (path.get("stroke"), path.get("fill"), path.get("marker-end")) == (INK, "none", "url(#tip-ink)")
+    for edge, label in (("d1>s3", "SÍ"), ("d1>s4", "NO")):
+        (found,) = find(process_root, "text", data_label=edge)
+        assert "".join(found.itertext()) == label and found.get("font-weight") == "700"
+    assert not find(process_root, "text", data_label="s1>s2")
+
+
+def test_every_connector_of_the_sample_map_avoids_every_node(process_root: ET.Element) -> None:
+    assert_no_connector_crosses_a_node(process_root)
+
+
+def test_back_edge_loops_on_the_right_of_its_source_box(process_root: ET.Element) -> None:
+    source = node_box(process_root, "s3")
+    points = connectors(process_root)["s3>d1"]
+    assert points[0][0] == pytest.approx(source[2]) and source[1] < points[0][1] < source[3]
+    corridor = points[1][0]
+    assert corridor > source[2] and all(p[0] >= source[2] - 1e-6 or p == points[-1] for p in points[1:-1])
+    target = node_box(process_root, "d1")
+    assert points[-1][1] == pytest.approx((target[1] + target[3]) / 2) and points[-1][0] > target[2]
+
+
+def test_row_skipping_edge_runs_along_the_free_edge_of_its_source_lane(process_root: ET.Element) -> None:
+    lane = box(find(process_root, "rect", data_lane="equipo")[0])
+    points = connectors(process_root)["d1>s4"]
+    run = points[1][0]
+    assert lane[0] < run < node_box(process_root, "d1")[0]
+    assert points[0][0] == pytest.approx(node_box(process_root, "d1")[0])  # leaves the left vertex
+    assert points[-1][0] < node_box(process_root, "s4")[0] + 3  # enters the left side of s4
+    assert points[2][1] == pytest.approx(points[3][1])
+
+
+def _lattice_spec() -> dict:
+    """Three actor lanes and an artifact lane, boxes and decisions, with every ordered pair as a flow."""
+    steps = [
+        {"id": "a", "lane": "l1", "title": "Alfa", "artifact": "alfa.md"},
+        {"id": "b", "lane": "l2", "title": "¿Beta?", "decision": True},
+        {"id": "c", "lane": "l3", "title": "Gamma", "artifact": "gamma.md"},
+        {"id": "d", "lane": "l1", "title": "¿Delta?", "decision": True},
+        {"id": "e", "lane": "l2", "title": "Épsilon", "artifact": "eps.md"},
+        {"id": "f", "lane": "l1", "title": "Zeta"},
+        {"id": "g", "lane": "l3", "title": "Eta", "artifact": "eta.md"},
+        {"id": "h", "lane": "l2", "title": "Theta"},
+    ]
+    ids = [s["id"] for s in steps]
+    return {"kind": "process_map", "title": "Todas las parejas",
+            "lanes": [{"id": "l1", "label": "UNO"}, {"id": "l2", "label": "DOS"}, {"id": "l3", "label": "TRES"}],
+            "artifact_lane": {"label": "ARTEFACTO"}, "steps": steps,
+            "flow": [{"from": a, "to": b} for a in ids for b in ids if a != b]}
+
+
+def test_no_connector_crosses_a_node_for_any_pair_of_steps(tmp_path: Path) -> None:
+    root = svg_root(tmp_path, _lattice_spec())
+    assert len(connectors(root)) == 8 * 7
+    assert_no_connector_crosses_a_node(root)
+    boxes = all_boxes(root)
+    for name, points in connectors(root).items():
+        source, target = name.split(">")
+        sx0, sy0, sx1, sy1 = boxes[source]
+        px, py = points[0]
+        assert sx0 - 1e-6 <= px <= sx1 + 1e-6 and sy0 - 1e-6 <= py <= sy1 + 1e-6, f"{name} starts off its source"
+        tx0, ty0, tx1, ty1 = boxes[target]
+        qx, qy = points[-1]
+        assert tx0 - 4 <= qx <= tx1 + 4 and ty0 - 4 <= qy <= ty1 + 4, f"{name} ends off its target"
+
+
+def test_no_connector_crosses_a_node_with_two_lanes_and_no_artifact_lane(tmp_path: Path) -> None:
+    spec = _lattice_spec()
+    spec["lanes"] = spec["lanes"][:2]
+    spec.pop("artifact_lane")
+    for step in spec["steps"]:
+        step["lane"] = "l1" if step["lane"] == "l1" else "l2"
+        step.pop("artifact", None)
+    root = svg_root(tmp_path, spec)
+    assert not find(root, "rect", data_lane="artifact")
+    assert_no_connector_crosses_a_node(root)
+
+
+def test_the_legend_names_each_lane_and_the_decision(process_root: ET.Element) -> None:
+    for key, colour, label in (("equipo", RED, "EQUIPO"), ("ia", BLUE, "ASISTENTE"), ("artifact", GREEN, "ARTEFACTO")):
+        (line,) = find(process_root, "line", data_legend=key)
+        assert (line.get("stroke"), line.get("stroke-width")) == (colour, "4")
+        legend = [t for t in texts(process_root) if "".join(t.itertext()) == label and t.get("font-weight") == "700"]
+        assert legend and legend[-1].get("fill") == colour
+    (marker,) = find(process_root, "polygon", data_legend="decision")
+    assert marker.get("fill") == SAFFRON
+    assert text_of(process_root, "DECISIÓN").get("fill") == INK
+    foot = max(float(e.get("y1")) for e in find(process_root, "line", data_legend="equipo"))
+    assert foot > max(b[3] for b in all_boxes(process_root).values())
+
+
+def test_a_map_without_decisions_has_no_decision_legend_entry(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["steps"] = [s for s in spec["steps"] if s["id"] != "d1"]
+    spec["flow"] = [{"from": "s1", "to": "s2"}, {"from": "s2", "to": "s3"}, {"from": "s3", "to": "s4"},
+                    {"from": "s4", "to": "s5"}, {"from": "s5", "to": "s6"}]
+    root = svg_root(tmp_path, spec)
+    assert not find(root, "polygon", data_legend="decision")
+
+
+def test_lane_colours_default_to_red_blue_green_ink_and_can_be_chosen(tmp_path: Path) -> None:
+    spec = _lattice_spec()
+    root = svg_root(tmp_path, spec)
+    heads = {lane: find(root, "rect", data_lane_header=lane)[0].get("fill") for lane in ("l1", "l2", "l3", "artifact")}
+    assert heads == {"l1": RED, "l2": BLUE, "l3": GREEN, "artifact": INK}
+    spec["lanes"][0]["color"] = "green"
+    spec["lanes"][2]["color"] = "red"
+    swapped = svg_root(tmp_path, spec)
+    assert find(swapped, "rect", data_lane_header="l1")[0].get("fill") == GREEN
+
+
+def test_a_process_map_wider_than_860_units_fails_instead_of_shrinking(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["lanes"].append({"id": "extra", "label": "TERCER ACTOR"})
+    spec["steps"][0]["title"] = "Un título extraordinariamente largo para forzar el ancho"
+    result, out = render(tmp_path, spec)
+    assert result.returncode == 2
+    assert re.fullmatch(
+        r"bauhaus_maps: layout is \d+ units wide, over the 860-unit limit; the figure is never shrunk, "
+        r"so split the map or shorten names and details\n", result.stderr), result.stderr
+    assert not out.exists()
+
+
+def _lane(lane_id: str, label: str, **extra: str) -> dict:
+    return {"id": lane_id, "label": label, **extra}
+
+
+PROCESS_CASES = [
+    (_without(PROCESS_SPEC, "title"), "'title' is required"),
+    (_without(PROCESS_SPEC, "lanes"), "'lanes' is required"),
+    (_with(PROCESS_SPEC, [_lane("a", "A")], "lanes"), "'lanes' needs 2 or 3 actor lanes, not 1"),
+    (_with(PROCESS_SPEC, [_lane(c, c.upper()) for c in "abcd"], "lanes"), "'lanes' needs 2 or 3 actor lanes, not 4"),
+    (_without(PROCESS_SPEC, "lanes", 0, "label"), "'lanes[0].label' is required"),
+    (_without(PROCESS_SPEC, "lanes", 1, "id"), "'lanes[1].id' is required"),
+    (_with(PROCESS_SPEC, "equipo", "lanes", 1, "id"), "'lanes[1].id' repeats id 'equipo'"),
+    (_with(PROCESS_SPEC, "saffron", "lanes", 0, "color"),
+     "'lanes[0].color' is 'saffron'; use one of ['blue', 'green', 'ink', 'red']"),
+    (_with(PROCESS_SPEC, "red", "lanes", 1, "color"), "'lanes[1].color' repeats colour 'red'"),
+    (_with(PROCESS_SPEC, {"label": ""}, "artifact_lane"), "'artifact_lane.label' is required"),
+    (_with(PROCESS_SPEC, {"label": "ARTEFACTO", "color": "red"}, "artifact_lane"),
+     "'artifact_lane.color' repeats colour 'red'"),
+    (_without(PROCESS_SPEC, "steps"), "'steps' is required"),
+    (_with(PROCESS_SPEC, PROCESS_SPEC["steps"][:1], "steps"), "'steps' needs at least 2 steps"),
+    (_without(PROCESS_SPEC, "steps", 0, "title"), "'steps[0].title' is required"),
+    (_without(PROCESS_SPEC, "steps", 1, "id"), "'steps[1].id' is required"),
+    (_without(PROCESS_SPEC, "steps", 1, "lane"), "'steps[1].lane' is required"),
+    (_with(PROCESS_SPEC, "nope", "steps", 1, "lane"), "'steps[1].lane' is 'nope'; use one of ['equipo', 'ia']"),
+    (_with(PROCESS_SPEC, "s1", "steps", 1, "id"), "'steps[1].id' repeats id 's1'"),
+    (_with(PROCESS_SPEC, "sí", "steps", 2, "decision"), "'steps[2].decision' must be true or false"),
+    (_with(PROCESS_SPEC, "x.md", "steps", 2, "artifact"), "'steps[2].artifact' is not allowed on a decision"),
+    (_without(PROCESS_SPEC, "artifact_lane"), "'steps[0].artifact' needs an 'artifact_lane'"),
+    (_without(PROCESS_SPEC, "flow"), "'flow' is required"),
+    (_with(PROCESS_SPEC, "zzz", "flow", 0, "to"), "'flow[0].to' refers to unknown id 'zzz'"),
+    (_with(PROCESS_SPEC, "zzz", "flow", 2, "from"), "'flow[2].from' refers to unknown id 'zzz'"),
+    (_without(PROCESS_SPEC, "flow", 0, "to"), "'flow[0].to' is required"),
+    (_with(PROCESS_SPEC, "s1", "flow", 0, "to"), "'flow[0]' links 's1' to itself"),
+]
+
+
+@pytest.mark.parametrize(("spec", "message"), PROCESS_CASES, ids=[m for _, m in PROCESS_CASES])
+def test_malformed_process_specs_fail_naming_the_field_and_write_nothing(tmp_path: Path, spec: dict, message: str) -> None:
+    result, out = render(tmp_path, spec, "--png", tmp_path / "fig.png")
+    assert result.returncode == 2
+    assert result.stderr == f"bauhaus_maps: {message}\n"
+    assert result.stdout == ""
+    assert not out.exists() and not (tmp_path / "fig.png").exists()
+
+
+def test_a_repeated_flow_pair_is_rejected(tmp_path: Path) -> None:
+    spec = copy.deepcopy(PROCESS_SPEC)
+    spec["flow"].append({"from": "s1", "to": "s2", "label": "otra vez"})
+    result, out = render(tmp_path, spec)
+    assert (result.returncode, result.stderr) == (2, "bauhaus_maps: 'flow[7]' repeats the flow 's1' -> 's2'\n")
+    assert not out.exists()
+
+
+@needs_rsvg
+def test_process_map_png_is_written_at_twice_the_svg_size(tmp_path: Path) -> None:
+    png = tmp_path / "proceso.png"
+    result, out = render(tmp_path, PROCESS_SPEC, "--png", png)
+    assert result.returncode == 0, result.stderr
+    data = png.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    root = ET.fromstring(out.read_text(encoding="utf-8"))
+    assert (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")) == (
+        round(float(root.get("width")) * 2), round(float(root.get("height")) * 2))
 
 
 # --------------------------------------------------------------------------

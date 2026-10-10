@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Bauhaus técnico maps: concept maps rendered from a YAML spec with automatic layout.
+"""Bauhaus técnico maps: concept maps and process maps rendered from a YAML spec.
 
 The house style for the maps that cost the most to draw by hand
 (``skills/academic-visual-builder/references/bauhaus-maps.md``): Space Grotesk only,
 paper background, one ink, three meaning colours (blue, red, green) and saffron for the
-core subtitle. Colour encodes a concept family, never one colour per node. The author
-writes content only; Graphviz (``dot -Tplain``) places the nodes and the tool draws them.
+core subtitle. Colour encodes a concept family (concept map) or an actor lane (process map),
+never one colour per node. The author writes content only: Graphviz (``dot -Tplain``) places
+concept maps and a deterministic grid places process maps.
 
     bauhaus_maps.py render <spec.yml> --out <figure.svg> [--png <figure.png>]
 
@@ -36,6 +37,8 @@ FONT = "Space Grotesk, sans-serif"
 BG, INK, MUTED, WHITE = "#F6F4EE", "#121212", "#4A4A4A", "#FFFFFF"
 SAFFRON = "#F2B233"
 MEANING_COLOURS = {"blue": "#2247B5", "red": "#E0452A", "green": "#0D8B6C"}
+LANE_COLOURS = {**MEANING_COLOURS, "ink": INK}
+LANE_DEFAULTS = ("red", "blue", "green", "ink")  # by column; saffron is for decisions only
 MAX_WIDTH = 860
 PAD_X = 24
 DASH = "6 5"
@@ -393,10 +396,212 @@ def concept_map(spec: dict) -> str:
 
 
 # --------------------------------------------------------------------------
+# process map
+# --------------------------------------------------------------------------
+
+TOP, ROW_H, BOX_H, DIAMOND_H, LANE_GAP, SIDE = 112, 92, 60, 38, 10, 15
+
+
+def _process_model(spec: dict) -> dict:
+    title = _text(spec, "title")
+    raw_lanes = _list(spec, "lanes")
+    if not 2 <= len(raw_lanes) <= 3:
+        raise SpecError(f"'lanes' needs 2 or 3 actor lanes, not {len(raw_lanes)}")
+    lanes, lane_ids, used = [], set(), {}
+
+    def colour_for(item: dict, here: str, column: int) -> str:
+        name = _text(item, "color", here, required=False)
+        name = LANE_DEFAULTS[column] if name is None else _choice(name, LANE_COLOURS, f"{here}.color")
+        if name in used:
+            raise SpecError(f"'{here}.color' repeats colour {name!r}")
+        used[name] = here
+        return name
+
+    for index, item in enumerate(raw_lanes):
+        here = f"lanes[{index}]"
+        item = _mapping(item, here)
+        lane_id = _text(item, "id", here)
+        if lane_id in lane_ids:
+            raise SpecError(f"'{here}.id' repeats id {lane_id!r}")
+        lane_ids.add(lane_id)
+        label = _text(item, "label", here)
+        lanes.append({"id": lane_id, "label": label, "short": _text(item, "short", here, required=False) or label,
+                      "colour": colour_for(item, here, index)})
+    artifact_lane = None
+    if spec.get("artifact_lane"):
+        item = _mapping(spec["artifact_lane"], "artifact_lane")
+        label = _text(item, "label", "artifact_lane")
+        artifact_lane = {"id": "artifact", "label": label,
+                         "short": _text(item, "short", "artifact_lane", required=False) or label,
+                         "colour": colour_for(item, "artifact_lane", len(lanes))}
+
+    raw_steps = _list(spec, "steps")
+    if len(raw_steps) < 2:
+        raise SpecError("'steps' needs at least 2 steps")
+    steps, step_ids = [], set()
+    for index, item in enumerate(raw_steps):
+        here = f"steps[{index}]"
+        item = _mapping(item, here)
+        step_id = _text(item, "id", here)
+        if step_id in step_ids:
+            raise SpecError(f"'{here}.id' repeats id {step_id!r}")
+        step_ids.add(step_id)
+        title_text = _text(item, "title", here)
+        lane = _choice(_text(item, "lane", here), lane_ids, f"{here}.lane")
+        decision = _flag(item, "decision", here)
+        artifact = _text(item, "artifact", here, required=False)
+        if artifact and decision:
+            raise SpecError(f"'{here}.artifact' is not allowed on a decision")
+        if artifact and artifact_lane is None:
+            raise SpecError(f"'{here}.artifact' needs an 'artifact_lane'")
+        steps.append({"id": step_id, "title": title_text, "lane": lane, "decision": decision, "artifact": artifact,
+                      "detail": _text(item, "detail", here, required=False)})
+
+    flow, pairs = [], set()
+    for index, item in enumerate(_list(spec, "flow")):
+        here = f"flow[{index}]"
+        item = _mapping(item, here)
+        ends = {}
+        for end in ("from", "to"):
+            ends[end] = _text(item, end, here)
+            if ends[end] not in step_ids:
+                raise SpecError(f"'{here}.{end}' refers to unknown id {ends[end]!r}")
+        if ends["from"] == ends["to"]:
+            raise SpecError(f"'{here}' links {ends['from']!r} to itself")
+        if (ends["from"], ends["to"]) in pairs:
+            raise SpecError(f"'{here}' repeats the flow {ends['from']!r} -> {ends['to']!r}")
+        pairs.add((ends["from"], ends["to"]))
+        flow.append({"from": ends["from"], "to": ends["to"], "label": _text(item, "label", here, required=False)})
+    return {"title": title, "lanes": lanes, "artifact_lane": artifact_lane, "steps": steps, "flow": flow}
+
+
+def _box_need(step: dict) -> float:
+    """Narrowest box (in units) that holds the step's text, so nothing is clipped or shrunk."""
+    if step["decision"]:
+        return measure(step["title"], 14.5, 700) / 0.78 + 4
+    detail = measure(step["detail"], 13.5, 400) if step["detail"] else 0
+    return 44 + max(measure(step["title"], 15.5, 700), detail) + 14
+
+
+def process_map(spec: dict) -> str:
+    model = _process_model(spec)
+    columns = [*model["lanes"], *([model["artifact_lane"]] if model["artifact_lane"] else [])]
+    n = len(columns)
+    box_need = max(_box_need(s) for s in model["steps"])
+    lane_need = max([box_need + 2 * SIDE, *(measure(c["label"], 12.5, 700, 1.4) + 24 for c in columns)])
+    art_widths = [14 + measure(s["artifact"], 13.5, 500) + 16 + 14 for s in model["steps"] if s["artifact"]]
+    if art_widths:
+        lane_need = max(lane_need, max(art_widths) + 50)
+    _guard_width(2 * PAD_X + n * lane_need + (n - 1) * LANE_GAP)
+
+    entries = [Entry(c["id"], c["short"], LANE_COLOURS[c["colour"]]) for c in columns]
+    if any(s["decision"] for s in model["steps"]):
+        entries.append(Entry("decision", "DECISIÓN", SAFFRON, swatch="diamond"))
+    xs = _legend_positions(entries, MAX_WIDTH - 2 * PAD_X)
+    _guard_width(max(_legend_end(entries, xs) + PAD_X, _header_end(model["title"]) + PAD_X))
+
+    width = MAX_WIDTH
+    lane_w = (width - 2 * PAD_X - (n - 1) * LANE_GAP) / n
+    box_w = max(min(lane_w - 2 * SIDE, 260), box_need)
+    lane_x = {c["id"]: PAD_X + i * (lane_w + LANE_GAP) for i, c in enumerate(columns)}
+    height = TOP + 24 + len(model["steps"]) * ROW_H + 56
+    by_lane = {c["id"]: c for c in columns}
+    used = {"ink": INK, **{c["colour"]: LANE_COLOURS[c["colour"]] for c in columns}}
+    out = _open(width, height, used)
+    out += _header("MAPA DE PROCESO", model["title"], width)
+    for c in columns:
+        colour, x = LANE_COLOURS[c["colour"]], lane_x[c["id"]]
+        out.append(f'<rect data-lane-header="{escape(c["id"])}" x="{x:.1f}" y="{TOP - 44}" width="{lane_w:.1f}" height="34" fill="{colour}"/>')
+        out.append(text(x + lane_w / 2, TOP - 22, c["label"], 12.5, 700, WHITE, spacing=1.4))
+        out.append(f'<rect data-lane="{escape(c["id"])}" x="{x:.1f}" y="{TOP - 10}" width="{lane_w:.1f}" height="{height - TOP - 40}" '
+                   f'fill="{mix(colour, 0.05, BG)}"/>')
+
+    nodes, number = {}, 0
+    for row, step in enumerate(model["steps"]):
+        lane = by_lane[step["lane"]]
+        colour = LANE_COLOURS[lane["colour"]]
+        cx, top = lane_x[lane["id"]] + lane_w / 2, TOP + 24 + row * ROW_H
+        cy = top + BOX_H / 2
+        half_w = box_w / 2 - 2 if step["decision"] else box_w / 2
+        nodes[step["id"]] = {"row": row, "lane": lane["id"], "cx": cx, "cy": cy, "hw": half_w,
+                             "hh": DIAMOND_H if step["decision"] else BOX_H / 2, "decision": step["decision"]}
+        sid = escape(step["id"])
+        if step["decision"]:
+            out.append(f'<polygon data-node="{sid}" points="{cx:.1f},{cy - DIAMOND_H:.1f} {cx + half_w:.1f},{cy:.1f} '
+                       f'{cx:.1f},{cy + DIAMOND_H:.1f} {cx - half_w:.1f},{cy:.1f}" fill="{SAFFRON}"/>')
+            out.append(text(cx, cy + 5, step["title"], 14.5, 700, INK))
+            continue
+        number += 1
+        x = cx - box_w / 2
+        out.append(f'<rect data-node="{sid}" x="{x:.1f}" y="{top:.1f}" width="{box_w:.1f}" height="{BOX_H}" fill="{WHITE}" '
+                   f'stroke="{colour}" stroke-width="3"/>')
+        out.append(f'<rect data-corner="{sid}" x="{x:.1f}" y="{top:.1f}" width="30" height="30" fill="{colour}"/>')
+        out.append(text(x + 15, top + 21, number, 15, 700, WHITE).replace("<text ", f'<text data-number="{sid}" ', 1))
+        out.append(text(x + 44, top + 25, step["title"], 15.5, 700, INK, "start"))
+        if step["detail"]:
+            out.append(text(x + 44, top + 46, step["detail"], 13.5, 400, MUTED, "start"))
+        if step["artifact"]:
+            art = model["artifact_lane"]
+            art_colour = LANE_COLOURS[art["colour"]]
+            ax, aw, fold = lane_x["artifact"] + 25, lane_w - 50, 16
+            out.append(f'<line data-edge="artifact:{sid}" x1="{x + box_w + 2:.1f}" y1="{cy:.1f}" x2="{ax:.1f}" y2="{cy:.1f}" '
+                       f'stroke="{art_colour}" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#tip-{art["colour"]})"/>')
+            out.append(f'<path data-artifact="{sid}" d="M{ax:.1f},{cy - 19:.1f} H{ax + aw - fold:.1f} L{ax + aw:.1f},{cy - 19 + fold:.1f} '
+                       f'V{cy + 19:.1f} H{ax:.1f} Z" fill="{WHITE}" stroke="{art_colour}" stroke-width="2.4"/>')
+            out.append(f'<path data-fold="{sid}" d="M{ax + aw - fold:.1f},{cy - 19:.1f} V{cy - 19 + fold:.1f} H{ax + aw:.1f}" '
+                       f'fill="{art_colour}" stroke="{art_colour}" stroke-width="2.4"/>')
+            out.append(text(ax + 14, cy + 5, step["artifact"], 13.5, 500, INK, "start"))
+
+    for link in model["flow"]:
+        route, label_at = _route(nodes[link["from"]], nodes[link["to"]], lane_x, lane_w, link["label"])
+        d = f"M{route[0][0]:.1f},{route[0][1]:.1f}" + "".join(
+            f" H{x:.1f}" if y == route[i][1] else f" V{y:.1f}" for i, (x, y) in enumerate(route[1:]))
+        key = escape(f"{link['from']}>{link['to']}")
+        out.append(f'<path data-edge="{key}" d="{d}" fill="none" stroke="{INK}" stroke-width="1.8" marker-end="url(#tip-ink)"/>')
+        if link["label"]:
+            x, y, anchor = label_at
+            out.append(text(x, y, link["label"].upper(), 12.5, 700, INK, anchor, spacing=1.2)
+                       .replace("<text ", f'<text data-label="{key}" ', 1))
+    out += _legend(entries, xs, height - 22)
+    return _finish(out)
+
+
+def _route(a: dict, b: dict, lane_x: dict, lane_w: float, label: str | None):
+    """Orthogonal connector from step ``a`` to step ``b`` as a list of vertices, and its label anchor.
+
+    One step per row means a row holds no other node, so the only obstacles are the vertical
+    runs: those stay in the gaps between rows (adjacent rows) or in the free edge of a lane
+    (rows skipped, or a back edge to an earlier row).
+    """
+    ax, ay, bx, by = a["cx"], a["cy"], b["cx"], b["cy"]
+    tip = 2  # the arrow stops this far from the node's border
+    if b["row"] == a["row"] + 1:
+        y0, y1 = ay + a["hh"], by - b["hh"]
+        if ax == bx:
+            return [(ax, y0), (bx, y1 - tip)], (ax + 10, (y0 + y1) / 2 + 4, "start")
+        mid = (y0 + y1) / 2
+        return [(ax, y0), (ax, mid), (bx, mid), (bx, y1 - tip)], (ax + 10, mid - 6, "start")
+    if b["row"] > a["row"]:  # skips rows: down the left edge of the source lane
+        run = lane_x[a["lane"]] + SIDE / 2
+        if bx + b["hw"] <= run:
+            entry = (bx + b["hw"] + tip, by + (0 if b["decision"] else 14))
+        else:
+            entry = (bx - b["hw"] - tip, by)
+        return [(ax - a["hw"], ay), (run, ay), (run, entry[1]), entry], (run + 8, ay + a["hh"] + 14, "start")
+    # back edge: loop up the right edge of the rightmost lane of the two
+    right = max(lane_x[a["lane"]], lane_x[b["lane"]]) + lane_w - SIDE / 2
+    start = (ax + a["hw"], ay - (0 if a["decision"] else 14))
+    entry = (bx + b["hw"] + tip, by + (0 if b["decision"] else 14))
+    where = ((right + 6, (start[1] + entry[1]) / 2 + 4, "start")
+             if not label or measure(label.upper(), 12.5, 700, 1.2) <= 24 else (right - 6, entry[1] - 6, "end"))
+    return [start, (right, start[1]), (right, entry[1]), entry], where
+
+
+# --------------------------------------------------------------------------
 # rendering, PNG and CLI
 # --------------------------------------------------------------------------
 
-LAYOUTS = {"concept_map": concept_map}
+LAYOUTS = {"concept_map": concept_map, "process_map": process_map}
 
 
 def render(spec: dict) -> str:
@@ -446,9 +651,9 @@ def load_spec(path: Path) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Render Bauhaus técnico concept maps from a YAML spec.")
+    parser = argparse.ArgumentParser(description="Render Bauhaus técnico concept and process maps from a YAML spec.")
     sub = parser.add_subparsers(dest="command", required=True)
-    render_cmd = sub.add_parser("render", help="render a concept_map spec to SVG (and PNG)")
+    render_cmd = sub.add_parser("render", help="render a concept_map or process_map spec to SVG (and PNG)")
     render_cmd.add_argument("spec", type=Path)
     render_cmd.add_argument("--out", type=Path, required=True)
     render_cmd.add_argument("--png", type=Path, help="also rasterise at 2x with the repo font")
