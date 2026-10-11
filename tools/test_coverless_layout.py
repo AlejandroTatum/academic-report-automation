@@ -157,6 +157,47 @@ def test_cover_naming_a_subject_that_contains_a_body_marker_is_not_mixed(
     assert not any("portada parece mezclada" in e for e in result.errors), result.errors
 
 
+def test_cover_metadata_written_with_alias_keys_is_also_exempt(
+    tmp_path: Path, stub_pdf_tools
+) -> None:
+    """#72.3: `asignatura`/`titulo` resolve like `subject`/`title`."""
+    folder = _report(tmp_path, cover_required=True, route="academic", subject="Desarrollo Basado en Plataformas")
+    report = folder / "report.yml"
+    report.write_text(
+        report.read_text(encoding="utf-8").replace("  subject:", "  asignatura:").replace("  title:", "  titulo:"),
+        encoding="utf-8",
+    )
+    stub_pdf_tools(
+        ["Universidad Nacional de Loja\nContrato del router\nDesarrollo Basado en Plataformas", "1. Introducción\nCuerpo."]
+    )
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert not any("portada parece mezclada" in e for e in result.errors), result.errors
+
+
+def test_cover_title_hyphenated_across_lines_is_exempt(tmp_path: Path, stub_pdf_tools) -> None:
+    """#72.3: the PDF text may break a long title word with a hyphen."""
+    folder = _report(
+        tmp_path, cover_required=True, route="academic", title="Antecedentes y desarrollo del proyecto"
+    )
+    stub_pdf_tools(["Universidad Nacional de Loja\nAntecedentes y desarrollo del pro-\nyecto", "1. Introducción\nCuerpo."])
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert not any("portada parece mezclada" in e for e in result.errors), result.errors
+
+
+def test_cover_metadata_is_removed_only_as_whole_words(tmp_path: Path, stub_pdf_tools) -> None:
+    """#72.3: removing subject 'Sub' must not cut 'Subdesarrollo' into a marker."""
+    folder = _report(tmp_path, cover_required=True, route="academic", subject="Sub")
+    stub_pdf_tools(["Universidad Nacional de Loja\nSub\nSubdesarrollo regional", "1. Introducción\nCuerpo."])
+
+    result = validate_report.pdf_layout_validation(load_report_config(folder))
+
+    assert not any("portada parece mezclada" in e for e in result.errors), result.errors
+
+
 def test_cover_with_a_subject_still_rejects_body_markers_outside_the_metadata(
     tmp_path: Path, stub_pdf_tools
 ) -> None:
