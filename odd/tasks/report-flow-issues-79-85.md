@@ -28,6 +28,8 @@ Runner: `.venv/bin/python -m pytest tools/ tests/`. RDD off (clone_local). One c
 - [x] T6 S6 #83 inline (doc_status format phase reuses scan_delivery_versions) — `045d0b6`
 - [x] T7 S7 #84 inline (course_profile) — `6b8719a`
 - [x] T8 S8 `e8d804f`, S9 `e6bcd29`, S10+S11 (5) `a4ce450`, S11 (6, 7) `4d96baf`
+- [x] T9 S7 follow-up: never take another practice format as the course type — `cb51e67` (merged via PRs #86-#89)
+- [x] T10 Review follow-ups (review `review-54ff631ced4fd3a5`), branch `fix/review-followups-86-89` from `main` @ `2440884`: F1 format-phase delivery scan survives `OSError` — `ac0bea9`; F2+F3 approval gaps from fields, folder check before the build — `6683084`; F4 folder suffix from the layout — `e4f7915`; F5 S4 exemption cuts only code the PDF renders, fences follow the builder's rule — see L8; F6 this entry
 
 ## Log
 
@@ -37,3 +39,6 @@ Runner: `.venv/bin/python -m pytest tools/ tests/`. RDD off (clone_local). One c
 - L4 #82: TeX Live's placeins has no `subsection` option ("Unknown option `subsection' for package `placeins'"); the templates prefix `\subsection` with `\FloatBarrier` instead. Real compile RED on old templates (plain, unl), GREEN after.
 - L5 #84: `metadata.practice_type` is the APE Individual/Grupal field, so the folder type comes from the course's existing `unidad-<n>/<tipo>-<m>-<tema>/` folders; an existing folder for the same unit/type/number is reused.
 - L6 #72.2 and #72.4 are characterization tests (behaviour already present, coverage missing): no RED by design.
+- L7 Review `review-54ff631ced4fd3a5` (approved) left R3-literal-latex-global-subtraction: subtracting body.md code counts from the PDF count lets a dropped or re-rendered listing hide a prose defect, and the closing-fence regex required the opening fence's exact length.
+- L8 F5: pdftotext extracts the listing wrap mark as "↪→", keeps line numbers, and can split an aligned trailing comment into its own column (real AVR APE PDF: 49 of 396 code lines not found whole, 9 after splitting at runs of spaces, none carrying a checked command). The check now cuts each code line out of the whitespace-free PDF text once, falls back to its space-separated pieces, and counts what remains; text the PDF does not hold stays counted. RED: listing missing from the PDF, longer closing fence, aligned comment column.
+- L9 F5 checks: full suite 2327 passed. Native review `review-6b33c5f758e6290e` (resilience, reliability) approved and acknowledged; advisory follow-ups: R3-exemption-requires-verbatim-render, R3-lazy-import-path, R3-patterns-vs-collapsed-text, R3-whitespace-free-first-occurrence-cut.
