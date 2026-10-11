@@ -289,6 +289,54 @@ def test_approval_guidance_asks_the_format_batch(tmp_path: Path) -> None:
         assert token in guidance
 
 
+def test_approval_guidance_records_format_answers_even_when_changes_are_requested(tmp_path: Path) -> None:
+    """#80: format answers are report.yml data; only approval.yml waits for the approve."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "as soon as" in guidance
+    assert "even when the user requests changes" in guidance
+    assert "only when approval.yml is written" not in guidance
+
+
+def test_approval_guidance_asks_only_approval_once_the_format_is_recorded(tmp_path: Path) -> None:
+    """#80: after a change request the gate asks only to approve body.md."""
+    from conftest import _choose_format
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    _choose_format(folder, "aa")
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "ask only whether the user approves" in guidance
+    assert "AA, APE or libre" not in guidance
+    assert "PDF or DOCX" not in guidance
+    assert "--no-approval-check" in guidance
+
+
+def test_approval_guidance_names_only_the_format_fields_still_missing(tmp_path: Path) -> None:
+    """#80: a recorded format without ``output:`` reopens only ``output``."""
+    from conftest import _choose_format
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    _choose_format(folder, "aa", output=None)
+
+    guidance = doc_status._guidance("approval", folder)
+
+    assert "still missing: output" in guidance
+    assert "AA, APE or libre" not in guidance
+
+
 def test_format_guidance_asks_only_missing_fields(tmp_path: Path) -> None:
     folder = tmp_path / "wf"
     _report(folder)

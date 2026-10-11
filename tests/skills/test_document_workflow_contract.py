@@ -956,6 +956,14 @@ def test_approval_batches_the_format_questions_and_format_asks_only_missing() ->
     assert "only the missing" in fmt and "never re-ask" in fmt
 
 
+def test_format_answers_are_recorded_apart_from_the_approval() -> None:
+    """#80: a request for changes keeps the format answers and reopens only approval."""
+    approval = re.sub(r"\s+", " ", read(APPROVAL_MD)).lower()
+    assert "as soon as it is given, even when the user requests changes" in approval
+    assert "reopens only the body approval" in approval
+    assert "records nothing" not in approval
+
+
 def test_source_minimum_is_always_stated_as_the_effective_one() -> None:
     """Task 8(c): a bare "at least 5" would contradict a report's min_sources override."""
     for name in ("routing.md", "content.md", "production.md"):
