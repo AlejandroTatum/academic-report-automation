@@ -22,7 +22,7 @@ Runs only when `approval: done` (`approval.yml` exists and its `body_sha256` mat
 
 `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/build_report_auto.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"` builds from `report.yml` (including `format:`) plus the approved `body.md`, runs the configured technical validation, and reports the artifact hash and page count. It does not publish, copy or version, and never writes `approval.yml` or claims `VISUAL_PASS`, `HUMAN_REVIEW` or `READY_TO_SUBMIT`. Final PDF/DOCX stay under `outputs/<materia-slug>/`, intermediates in `build/` or `backups/`.
 
-Optional `figure_placement: here` in `report.yml` pins every figure where it appears in `body.md` (LaTeX `[H]`) instead of letting it float to the end of the section; the default `float` keeps today's output, and any other value is rejected.
+Optional `figure_placement: here` in `report.yml` pins every figure where it appears in `body.md` (LaTeX `[H]`) instead of letting it float to the end of its section or subsection (a figure never crosses the next heading of either level); the default `float` keeps today's output, and any other value is rejected.
 
 ## Validate (`next: validate`, artifact `reports/<wf>/validation.yml`)
 
