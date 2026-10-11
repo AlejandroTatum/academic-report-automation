@@ -592,10 +592,14 @@ _INLINE_CODE = re.compile(r"(`+)(.+?)\1")
 # Whitespace plus the listing wrap mark: pdftotext extracts the builder's
 # ``postbreak`` ($\hookrightarrow$) as "↪→", usually on a line of its own.
 _PDF_LAYOUT_NOISE = re.compile(r"[\s↪→]+")
+# How far (in non-blank characters) past a listing's last matched text the rest
+# of one of its lines may land: pdftotext can move an aligned comment column
+# below the code lines it belongs to, but never into distant prose.
+_LISTING_WINDOW = 400
 
 
-def _markdown_code_fragments(body: str) -> list[str]:
-    """Every fenced code line and inline code span in ``body``.
+def _markdown_code_fragments(body: str) -> tuple[list[list[str]], list[str]]:
+    """The lines of every fenced code block, and every inline code span, in ``body``.
 
     Fences follow the builder's own rule, so a line counts as code exactly when
     the PDF renders it inside a listing.
@@ -603,7 +607,7 @@ def _markdown_code_fragments(body: str) -> list[str]:
     from build_latex_report import CODE_FENCE_RE, is_closing_fence
 
     lines = body.splitlines()
-    fragments: list[str] = []
+    blocks: list[list[str]] = []
     prose: list[str] = []
     index = 0
     while index < len(lines):
@@ -615,37 +619,63 @@ def _markdown_code_fragments(body: str) -> list[str]:
                 None,
             )
             if closing is not None:
-                fragments.extend(lines[index + 1 : closing])
+                blocks.append(lines[index + 1 : closing])
                 index = closing + 1
                 continue
         prose.append(lines[index])
         index += 1
-    fragments.extend(match.group(2) for match in _INLINE_CODE.finditer("\n".join(prose)))
-    return fragments
+    spans = [match.group(2) for match in _INLINE_CODE.finditer("\n".join(prose))]
+    return blocks, spans
 
 
-def _pdf_text_without_code(pdf_text: str, fragments: list[str]) -> str:
-    """``pdf_text`` with each code fragment it renders cut out once.
+def _pdf_text_without_code(pdf_text: str, blocks: list[list[str]], spans: list[str]) -> str:
+    """``pdf_text`` with the code it renders cut out, everything else as extracted.
 
-    Both sides are compared without whitespace or wrap marks, so a listing line
-    that wraps, or carries a line number, still matches. pdftotext may extract
-    an aligned trailing comment as a column of its own, so a line it does not
-    hold whole is tried again as the pieces its runs of spaces separate. Text
-    the PDF does not hold verbatim (a dropped or altered listing) removes
-    nothing, so its commands stay counted instead of cancelling a defect in
-    the prose.
+    Matching ignores whitespace and wrap marks, so a listing line that wraps,
+    or carries a line number, still matches; the cut itself is made on the
+    extracted text, so a ``\\`` ending one line is never joined with the next
+    word. Listing lines are found in document order. pdftotext may extract an
+    aligned trailing comment as a column of its own, so a line it does not
+    hold whole is tried again as the pieces its runs of spaces separate, and
+    once a listing is located the rest of it is looked for only within
+    ``_LISTING_WINDOW``. Text the PDF does not hold there (a dropped or altered
+    listing) removes nothing, so its commands stay counted instead of
+    cancelling a defect in the prose.
     """
-    stream = _PDF_LAYOUT_NOISE.sub("", pdf_text)
-    for fragment in fragments:
-        needle = _PDF_LAYOUT_NOISE.sub("", fragment)
-        pieces = [needle] if needle in stream else [
-            _PDF_LAYOUT_NOISE.sub("", piece) for piece in re.split(r"\s{2,}", fragment)
-        ]
-        for piece in pieces:
-            if piece:
-                # A separator keeps the text on both sides of the cut apart.
-                stream = stream.replace(piece, "\n", 1)
-    return stream
+    kept = [index for index, char in enumerate(pdf_text) if not _PDF_LAYOUT_NOISE.match(char)]
+    stream = "".join(pdf_text[index] for index in kept)
+    cut = [False] * len(pdf_text)
+
+    def take(text: str, start: int, end: int) -> int | None:
+        """Cut the first ``text`` in ``stream[start:end]``; where the match ends."""
+        nonlocal stream
+        needle = _PDF_LAYOUT_NOISE.sub("", text)
+        at = stream.find(needle, start, end) if needle else -1
+        if at < 0:
+            return None
+        for position in range(at, at + len(needle)):
+            cut[kept[position]] = True
+        # NUL never occurs in extracted text, so a cut span cannot match again.
+        stream = stream[:at] + "\0" * len(needle) + stream[at + len(needle):]
+        return at + len(needle)
+
+    cursor = 0
+    for lines in blocks:
+        located = False
+        for line in lines:
+            for pieces in ([line], re.split(r"\s{2,}", line.strip())):
+                found = False
+                for piece in pieces:
+                    end = take(piece, cursor, cursor + _LISTING_WINDOW if located else len(stream))
+                    if end is not None and not found:
+                        cursor, located, found = end, True, True
+                if found:
+                    break
+    for span in spans:
+        take(span, 0, len(stream))
+
+    # A separator keeps the text on both sides of a cut apart.
+    return re.sub("\0+", "\n", "".join("\0" if cut[i] else char for i, char in enumerate(pdf_text)))
 
 
 def _cover_value_pattern(value: object) -> re.Pattern[str] | None:
@@ -784,7 +814,7 @@ def common_validation(config: ReportConfig) -> ValidationResult:
         # once the PDF's rendered code is cut out is a rendering defect.
         prose_text = _pdf_text_without_code(
             full_text,
-            _markdown_code_fragments(
+            *_markdown_code_fragments(
                 config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
             ),
         )
