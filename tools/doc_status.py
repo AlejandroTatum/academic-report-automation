@@ -454,9 +454,13 @@ def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None) 
 
     Same scan ``deliver_report.py`` runs, so a folder holding anything but
     ``<slug>-vNNN.pdf`` (and paired ``.bib``) is reported while the user can
-    still choose another folder, not after the final review. An unresolvable
-    identity is the deliver phase's to report.
+    still choose another folder, not after the final review. A report with a
+    final build is never re-gated here: deliver still refuses the folder. An
+    unresolvable identity is the deliver phase's to report; an unreadable path
+    (a file, no permission) is a reason, never a crash.
     """
+    if _has_final_build(config.folder, config):
+        return ""
     try:
         delivery = config.delivery_folder(documents_root)
         slug = config.document_slug
@@ -466,6 +470,8 @@ def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None) 
         scan_delivery_versions(delivery, slug)
     except PublicationError as exc:
         return str(exc)
+    except OSError as exc:
+        return f"{delivery} is not a readable folder ({exc.strerror or exc})"
     return ""
 
 
@@ -614,7 +620,7 @@ def _phase_deliver(folder: Path, config: ReportConfig, documents_root: Path | No
         return PhaseState("deliver", PENDING, "final PDF or declared bibliography unreadable")
     try:
         matched = matching_delivered_version(delivery, slug, source_hash, bib_hash)
-    except PublicationError as exc:
+    except (PublicationError, OSError) as exc:
         return PhaseState("deliver", PENDING, f"delivery folder unusable: {exc}")
     if matched is not None:
         return PhaseState("deliver", DONE, f"{matched.name} published and hash-matched")
