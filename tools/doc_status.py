@@ -94,11 +94,7 @@ _GUIDANCE = {
         "for the user) and paste that approval packet "
         "(links, per-criterion summary, missing items) unchanged; "
         "the preview is never the final artifact; "
-        "generation runs only after you approve {body}; in the same batch use ask_user_choice "
-        "(suggested options, never free text) for the document format AA, APE or libre (libre also "
-        "needs format_spec: options 'documento sobrio sin portada' or 'con portada'), the "
-        "delivery format PDF or DOCX, and any metadata that format still needs; never infer "
-        "an answer, no defaults; record the answers in {report_yml} only when approval.yml is written"
+        "generation runs only after you approve {body}"
     ),
     "verify": (
         "launch ONE independent verifier for {rubric} with the brief from {check_command} "
@@ -350,6 +346,41 @@ def _has_final_build(folder: Path, config: ReportConfig) -> bool:
         return False
     marker = folder / "approval.yml"
     return not marker.is_file() or pdf.stat().st_mtime >= marker.stat().st_mtime
+
+
+# The approval batch carries the format questions only while report.yml still
+# lacks them (#80): format answers are plain report.yml data, recorded as soon as
+# they are given, so a request for changes reopens only the body approval.
+_APPROVAL_FORMAT_BATCH = (
+    "; in the same batch use ask_user_choice "
+    "(suggested options, never free text) for the document format AA, APE or libre (libre also "
+    "needs format_spec: options 'documento sobrio sin portada' or 'con portada'), the "
+    "delivery format PDF or DOCX, and any metadata that format still needs; never infer "
+    "an answer, no defaults"
+)
+_APPROVAL_RECORD_ANSWERS = (
+    "; record each format answer in {report_yml} as soon as it is given, even when the user "
+    "requests changes; only approval.yml waits for an explicit approve"
+)
+_APPROVAL_FORMAT_RECORDED = (
+    "; the format answers are already recorded in {report_yml}: ask only whether the user "
+    "approves {body}, never re-ask format, output, delivery folder or metadata"
+)
+
+
+def _approval_format_suffix(folder: Path, config: ReportConfig, documents_root: Path | None) -> str:
+    """What the approval batch still asks about the format, from ``report.yml`` alone."""
+    if config.format is None:
+        return _APPROVAL_FORMAT_BATCH + _APPROVAL_RECORD_ANSWERS
+    state = _phase_format(folder, config, documents_root)
+    if state.state == DONE:
+        return _APPROVAL_FORMAT_RECORDED
+    gaps = state.detail.removeprefix("missing format metadata: ").replace("{", "{{").replace("}", "}}")
+    return (
+        "; in the same batch use ask_user_choice (suggested options, never free text) only for "
+        f"what {{report_yml}} still lacks, never re-asking what it records; still missing: {gaps}"
+        + _APPROVAL_RECORD_ANSWERS
+    )
 
 
 def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
@@ -606,7 +637,8 @@ def derive(folder: Path, *, documents_root: Path | None = None) -> DocStatus:
         # The one authoritative gate: the actual focus phase, its pre-projection
         # token, and that phase's own readiness guidance. The human renderer and
         # the JSON payload both project this value verbatim.
-        gate = f"{focus.name} {focus.state} - {_guidance(focus.name, folder, config, focus.blocked_reason)}"
+        guidance = _guidance(focus.name, folder, config, focus.blocked_reason, documents_root=documents_root)
+        gate = f"{focus.name} {focus.state} - {guidance}"
         if focus.state == PENDING:
             phases[PHASES.index(focus.name)] = replace(focus, state=CURRENT)
     blocked_reasons = tuple(
@@ -643,7 +675,14 @@ def _uncited_bibliography(config: ReportConfig) -> bool:
         return False
 
 
-def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = None, blocked_reason: str = "") -> str:
+def _guidance(
+    phase_name: str,
+    work_folder: Path,
+    config: ReportConfig | None = None,
+    blocked_reason: str = "",
+    *,
+    documents_root: Path | None = None,
+) -> str:
     """Action sentence for ``phase_name``, bound to the real work-folder path.
 
     Every path is absolute and every command is complete: the work folder exactly as
@@ -665,6 +704,8 @@ def _guidance(phase_name: str, work_folder: Path, config: ReportConfig | None = 
             "or does not match the current {body}); do not present the approval prompt until it "
             "is rebuilt, then re-run doc_status; generation runs only after you approve {body}"
         )
+    elif phase_name == "approval":
+        template += _approval_format_suffix(folder, config, documents_root)
     if phase_name == "verify" and blocked_reason == "content_check_stale":
         template = ("launch ONE independent verifier for {body} with the brief from {check_command} "
                     "--verify-brief --since verification.yml, then run {check_command} "

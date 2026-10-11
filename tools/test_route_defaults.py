@@ -142,9 +142,20 @@ def test_explicit_template_unl_does_not_reinstate_the_prelim_page(tmp_path):
     assert r"\listoffigures" not in tex
 
 
-def test_academic_route_with_figures_keeps_the_list_of_figures(tmp_path):
+def test_academic_route_with_figures_on_the_aa_template_has_no_list_of_figures(tmp_path):
+    """AA reports (the UNL template) never print a list of figures."""
     tex = build_latex_report.render_tex(make_render_config(tmp_path, {"route": "academic"}, True))
-    assert r"\listoffigures" in tex
+    assert r"\includegraphics" in tex
+    assert r"\listoffigures" not in tex
+
+
+def test_aa_format_with_figures_has_no_list_of_figures(tmp_path):
+    tex = build_latex_report.render_tex(
+        make_render_config(tmp_path, {"route": "academic", "format": "aa"}, True)
+    )
+    assert "titlepage" in tex
+    assert r"\includegraphics" in tex
+    assert r"\listoffigures" not in tex
 
 
 def test_route_omitted_report_with_figures_keeps_legacy_list_of_figures(tmp_path):

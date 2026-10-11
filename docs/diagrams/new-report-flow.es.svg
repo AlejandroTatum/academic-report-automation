@@ -82,8 +82,8 @@
     <text x="600" y="1218" text-anchor="middle">Gráficos numerados y referenciados</text>
 
     <rect x="400" y="1266" width="400" height="60" rx="8" fill="#fff" stroke="#1a7f37" stroke-width="2" filter="url(#s)"/>
-    <text x="600" y="1292" text-anchor="middle" font-size="16" font-weight="bold">8 · RDD</text>
-    <text x="600" y="1313" text-anchor="middle">Revisión automatizada del documento final</text>
+    <text x="600" y="1292" text-anchor="middle" font-size="16" font-weight="bold">8 · Validación del PDF</text>
+    <text x="600" y="1313" text-anchor="middle">Validadores · auditor visual · lectura por página</text>
 
     <rect x="400" y="1358" width="400" height="60" rx="8" fill="#ffe08a" stroke="#b8860b" stroke-width="2" filter="url(#s)"/>
     <text x="600" y="1384" text-anchor="middle" font-size="16" font-weight="bold">9 · Revisión humana final</text>

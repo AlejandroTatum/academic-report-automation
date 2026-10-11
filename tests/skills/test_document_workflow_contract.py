@@ -284,44 +284,42 @@ def test_generate_reference_forbids_unapproved_build() -> None:
     )
 
 
-def test_validate_reference_both_branches() -> None:
-    """Slice 3b-ii owns `production.md`: both validation branches behind one gate set.
+def test_validate_reference_runs_only_the_fallback_chain() -> None:
+    """`production.md` validates documents with the fallback chain only (#79).
 
-    The reference must exist on disk, name the read-only RDD probe
-    (`gentle-ai review mode status`) and its `mode: rdd` receipt, name the fallback
-    rendered chain with `mode: fallback`, and route the `unknown` status to that
-    fallback without lowering the shared gate set.
+    Document creation never uses RDD: the content root is outside the session's
+    repository, so an RDD branch always stopped to ask. Validate never probes
+    `gentle-ai review mode status`, never asks, and always records
+    `mode: fallback`, whatever the global review switch says.
     """
     text = read(PRODUCTION_MD)
     flat = re.sub(r"\s+", " ", text).lower()
 
     assert "reports/<wf>/validation.yml" in flat, "validate must declare its artifact"
-    assert "gentle-ai review mode status" in flat, (
-        "production.md must name the read-only RDD probe `gentle-ai review mode status`"
+    assert "gentle-ai review mode status" not in flat, (
+        "validate must not probe the RDD switch: documents never use RDD"
     )
-    assert "mode: rdd" in flat, "production.md must label the RDD branch `mode: rdd`"
+    assert "mode: rdd|" not in flat and "|rdd" not in flat, (
+        "the receipt schema must not offer `mode: rdd`"
+    )
     assert "mode: fallback" in flat, (
-        "production.md must label the fallback branch `mode: fallback`"
+        "production.md must label the validation chain `mode: fallback`"
+    )
+    assert re.search(r"never uses? rdd", flat), (
+        "production.md must state that document validation never uses RDD"
+    )
+    assert re.search(r"regardless of [^.]*review switch", flat), (
+        "production.md must state the chain runs regardless of the global review switch"
     )
     for step in ("validate_report.py", "visual_pdf_auditor.py", "semantic"):
         assert step in flat, f"production.md must name the fallback step `{step}`"
     gates = ("BUILD_PASS", "VALIDATION_PASS", "VISUAL_PASS", "HUMAN_REVIEW", "READY_TO_SUBMIT")
     for gate in gates:
-        assert gate in text, f"production.md must name the shared gate {gate}"
-    assert re.search(r"unknown[^.]{0,200}fallback", flat), (
-        "production.md must route an unknown RDD status to the fallback chain"
-    )
-    assert re.search(r"never (?:enable|enables|activate|activates|turn on|turns on)[^.]*rdd", flat), (
-        "production.md must state that RDD is never enabled on the user's behalf"
-    )
+        assert gate in text, f"production.md must name the gate {gate}"
     assert "backups/quality_report.md" in flat, (
         "production.md must name the fallback evidence path"
     )
     assert "next: validate" in flat, "production.md must state the phase it owns"
-    assert "identical gate set" in flat, (
-        "production.md must state that both branches enforce the identical gate set"
-    )
-    assert "read-only" in flat, "production.md must state that the RDD probe is read-only"
     assert re.search(r"mode: fallback[^.]*backups/quality_report\.md", flat), (
         "production.md must couple the fallback receipt mode to its evidence path"
     )
@@ -956,6 +954,14 @@ def test_approval_batches_the_format_questions_and_format_asks_only_missing() ->
 
     fmt = re.sub(r"\s+", " ", read(APPROVAL_MD)).lower()
     assert "only the missing" in fmt and "never re-ask" in fmt
+
+
+def test_format_answers_are_recorded_apart_from_the_approval() -> None:
+    """#80: a request for changes keeps the format answers and reopens only approval."""
+    approval = re.sub(r"\s+", " ", read(APPROVAL_MD)).lower()
+    assert "as soon as it is given, even when the user requests changes" in approval
+    assert "reopens only the body approval" in approval
+    assert "records nothing" not in approval
 
 
 def test_source_minimum_is_always_stated_as_the_effective_one() -> None:
