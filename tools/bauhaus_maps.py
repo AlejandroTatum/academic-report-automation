@@ -22,6 +22,7 @@ import argparse
 import math
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -501,12 +502,17 @@ def _guard_links(model: dict, paths: dict[int, list], labels: dict[int, tuple]) 
         for j, theirs in arcs.items():
             if i == j:
                 continue
-            run = 0.0
+            # Only an unbroken stretch counts: separate short hugs never add up.
+            run = longest = 0.0
             for x, y, ux, uy in mine:
                 qx, qy, vx, vy = min(theirs, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)
                 if math.hypot(qx - x, qy - y) < PARALLEL_CLEARANCE and \
                         math.degrees(math.acos(min(1.0, abs(ux * vx + uy * vy)))) < PARALLEL_ANGLE:
                     run += 3.0
+                    longest = max(longest, run)
+                else:
+                    run = 0.0
+            run = longest
             if run > PARALLEL_STRETCH:
                 raise SpecError(f"{name(i)} runs side by side with {name(j)} for {run:.0f} units within "
                                 f"{PARALLEL_CLEARANCE}; move a concept or drop one of the links")
@@ -596,6 +602,7 @@ RESERVED_LANE_IDS = {"artifact": "artifact lane", "decision": "decision legend e
 SLOT_Y = (0, -14, 14, -24, 24)  # where connectors meet a step side, from its middle; one slot per connector
 CORRIDOR_STEP = 5  # gap between two connectors that run side by side down a lane margin
 LABEL_SIZE, LABEL_ABOVE = 12.5, 12  # a branch label's box is its real ink; LABEL_ABOVE only spaces the candidate spots
+LAST_RESORT_REACH = 48  # units below a connector's start the fine last-resort label search covers
 
 
 def _process_model(spec: dict) -> dict:
@@ -919,12 +926,13 @@ def _spots(route: list, width: float):
                 for along in range(12, int(span - 6) + 1, 6):
                     yield (x0 + 7 if side > 0 else x0 - 7 - width), y0 + direction * along + 6
     # Last resort, for the short stretch between a diamond and the step below it: finer steps, further from the line.
+    # It covers only the first LAST_RESORT_REACH units, so a tall connector does not multiply the search.
     for (x0, y0), (x1, y1) in zip(route, route[1:]):
         if abs(y0 - y1) >= 1e-6:
             direction, span = (1 if y1 > y0 else -1), abs(y1 - y0)
             for offset in range(7, 25):
                 for side in (1, -1):
-                    for along in range(6, int(span) + 1):
+                    for along in range(6, int(min(span, LAST_RESORT_REACH)) + 1):
                         yield (x0 + offset if side > 0 else x0 - offset - width), y0 + direction * along + 6
 
 
@@ -1011,13 +1019,25 @@ def rasterize(svg: str) -> bytes:
         return (scratch_dir / "fig.png").read_bytes()
 
 
+def _umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
 def publish(files: list[tuple[Path, bytes]]) -> None:
-    """Write every file or none: each goes to a temporary file beside its destination, then all move into place."""
+    """Write every file or none: each goes to a temporary file beside its destination, then all move into place.
+
+    A replaced file keeps its mode and a new one gets the umask's, as a plain write would. Each file about to be
+    replaced is copied aside first, so a failure part way puts back the old files as well as removing the new ones.
+    """
     for path, _ in files:
         if path.is_dir():
             raise SpecError(f"cannot write {path}: it is a directory")
+    new_mode = 0o666 & ~_umask()
     staged: list[tuple[Path, Path]] = []
     placed: list[Path] = []
+    backups: list[tuple[Path, Path]] = []
     try:
         for path, data in files:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1025,18 +1045,35 @@ def publish(files: list[tuple[Path, bytes]]) -> None:
             staged.append((Path(handle.name), path))
             with handle:
                 handle.write(data)
+            os.chmod(handle.name, stat.S_IMODE(path.stat().st_mode) if path.exists() else new_mode)
         for temporary, path in staged:
-            fresh = not path.exists()
-            os.replace(temporary, path)
-            if fresh:
+            if path.exists():
+                descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".bak")
+                os.close(descriptor)
+                backups.append((Path(name), path))
+                shutil.copy2(path, name)
+                os.replace(temporary, path)
+            else:
+                os.replace(temporary, path)
                 placed.append(path)
     except OSError as error:
         for path in placed:
             path.unlink(missing_ok=True)
-        raise SpecError(f"cannot write the output: {error}") from error
+        unrestored = []
+        for backup, path in reversed(backups):
+            try:
+                os.replace(backup, path)
+            except OSError:
+                unrestored.append(f"{path.name} is kept at {backup}")
+        # Restored backups are gone; one that could not go back stays on disk for the user.
+        backups.clear()
+        kept = f"; the previous {', '.join(unrestored)}" if unrestored else ""
+        raise SpecError(f"cannot write the output: {error}{kept}") from error
     finally:
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
+        for backup, _ in backups:
+            backup.unlink(missing_ok=True)
 
 
 def load_spec(path: Path) -> dict:

@@ -1597,7 +1597,7 @@ def resampled(samples: list[tuple[float, float]], step: float = 2.0) -> list[tup
 
 
 def parallel_runs(root: ET.Element) -> dict[str, float]:
-    """For each ordered pair of links, how many units of the first run within the clearance of the second at a shallow angle."""
+    """For each ordered pair of links, the longest unbroken stretch of the first within the clearance of the second at a shallow angle."""
     import math
 
     links = {name: resampled(samples) for name, samples in drawn_links(root).items()}
@@ -1606,13 +1606,16 @@ def parallel_runs(root: ET.Element) -> dict[str, float]:
         for other, theirs in links.items():
             if name == other:
                 continue
-            run = 0.0
+            run = longest = 0.0
             for x, y, ux, uy in mine:
                 near = min(theirs, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)
-                if ((near[0] - x) ** 2 + (near[1] - y) ** 2) ** 0.5 < PARALLEL_CLEARANCE:
-                    angle = math.degrees(math.acos(min(1.0, abs(ux * near[2] + uy * near[3]))))
-                    run += 2.0 if angle < PARALLEL_ANGLE else 0.0
-            runs[f"{name} / {other}"] = run
+                close = ((near[0] - x) ** 2 + (near[1] - y) ** 2) ** 0.5 < PARALLEL_CLEARANCE
+                if close and math.degrees(math.acos(min(1.0, abs(ux * near[2] + uy * near[3])))) < PARALLEL_ANGLE:
+                    run += 2.0
+                    longest = max(longest, run)
+                else:
+                    run = 0.0
+            runs[f"{name} / {other}"] = longest
     return runs
 
 
@@ -1755,3 +1758,83 @@ def test_the_measured_label_ink_matches_the_pixels_rsvg_draws(tmp_path: Path) ->
                 if any(sum(abs(a - b) for a, b in zip(pixels.getpixel((px, py)), colour)) < 90
                        for px in range(int(x0 * 2), int(x1 * 2)))]
         assert abs(min(rows) / 2 - y0) <= 1 and abs((max(rows) + 1) / 2 - y1) <= 1, (name, (y0, y1), (min(rows) / 2, (max(rows) + 1) / 2))
+
+
+# --- review follow-ups: publish, last-resort spots, side-by-side runs -------
+
+
+def _umask() -> int:
+    import os
+
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
+def test_publish_gives_new_files_the_umask_mode(tmp_path: Path) -> None:
+    """Review R3-publish-file-mode: a published file is not left owner-only (0600)."""
+    import bauhaus_maps
+
+    out = tmp_path / "fig.svg"
+    bauhaus_maps.publish([(out, b"<svg/>")])
+
+    assert out.stat().st_mode & 0o777 == 0o666 & ~_umask()
+
+
+def test_publish_keeps_the_mode_of_a_file_it_replaces(tmp_path: Path) -> None:
+    import bauhaus_maps
+
+    out = tmp_path / "fig.svg"
+    out.write_bytes(b"old")
+    out.chmod(0o640)
+    bauhaus_maps.publish([(out, b"<svg/>")])
+
+    assert out.read_bytes() == b"<svg/>"
+    assert out.stat().st_mode & 0o777 == 0o640
+
+
+def test_publish_restores_every_replaced_file_when_a_later_one_fails(tmp_path: Path, monkeypatch) -> None:
+    """Review R3-publish-partial-overwrite: all or none holds for files that already existed."""
+    import os
+
+    import bauhaus_maps
+
+    svg, png = tmp_path / "fig.svg", tmp_path / "fig.png"
+    svg.write_bytes(b"old svg")
+    png.write_bytes(b"old png")
+    real_replace = os.replace
+
+    def failing_replace(source, destination):
+        if Path(destination) == png and Path(source).name.endswith(".tmp"):
+            raise PermissionError(13, "Permission denied", str(png))
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(bauhaus_maps.os, "replace", failing_replace)
+    with pytest.raises(bauhaus_maps.SpecError, match="cannot write the output"):
+        bauhaus_maps.publish([(svg, b"new svg"), (png, b"new png")])
+
+    assert svg.read_bytes() == b"old svg"
+    assert png.read_bytes() == b"old png"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["fig.png", "fig.svg"]
+
+
+def test_last_resort_spots_stay_bounded_on_a_tall_connector() -> None:
+    """Review R3-last-resort-search-cost: the fine last-resort search does not grow with the connector."""
+    import bauhaus_maps
+
+    short = sum(1 for _ in bauhaus_maps._spots([(0, 0), (0, 600)], 50))
+    tall = sum(1 for _ in bauhaus_maps._spots([(0, 0), (0, 6000)], 50))
+
+    assert tall - short < 2_000
+
+
+def test_separate_short_side_by_side_stretches_do_not_add_up() -> None:
+    """Review R3-parallel-run-not-contiguous: only one unbroken stretch counts against the limit."""
+    import bauhaus_maps
+
+    model = {"links": [{"from": "a", "to": "b"}, {"from": "c", "to": "d"}]}
+    straight = [(0, 0), (100, 0)]
+    # Two 5-unit hugs, 40 units apart: each is under the limit, together they are over it.
+    comb = [(20, 60), (20, 6), (25, 6), (25, 60), (60, 60), (60, 6), (65, 6), (65, 60)]
+
+    bauhaus_maps._guard_links(model, {0: straight, 1: comb}, {})
