@@ -588,6 +588,18 @@ def ape_structure_validation(config: ReportConfig) -> ValidationResult:
     return result
 
 
+_FENCED_CODE = re.compile(r"^[ \t]*(`{3,}|~{3,})[^\n]*\n(.*?)^[ \t]*\1[ \t]*$", re.MULTILINE | re.DOTALL)
+_INLINE_CODE = re.compile(r"(`+)(.+?)\1")
+
+
+def _markdown_code_text(body: str) -> str:
+    """The text of every fenced code block and inline code span in ``body``."""
+    blocks = [match.group(2) for match in _FENCED_CODE.finditer(body)]
+    prose = _FENCED_CODE.sub("", body)
+    spans = [match.group(2) for match in _INLINE_CODE.finditer(prose)]
+    return "\n".join(blocks + spans)
+
+
 def common_validation(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     metadata_result = metadata_validation(config)
@@ -705,9 +717,15 @@ def common_validation(config: ReportConfig) -> ValidationResult:
             (r"\end", "\\end"),
             (r"\textbackslash", "\\textbackslash"),
         ]
+        # Code listings and inline code may carry these commands on purpose
+        # (#81: `title('cos(\pi/3)')` in an Octave plot); only the occurrences
+        # beyond what body.md's code holds are rendering defects.
+        code_text = _markdown_code_text(
+            config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
+        )
         found = []
         for display_name, search_pattern in latex_escaped_patterns:
-            count = full_text.count(search_pattern)
+            count = full_text.count(search_pattern) - code_text.count(search_pattern)
             if count > 0:
                 found.append(f"{display_name} ({count} vez/veces)")
         if found:
