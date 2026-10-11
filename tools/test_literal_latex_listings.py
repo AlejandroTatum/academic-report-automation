@@ -54,6 +54,43 @@ def test_pi_escaped_in_prose_is_still_a_literal_latex_error(tmp_path, monkeypatc
     assert "\\pi (1 vez/veces)" in errors[0]
 
 
+def test_a_listing_missing_from_the_pdf_does_not_hide_a_prose_defect(tmp_path, monkeypatch) -> None:
+    body = f"El ángulo vale \\pi/3.\n\n```octave\n{LISTING}\n```\n"
+    pdf_text = "El ángulo vale \\pi/3.\n"
+
+    errors = _validate(tmp_path, monkeypatch, body, pdf_text)
+
+    assert len(errors) == 1
+    assert "\\pi (1 vez/veces)" in errors[0]
+
+
+def test_a_wrapped_numbered_listing_line_is_still_exempt(tmp_path, monkeypatch) -> None:
+    line = "title('4.2: errores en cos(\\pi/3) con una línea larga que el listado parte')"
+    body = f"# Resultados\n\n```octave\n{line}\n```\n"
+    pdf_text = (
+        "Resultados\n"
+        "1 title('4.2: errores en cos(\\pi/3) con una línea larga que el\n"
+        "↪→\n"
+        "listado parte')\n"
+    )
+
+    assert _validate(tmp_path, monkeypatch, body, pdf_text) == []
+
+
+def test_an_aligned_comment_extracted_as_its_own_column_is_still_exempt(tmp_path, monkeypatch) -> None:
+    body = "```octave\nx = cos(\\pi/3);     % \\pi en radianes\ny = 1;\n```\n"
+    pdf_text = "1 x = cos(\\pi/3);\n2 y = 1;\n% \\pi en radianes\n"
+
+    assert _validate(tmp_path, monkeypatch, body, pdf_text) == []
+
+
+def test_a_longer_closing_fence_still_closes_the_listing(tmp_path, monkeypatch) -> None:
+    body = f"# Resultados\n\n```octave\n{LISTING}\n`````\n"
+    pdf_text = f"Resultados\n1 {LISTING}\n"
+
+    assert _validate(tmp_path, monkeypatch, body, pdf_text) == []
+
+
 def test_only_the_occurrences_beyond_the_listings_are_reported(tmp_path, monkeypatch) -> None:
     body = f"El ángulo vale \\pi/3.\n\n```octave\n{LISTING}\n```\n"
     pdf_text = f"El ángulo vale \\pi/3.\n{LISTING}\n"

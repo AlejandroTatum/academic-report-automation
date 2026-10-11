@@ -588,16 +588,64 @@ def ape_structure_validation(config: ReportConfig) -> ValidationResult:
     return result
 
 
-_FENCED_CODE = re.compile(r"^[ \t]*(`{3,}|~{3,})[^\n]*\n(.*?)^[ \t]*\1[ \t]*$", re.MULTILINE | re.DOTALL)
 _INLINE_CODE = re.compile(r"(`+)(.+?)\1")
+# Whitespace plus the listing wrap mark: pdftotext extracts the builder's
+# ``postbreak`` ($\hookrightarrow$) as "↪→", usually on a line of its own.
+_PDF_LAYOUT_NOISE = re.compile(r"[\s↪→]+")
 
 
-def _markdown_code_text(body: str) -> str:
-    """The text of every fenced code block and inline code span in ``body``."""
-    blocks = [match.group(2) for match in _FENCED_CODE.finditer(body)]
-    prose = _FENCED_CODE.sub("", body)
-    spans = [match.group(2) for match in _INLINE_CODE.finditer(prose)]
-    return "\n".join(blocks + spans)
+def _markdown_code_fragments(body: str) -> list[str]:
+    """Every fenced code line and inline code span in ``body``.
+
+    Fences follow the builder's own rule, so a line counts as code exactly when
+    the PDF renders it inside a listing.
+    """
+    from build_latex_report import CODE_FENCE_RE, is_closing_fence
+
+    lines = body.splitlines()
+    fragments: list[str] = []
+    prose: list[str] = []
+    index = 0
+    while index < len(lines):
+        fence = CODE_FENCE_RE.match(lines[index].strip())
+        if fence:
+            marker = fence.group("marker")[0]
+            closing = next(
+                (j for j in range(index + 1, len(lines)) if is_closing_fence(lines[j], marker)),
+                None,
+            )
+            if closing is not None:
+                fragments.extend(lines[index + 1 : closing])
+                index = closing + 1
+                continue
+        prose.append(lines[index])
+        index += 1
+    fragments.extend(match.group(2) for match in _INLINE_CODE.finditer("\n".join(prose)))
+    return fragments
+
+
+def _pdf_text_without_code(pdf_text: str, fragments: list[str]) -> str:
+    """``pdf_text`` with each code fragment it renders cut out once.
+
+    Both sides are compared without whitespace or wrap marks, so a listing line
+    that wraps, or carries a line number, still matches. pdftotext may extract
+    an aligned trailing comment as a column of its own, so a line it does not
+    hold whole is tried again as the pieces its runs of spaces separate. Text
+    the PDF does not hold verbatim (a dropped or altered listing) removes
+    nothing, so its commands stay counted instead of cancelling a defect in
+    the prose.
+    """
+    stream = _PDF_LAYOUT_NOISE.sub("", pdf_text)
+    for fragment in fragments:
+        needle = _PDF_LAYOUT_NOISE.sub("", fragment)
+        pieces = [needle] if needle in stream else [
+            _PDF_LAYOUT_NOISE.sub("", piece) for piece in re.split(r"\s{2,}", fragment)
+        ]
+        for piece in pieces:
+            if piece:
+                # A separator keeps the text on both sides of the cut apart.
+                stream = stream.replace(piece, "\n", 1)
+    return stream
 
 
 def _cover_value_pattern(value: object) -> re.Pattern[str] | None:
@@ -732,14 +780,17 @@ def common_validation(config: ReportConfig) -> ValidationResult:
             (r"\textbackslash", "\\textbackslash"),
         ]
         # Code listings and inline code may carry these commands on purpose
-        # (#81: `title('cos(\pi/3)')` in an Octave plot); only the occurrences
-        # beyond what body.md's code holds are rendering defects.
-        code_text = _markdown_code_text(
-            config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
+        # (#81: `title('cos(\pi/3)')` in an Octave plot); only what remains
+        # once the PDF's rendered code is cut out is a rendering defect.
+        prose_text = _pdf_text_without_code(
+            full_text,
+            _markdown_code_fragments(
+                config.body_path.read_text(encoding="utf-8", errors="ignore") if config.body_path.exists() else ""
+            ),
         )
         found = []
         for display_name, search_pattern in latex_escaped_patterns:
-            count = full_text.count(search_pattern) - code_text.count(search_pattern)
+            count = prose_text.count(search_pattern)
             if count > 0:
                 found.append(f"{display_name} ({count} vez/veces)")
         if found:

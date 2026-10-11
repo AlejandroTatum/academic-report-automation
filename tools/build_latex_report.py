@@ -364,6 +364,18 @@ LISTING_PREAMBLE = r"""\usepackage{listings}
 
 
 CODE_FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})\s*(?P<language>[^`]*)$")
+
+
+def is_closing_fence(line: str, marker: str) -> bool:
+    """Whether ``line`` closes a block opened with the fence character ``marker``.
+
+    Any run of three or more of the same character closes it, whatever the
+    opening fence's length.
+    """
+    candidate = line.strip()
+    return len(candidate) >= 3 and set(candidate) == {marker}
+
+
 # Headings the templates already print by themselves through \printbibliography.
 BIBLIOGRAPHY_HEADINGS = {"bibliografia", "referencias", "references", "bibliography"}
 
@@ -618,8 +630,7 @@ def markdown_to_latex(
     def find_closing_fence(marker: str, start: int) -> int | None:
         """Index of the fence that closes the block opened at ``start - 1``."""
         for index in range(start, len(lines)):
-            candidate = lines[index].strip()
-            if len(candidate) >= 3 and set(candidate) == {marker}:
+            if is_closing_fence(lines[index], marker):
                 return index
         return None
 
