@@ -600,6 +600,20 @@ def _markdown_code_text(body: str) -> str:
     return "\n".join(blocks + spans)
 
 
+def _cover_value_pattern(value: object) -> re.Pattern[str] | None:
+    """Whole-word, case-insensitive match of a cover value in flattened PDF text.
+
+    Words may be split across lines with a hyphen (``pro- yecto`` once the page
+    text is flattened), so a hyphen plus space is allowed between any two
+    letters. The value never matches inside a longer word.
+    """
+    words = str(value or "").split()
+    if not words:
+        return None
+    word_patterns = [r"(?:-\s)?".join(re.escape(char) for char in word) for word in words]
+    return re.compile(r"(?<!\w)" + r"\s+".join(word_patterns) + r"(?!\w)", re.IGNORECASE)
+
+
 def common_validation(config: ReportConfig) -> ValidationResult:
     result = ValidationResult()
     metadata_result = metadata_validation(config)
@@ -828,11 +842,10 @@ def pdf_layout_validation(config: ReportConfig) -> ValidationResult:
         # The cover must print the title and subject, so a marker inside them
         # ("Desarrollo Basado en Plataformas") is not body text on page 1.
         cover_text = " ".join(first.split())
-        metadata = config.raw.get("metadata") or {}
         for field in ("title", "subject"):
-            value = " ".join(str(metadata.get(field) or "").lower().split())
-            if value:
-                cover_text = cover_text.replace(value, " ")
+            pattern = _cover_value_pattern(config.metadata.get(field))
+            if pattern is not None:
+                cover_text = pattern.sub(" ", cover_text)
         if re.search(cover_body_marker_pattern, cover_text) and not config.raw.get("allow_body_on_cover", False):
             result.errors.append("La portada parece mezclada con el cuerpo; el cuerpo debe iniciar en página 2")
         # The marker vocabulary is academic Spanish (#23's numbering contract).

@@ -9,7 +9,8 @@ YAML front matter:
     report_defaults: {...}      # report.yml keys; explicit report.yml values win
     delivery_dir_template: "~/.../unidad-{unit}/ape-{practice_number}-{slug}/"
 
-With no profile template, a course repo under the Documents library
+With no profile template -- no profile at all, or a matching profile that only
+sets ``report_defaults`` -- a course repo under the Documents library
 (``Academicos/<subject-slug>/AGENTS.md``) supplies the shared practice layout
 ``unidad-{unit}/{practice_type}-{practice_number}-{topic}/documento/``. The
 practice type is the word the course's own ``unidad-<n>/<tipo>-<m>-<tema>/``
@@ -115,9 +116,16 @@ def _course_practices(repo: Path) -> list[tuple[str, str, str, Path]]:
 
 
 def _practice_type(practices: list[tuple[str, str, str, Path]], chosen: str | None) -> str | None:
-    """The word the course names its practices with (#84); the format when in doubt."""
-    ranked = Counter(kind for _, kind, _, _ in practices).most_common()
-    if not ranked or chosen in dict(ranked):
+    """The word the course names its practices with (#84); the format when in doubt.
+
+    Another practice format (an ``ape`` folder for an ``aa`` report) is a
+    different kind of practice, never the course's word for this one.
+    """
+    kinds = Counter(kind for _, kind, _, _ in practices)
+    if chosen in kinds:
+        return chosen
+    ranked = [(kind, n) for kind, n in kinds.most_common() if kind not in PRACTICE_FORMATS]
+    if not ranked:
         return chosen
     if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
         return chosen
@@ -181,6 +189,26 @@ def course_repo(config: Any, documents_root: Path | None = None) -> Path | None:
     return repo if (repo / "AGENTS.md").is_file() else None
 
 
+def _delivery_template(
+    config: Any, profile: dict[str, Any], path: Path | None, documents_root: Path | None,
+) -> tuple[str | None, str | None, Path | None]:
+    """``(template, source, course repo)`` for the delivery folder.
+
+    A profile's own ``delivery_dir_template`` wins. Otherwise the subject's
+    course repo supplies ``COURSE_LAYOUT`` -- also for a matching profile that
+    only sets ``report_defaults``. ``source`` names what applies (the profile
+    file, else the course repo) and is ``None`` when nothing does.
+    """
+    template = profile.get("delivery_dir_template")
+    source = path.name if path else None
+    if isinstance(template, str):
+        return template, source, None
+    repo = course_repo(config, documents_root)
+    if repo is None:
+        return None, source, None
+    return f"{repo}/{COURSE_LAYOUT}", source or f"course repo {repo}", repo
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("folder", type=Path)
@@ -201,14 +229,7 @@ def main(argv: list[str] | None = None) -> int:
 
     path, profile = candidates[0] if candidates else (None, {})
     defaults = dict(profile.get("report_defaults") or {})
-    template = profile.get("delivery_dir_template")
-    source = path.name if path else None
-    repo = None
-    if not isinstance(template, str):
-        repo = course_repo(config, args.documents_root)
-        if repo is not None:
-            template = f"{repo}/{COURSE_LAYOUT}"
-            source = source or f"course repo {repo}"
+    template, source, repo = _delivery_template(config, profile, path, args.documents_root)
     if source is None:
         print("no profile")
         return 0

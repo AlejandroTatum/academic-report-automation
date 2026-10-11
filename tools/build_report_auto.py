@@ -91,6 +91,34 @@ def build_backend(
         )
 
 
+def build_with_records(config: "ReportConfig", args: argparse.Namespace) -> None:
+    """Run the build and the record lifecycle around it.
+
+    Two records tell ``doc_status`` what a build rendered: a draft build
+    (``--no-approval-check``) records the ``body.md`` bytes, so a fresh draft
+    PDF is told apart from one that predates the latest edit; every build with
+    a ``report.yml`` records its render settings, so a delivery-only edit is
+    told apart from one that needs a rebuild. Old records go first and new ones
+    are written only after the build succeeded, so a failed build never looks
+    fresh; ``--tex-only`` compiles no PDF and writes neither.
+    """
+    draft_body = config.folder / "body.md"
+    record_draft = args.no_approval_check and not args.tex_only and draft_body.is_file()
+    # Through the module, so tests that fake the PDF hash leave this one real.
+    rendered = approval_marker.sha256_file(draft_body) if record_draft else ""
+    report_yml = config.folder / "report.yml"
+    settings = render_digest(report_yml) if report_yml.is_file() else None
+    if record_draft:
+        draft_record_path(config.pdf_path).unlink(missing_ok=True)
+    if settings:
+        render_record_path(config.folder).unlink(missing_ok=True)
+    build_backend(config, args)
+    if record_draft:
+        write_draft_record(config.pdf_path, draft_body, rendered)
+    if settings and not args.tex_only:
+        write_render_record(config.folder, settings)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("folder", type=Path, help="Carpeta del reporte con report.yml")
@@ -117,27 +145,7 @@ def main() -> None:
 
     # Build step — skipped when --validate-only
     if not args.validate_only:
-        # A draft build records the body.md bytes it renders so doc_status can
-        # tell a fresh draft PDF from one that predates the latest edit. The
-        # old record goes first and the new one is written only after the PDF
-        # compiled, so a failed or --tex-only build never looks fresh.
-        draft_body = config.folder / "body.md"
-        record_draft = args.no_approval_check and not args.tex_only and draft_body.is_file()
-        if record_draft:
-            # Through the module, so tests that fake the PDF hash leave this one real.
-            rendered = approval_marker.sha256_file(draft_body)
-            draft_record_path(config.pdf_path).unlink(missing_ok=True)
-        # Same idea for report.yml: record the render settings this build used,
-        # so doc_status can tell a delivery-only edit from one needing a rebuild.
-        report_yml = config.folder / "report.yml"
-        settings = render_digest(report_yml) if report_yml.is_file() else None
-        if settings:
-            render_record_path(config.folder).unlink(missing_ok=True)
-        build_backend(config, args)
-        if record_draft:
-            write_draft_record(config.pdf_path, draft_body, rendered)
-        if settings and not args.tex_only:
-            write_render_record(config.folder, settings)
+        build_with_records(config, args)
 
     if args.tex_only:
         # --tex-only leaves no compiled PDF behind, so the post-build gates

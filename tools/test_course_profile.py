@@ -247,3 +247,36 @@ def test_course_folder_keeps_the_format_when_the_course_already_uses_it(tmp_path
     assert _run_docs(folder, _profiles(tmp_path), documents) == 0
 
     assert _proposed(folder).endswith("/unidad-1/aa-3-actores-sdd/documento/")
+
+
+def test_profile_without_a_template_takes_the_course_folder_too(tmp_path, capsys):
+    """#72.4: a profile with only report_defaults still gets the course repo layout."""
+    documents = _course_repo(tmp_path)
+    profile = """---
+match:
+  subject: Desarrollo Basado en Plataformas
+report_defaults:
+  uncited_bibliography: true
+---
+"""
+    folder = _folder(tmp_path, COURSE_REPORT)
+
+    assert _run_docs(folder, _profiles(tmp_path, profile), documents) == 0
+
+    data = _proposed(folder)
+    report = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
+    assert data.endswith("/unidad-1/aa-1-actores-sdd/documento/")
+    assert report["uncited_bibliography"] is True
+    assert "profile p0.md" in capsys.readouterr().out
+
+
+def test_another_practice_format_is_never_taken_as_the_course_type(tmp_path):
+    """An AA report in a course with only APE folders stays `aa`, never `ape`."""
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/ape-1-laboratorio")
+
+    folder = _folder(tmp_path, COURSE_REPORT.replace('practice_number: "1"', 'practice_number: "2"'))
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/aa-2-actores-sdd/documento/")

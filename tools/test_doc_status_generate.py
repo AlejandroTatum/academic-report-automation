@@ -193,3 +193,51 @@ def test_generate_render_change_after_build_still_needs_a_rebuild(tmp_path: Path
 
     assert phase.state == doc_status.PENDING
     assert "report.yml" in phase.detail
+
+
+def test_delivery_dir_edit_after_delivery_reopens_only_deliver(tmp_path: Path) -> None:
+    """#72.2: moving a delivered report keeps every receipt bound to the same PDF bytes.
+
+    validate and review stay done (their hashes still match the unchanged PDF);
+    only deliver goes back to pending, for the new folder, until it is published there.
+    """
+    from conftest import _final_review, _published, _validation
+
+    folder = tmp_path / "wf"
+    _generate_fixtures(folder)
+    slug = _config(folder).document_slug
+    _append(folder / "report.yml", f'delivery_dir: "{tmp_path / "first" / slug}"\n', T0 + 30)
+    pdf = _pdf(folder, mtime=T0 + 120)
+    approval_marker.write_render_record(folder)
+    _validation(folder, pdf=pdf)
+    _final_review(folder, pdf=pdf)
+    _published(tmp_path, category="first", slug=slug, source=pdf)
+    pdf_bytes = pdf.read_bytes()
+
+    def states() -> dict[str, str]:
+        config = _config(folder)
+        return {
+            name: handler(folder, config, None).state
+            for name, handler in (
+                ("generate", doc_status._phase_generate),
+                ("validate", doc_status._phase_validate),
+                ("review", doc_status._phase_review),
+                ("deliver", doc_status._phase_deliver),
+            )
+        }
+
+    assert set(states().values()) == {doc_status.DONE}
+
+    _append(folder / "report.yml", f'delivery_dir: "{tmp_path / "second" / slug}"\n', T0 + 300)
+
+    assert states() == {
+        "generate": doc_status.DONE,
+        "validate": doc_status.DONE,
+        "review": doc_status.DONE,
+        "deliver": doc_status.PENDING,
+    }
+    assert pdf.read_bytes() == pdf_bytes
+
+    _published(tmp_path, category="second", slug=slug, source=pdf)
+
+    assert set(states().values()) == {doc_status.DONE}
