@@ -280,3 +280,31 @@ def test_another_practice_format_is_never_taken_as_the_course_type(tmp_path):
     assert _run_docs(folder, _profiles(tmp_path), documents) == 0
 
     assert _proposed(folder).endswith("/unidad-1/aa-2-actores-sdd/documento/")
+
+
+def test_an_aa_report_is_never_moved_into_an_ape_folder_of_the_same_number(tmp_path):
+    """Review R3-reuse-other-format-folder: reuse matches the report's own type only."""
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/ape-1-laboratorio")
+    folder = _folder(tmp_path, COURSE_REPORT)
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/aa-1-actores-sdd/documento/")
+
+
+def test_a_reused_folder_ends_with_the_layout_s_document_folder(tmp_path, monkeypatch):
+    """Review R2-reused-folder-hardcoded-suffix: the reuse path follows COURSE_LAYOUT."""
+    monkeypatch.setattr(course_profile, "COURSE_DOCUMENT_DIR", "entrega/")
+    monkeypatch.setattr(
+        course_profile,
+        "COURSE_LAYOUT",
+        "unidad-{unit}/{practice_type}-{practice_number}-{topic}/entrega/",
+    )
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/aa-1-otro-nombre")
+    folder = _folder(tmp_path, COURSE_REPORT)
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/aa-1-otro-nombre/entrega/")

@@ -358,3 +358,37 @@ def test_rewriting_approval_after_a_final_build_reopens_format_and_generate(tmp_
 
     assert _format_phase(folder, documents).state == doc_status.PENDING
     assert doc_status._phase_generate(folder, _config(folder), documents).state != doc_status.DONE
+
+
+def test_delivery_folder_that_is_a_file_keeps_format_pending_without_crashing(tmp_path: Path) -> None:
+    """Review R3-delivery-scan-exceptions: an OSError is a reason, never a crash."""
+    target = tmp_path / "entrega.pdf"
+    target.write_bytes(b"%PDF-1.4\n")
+    folder = _with_delivery_dir(_course_report(tmp_path / "wf"), target)
+
+    phase = _format_phase(folder, tmp_path / "Documents")
+    status = doc_status.derive(folder, documents_root=tmp_path / "Documents")
+
+    assert phase.state == doc_status.PENDING
+    assert phase.detail.startswith("delivery folder unusable: ")
+    assert str(target) in phase.detail
+    assert "derivation_error" not in status.blocked_reasons
+
+
+def test_extra_files_after_a_final_build_leave_format_done(tmp_path: Path) -> None:
+    """Review R3-delivery-check-after-build: the up-front check never re-gates a built report.
+
+    Deliver still refuses the folder; format and the phases after it keep their state.
+    """
+    delivery = tmp_path / "entrega"
+    delivery.mkdir()
+    folder = _with_delivery_dir(_course_report(tmp_path / "wf"), delivery)
+    _approval(folder)
+    _mtime(folder / "approval.yml", 1_000)
+    _mtime(_pdf(folder), 2_000)
+    (delivery / "notas.txt").write_text("ajeno", encoding="utf-8")
+
+    assert _format_phase(folder, tmp_path / "Documents").state == doc_status.DONE
+    deliver = doc_status._phase_deliver(folder, _config(folder), tmp_path / "Documents")
+    assert deliver.state == doc_status.PENDING
+    assert deliver.detail.startswith("delivery folder unusable: ")
