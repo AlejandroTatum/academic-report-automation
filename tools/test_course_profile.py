@@ -268,3 +268,15 @@ report_defaults:
     assert data.endswith("/unidad-1/aa-1-actores-sdd/documento/")
     assert report["uncited_bibliography"] is True
     assert "profile p0.md" in capsys.readouterr().out
+
+
+def test_another_practice_format_is_never_taken_as_the_course_type(tmp_path):
+    """An AA report in a course with only APE folders stays `aa`, never `ape`."""
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/ape-1-laboratorio")
+
+    folder = _folder(tmp_path, COURSE_REPORT.replace('practice_number: "1"', 'practice_number: "2"'))
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/aa-2-actores-sdd/documento/")

@@ -116,9 +116,16 @@ def _course_practices(repo: Path) -> list[tuple[str, str, str, Path]]:
 
 
 def _practice_type(practices: list[tuple[str, str, str, Path]], chosen: str | None) -> str | None:
-    """The word the course names its practices with (#84); the format when in doubt."""
-    ranked = Counter(kind for _, kind, _, _ in practices).most_common()
-    if not ranked or chosen in dict(ranked):
+    """The word the course names its practices with (#84); the format when in doubt.
+
+    Another practice format (an ``ape`` folder for an ``aa`` report) is a
+    different kind of practice, never the course's word for this one.
+    """
+    kinds = Counter(kind for _, kind, _, _ in practices)
+    if chosen in kinds:
+        return chosen
+    ranked = [(kind, n) for kind, n in kinds.most_common() if kind not in PRACTICE_FORMATS]
+    if not ranked:
         return chosen
     if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
         return chosen
