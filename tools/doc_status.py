@@ -419,23 +419,34 @@ def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | Non
         return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
     if legacy_pdf:
         return PhaseState("format", DONE, f"format={chosen}, output pdf (legacy report), metadata complete")
-    # A course repo fixes where the practice lands; recording it before the
-    # final build avoids moving (and re-approving) the PDF after review.
-    # Reports with a final build keep their status.
-    if chosen in PRACTICE_FORMATS and "delivery_dir" not in config.raw and not _has_final_build(folder, config):
-        repo = course_repo(config, documents_root)
-        if repo is not None:
-            return PhaseState(
-                "format",
-                PENDING,
-                f"delivery_dir not set: course repo {repo} uses {COURSE_LAYOUT}; record "
-                "metadata.unit, metadata.practice_number and metadata.topic, then run course_profile.py, "
-                "or set delivery_dir by hand",
-            )
+    missing_folder = _course_folder_missing(config, documents_root)
+    if missing_folder:
+        return PhaseState("format", PENDING, missing_folder)
     problem = _delivery_folder_problem(config, documents_root)
     if problem:
         return PhaseState("format", PENDING, f"delivery folder unusable: {problem}")
     return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
+
+
+def _course_folder_missing(config: ReportConfig, documents_root: Path | None) -> str:
+    """Why format waits for ``delivery_dir``, or ``""`` when it does not.
+
+    A course repo fixes where the practice lands; recording it before the
+    final build avoids moving (and re-approving) the PDF after review.
+    Reports with a final build keep their status.
+    """
+    if config.format not in PRACTICE_FORMATS or "delivery_dir" in config.raw:
+        return ""
+    if _has_final_build(config.folder, config):
+        return ""
+    repo = course_repo(config, documents_root)
+    if repo is None:
+        return ""
+    return (
+        f"delivery_dir not set: course repo {repo} uses {COURSE_LAYOUT}; record "
+        "metadata.unit, metadata.practice_number and metadata.topic, then run course_profile.py, "
+        "or set delivery_dir by hand"
+    )
 
 
 def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None) -> str:
