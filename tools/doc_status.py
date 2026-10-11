@@ -373,14 +373,43 @@ def _approval_format_suffix(folder: Path, config: ReportConfig, documents_root: 
     if config.format is None:
         return _APPROVAL_FORMAT_BATCH + _APPROVAL_RECORD_ANSWERS
     state = _phase_format(folder, config, documents_root)
-    if state.state == DONE:
-        return _APPROVAL_FORMAT_RECORDED
-    gaps = state.detail.removeprefix("missing format metadata: ").replace("{", "{{").replace("}", "}}")
+    if state.state == BLOCKED:
+        return _approval_only_with(state.detail)
+    # The gate always precedes approval, so whatever PDF exists is a preview:
+    # the folder checks run as before a build.
+    gaps = _missing_format_fields(folder, config, documents_root)
+    if not gaps and _course_folder_missing(config, documents_root, before_build=True):
+        gaps = ["delivery folder (record metadata.unit, metadata.practice_number and metadata.topic, "
+                "then run course_profile.py)"]
+    if not gaps:
+        problem = _delivery_folder_problem(config, documents_root, before_build=True)
+        return _approval_only_with(f"delivery folder unusable: {problem}") if problem else _APPROVAL_FORMAT_RECORDED
     return (
         "; in the same batch use ask_user_choice (suggested options, never free text) only for "
-        f"what {{report_yml}} still lacks, never re-asking what it records; still missing: {gaps}"
+        f"what {{report_yml}} still lacks, never re-asking what it records; still missing: {', '.join(gaps)}"
         + _APPROVAL_RECORD_ANSWERS
     )
+
+
+def _approval_only_with(reason: str) -> str:
+    """Approve now; a problem the user does not answer as a field is reported by format."""
+    escaped = reason.replace("{", "{{").replace("}", "}}")
+    return _APPROVAL_FORMAT_RECORDED + f"; the format phase still reports: {escaped}"
+
+
+def _missing_format_fields(folder: Path, config: ReportConfig, documents_root: Path | None) -> list[str]:
+    """The ``report.yml`` keys a known format still needs, in the order they are asked."""
+    missing = [
+        key
+        for key in config.format_required_metadata
+        if not config.metadata.get(key) or is_placeholder_value(config.metadata.get(key))
+    ]
+    if config.format == "libre" and not config.format_spec:
+        missing.append("format_spec")
+    output = str(config.raw.get("output") or "").strip()
+    if not output and not _has_legacy_pdf(folder, config, documents_root):
+        missing.append("output")
+    return missing
 
 
 def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | None) -> PhaseState:
@@ -400,21 +429,13 @@ def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | Non
         return PhaseState("format", PENDING, "format not chosen: ask the user APE, AA or libre")
     if not config.format_is_known:
         return PhaseState("format", BLOCKED, f"format={chosen} not recognized", "unknown_format")
-    missing = [
-        key
-        for key in config.format_required_metadata
-        if not config.metadata.get(key) or is_placeholder_value(config.metadata.get(key))
-    ]
-    if chosen == "libre" and not config.format_spec:
-        missing.append("format_spec")
     output = str(config.raw.get("output") or "").strip()
     if output and output.lower() not in ("pdf", "docx"):
         return PhaseState(
             "format", BLOCKED, f"output={output} not recognized: use pdf or docx", "unknown_output"
         )
-    legacy_pdf = not output and _has_legacy_pdf(folder, config, documents_root)
-    if not output and not legacy_pdf:
-        missing.append("output")
+    missing = _missing_format_fields(folder, config, documents_root)
+    legacy_pdf = not output and "output" not in missing
     if missing:
         return PhaseState("format", PENDING, f"missing format metadata: {', '.join(missing)}")
     if legacy_pdf:
@@ -428,7 +449,7 @@ def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | Non
     return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
 
 
-def _course_folder_missing(config: ReportConfig, documents_root: Path | None) -> str:
+def _course_folder_missing(config: ReportConfig, documents_root: Path | None, *, before_build: bool = False) -> str:
     """Why format waits for ``delivery_dir``, or ``""`` when it does not.
 
     A course repo fixes where the practice lands; recording it before the
@@ -437,7 +458,7 @@ def _course_folder_missing(config: ReportConfig, documents_root: Path | None) ->
     """
     if config.format not in PRACTICE_FORMATS or "delivery_dir" in config.raw:
         return ""
-    if _has_final_build(config.folder, config):
+    if not before_build and _has_final_build(config.folder, config):
         return ""
     repo = course_repo(config, documents_root)
     if repo is None:
@@ -449,7 +470,7 @@ def _course_folder_missing(config: ReportConfig, documents_root: Path | None) ->
     )
 
 
-def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None) -> str:
+def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None, *, before_build: bool = False) -> str:
     """The publisher's refusal for the delivery folder, checked before the build (#83).
 
     Same scan ``deliver_report.py`` runs, so a folder holding anything but
@@ -459,7 +480,7 @@ def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None) 
     unresolvable identity is the deliver phase's to report; an unreadable path
     (a file, no permission) is a reason, never a crash.
     """
-    if _has_final_build(config.folder, config):
+    if not before_build and _has_final_build(config.folder, config):
         return ""
     try:
         delivery = config.delivery_folder(documents_root)

@@ -313,7 +313,7 @@ def test_approval_guidance_asks_only_approval_once_the_format_is_recorded(tmp_pa
     _fresh_draft(folder)
     _choose_format(folder, "aa")
 
-    guidance = doc_status._guidance("approval", folder)
+    guidance = doc_status._guidance("approval", folder, documents_root=tmp_path / "Documents")
 
     assert "ask only whether the user approves" in guidance
     assert "AA, APE or libre" not in guidance
@@ -331,10 +331,56 @@ def test_approval_guidance_names_only_the_format_fields_still_missing(tmp_path: 
     _fresh_draft(folder)
     _choose_format(folder, "aa", output=None)
 
-    guidance = doc_status._guidance("approval", folder)
+    guidance = doc_status._guidance("approval", folder, documents_root=tmp_path / "Documents")
 
     assert "still missing: output" in guidance
     assert "AA, APE or libre" not in guidance
+
+
+def _course_documents(tmp_path: Path) -> Path:
+    documents = tmp_path / "Documents"
+    repo = documents / "Academicos" / "redes"
+    repo.mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("- `unidad-<n>/<tipo>-<m>-<tema>/`\n", encoding="utf-8")
+    return documents
+
+
+def test_approval_guidance_names_a_missing_course_folder_as_a_field(tmp_path: Path) -> None:
+    """Review R2-approval-gaps-string-parse: no message text spliced in as a field list."""
+    from conftest import _choose_format
+
+    documents = _course_documents(tmp_path)
+    folder = tmp_path / "wf"
+    _report(folder, subject="Redes")
+    _body(folder)
+    _fresh_draft(folder)
+    _choose_format(folder, "aa")
+
+    guidance = doc_status._guidance("approval", folder, documents_root=documents)
+
+    assert "still missing: delivery folder" in guidance
+    assert "delivery_dir not set" not in guidance
+    assert "missing format metadata" not in guidance
+
+
+def test_approval_guidance_with_an_unusable_folder_asks_only_approval(tmp_path: Path) -> None:
+    """A folder problem is not a format field: approve, and the format phase reports it."""
+    from conftest import _choose_format
+
+    delivery = tmp_path / "entrega"
+    delivery.mkdir()
+    (delivery / "vieja.html").write_text("<html></html>", encoding="utf-8")
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    _choose_format(folder, "aa", delivery_dir=f'"{delivery}"')
+
+    guidance = doc_status._guidance("approval", folder, documents_root=tmp_path / "Documents")
+
+    assert "ask only whether the user approves" in guidance
+    assert "still missing" not in guidance
+    assert "delivery folder unusable" in guidance
 
 
 def test_format_guidance_asks_only_missing_fields(tmp_path: Path) -> None:
