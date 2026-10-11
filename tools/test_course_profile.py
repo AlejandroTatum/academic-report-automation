@@ -205,3 +205,45 @@ def test_course_repo_convention_accepts_an_uppercase_format(tmp_path):
 
     data = yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))
     assert "/unidad-1/aa-1-actores-sdd/documento/" in data["delivery_dir"]
+
+
+def _practice_folder(documents: Path, relative: str) -> None:
+    (documents / "Academicos" / "desarrollo-basado-en-plataformas" / relative).mkdir(parents=True)
+
+
+def _proposed(folder: Path) -> str:
+    return yaml.safe_load((folder / "report.yml").read_text(encoding="utf-8"))["delivery_dir"]
+
+
+def test_course_folder_uses_the_practice_type_its_existing_folders_use(tmp_path):
+    """#84: a course that names practices `ejercicio-N-...` never gets `aa-N-...`."""
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/ejercicio-1-introduccion")
+    folder = _folder(tmp_path, COURSE_REPORT.replace('practice_number: "1"', 'practice_number: "2"'))
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/ejercicio-2-actores-sdd/documento/")
+
+
+def test_course_folder_reuses_the_existing_folder_of_the_same_practice(tmp_path):
+    """#84: the practice folder already exists under another topic: deliver there."""
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/ejercicio-1-introduccion")
+    _practice_folder(documents, "unidad-1/ejercicio-2-series-taylor-cap4")
+    folder = _folder(tmp_path, COURSE_REPORT.replace('practice_number: "1"', 'practice_number: "2"'))
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/ejercicio-2-series-taylor-cap4/documento/")
+
+
+def test_course_folder_keeps_the_format_when_the_course_already_uses_it(tmp_path):
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/ejercicio-1-introduccion")
+    _practice_folder(documents, "unidad-1/aa-2-otro-tema")
+    folder = _folder(tmp_path, COURSE_REPORT.replace('practice_number: "1"', 'practice_number: "3"'))
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/aa-3-actores-sdd/documento/")

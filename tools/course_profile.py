@@ -11,7 +11,11 @@ YAML front matter:
 
 With no profile template, a course repo under the Documents library
 (``Academicos/<subject-slug>/AGENTS.md``) supplies the shared practice layout
-``unidad-{unit}/{format}-{practice_number}-{topic}/documento/``.
+``unidad-{unit}/{practice_type}-{practice_number}-{topic}/documento/``. The
+practice type is the word the course's own ``unidad-<n>/<tipo>-<m>-<tema>/``
+folders use (``ejercicio``, ``ape``, ``aa``): the document format unless the
+course uses it nowhere and one other word clearly dominates. When a folder for
+the same unit, type and number already exists, it is reused whatever its topic.
 
 Profiles without front matter are prose-only and ignored. Missing keys are
 written as text (appended, or inserted under an existing top-level block) so
@@ -24,6 +28,7 @@ import re
 import sys
 import tempfile
 import unicodedata
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +41,9 @@ PROFILES_DIR = Path(__file__).resolve().parent.parent / "skills" / "academic-rep
 _FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 # The practice layout every course repo's AGENTS.md declares.
-COURSE_LAYOUT = "unidad-{unit}/{format}-{practice_number}-{topic}/documento/"
+COURSE_LAYOUT = "unidad-{unit}/{practice_type}-{practice_number}-{topic}/documento/"
 PRACTICE_FORMATS = ("aa", "ape")
+_PRACTICE_DIR = re.compile(r"([a-z]+)-(\d+)-.+")
 
 
 def _fold(value: object) -> str:
@@ -94,19 +100,52 @@ def _number(value: Any) -> str | None:
     return str(int(found.group())) if found else None
 
 
-def _resolve_template(template: str, config: Any, folder: Path) -> tuple[str | None, list[str]]:
+def _course_practices(repo: Path) -> list[tuple[str, str, str, Path]]:
+    """``(unit, type, number, folder)`` of every ``unidad-<n>/<tipo>-<m>-<tema>/`` folder."""
+    found = []
+    for unit_dir in sorted(repo.glob("unidad-*")):
+        unit = _number(unit_dir.name)
+        if unit is None or not unit_dir.is_dir():
+            continue
+        for child in sorted(unit_dir.iterdir()):
+            match = _PRACTICE_DIR.fullmatch(child.name)
+            if match and child.is_dir():
+                found.append((unit, match.group(1), str(int(match.group(2))), child))
+    return found
+
+
+def _practice_type(practices: list[tuple[str, str, str, Path]], chosen: str | None) -> str | None:
+    """The word the course names its practices with (#84); the format when in doubt."""
+    ranked = Counter(kind for _, kind, _, _ in practices).most_common()
+    if not ranked or chosen in dict(ranked):
+        return chosen
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return chosen
+    return ranked[0][0]
+
+
+def _resolve_template(
+    template: str, config: Any, folder: Path, repo: Path | None = None,
+) -> tuple[str | None, list[str]]:
     meta = config.metadata
     facts = {"slug": config.document_slug}
     if not meta.get("practice_number"):
         facts["practice_number"] = load_guide_facts(folder, config).get("practice_number", "")
+    chosen = config.format if config.format in PRACTICE_FORMATS else None
+    practices = _course_practices(repo) if repo is not None else []
     values = {"unit": _number(meta.get("unit")),
               "practice_number": _number(meta.get("practice_number") or facts.get("practice_number")),
               "slug": facts["slug"],
-              "format": config.format if config.format in PRACTICE_FORMATS else None,
+              "format": chosen,
+              "practice_type": _practice_type(practices, chosen) if chosen else None,
               "topic": ascii_slug(meta["topic"]) if meta.get("topic") else None}
     missing = [n for n in dict.fromkeys(_PLACEHOLDER.findall(template)) if not values.get(n)]
     if missing:
         return None, missing
+    same = [path for unit, kind, number, path in practices
+            if (unit, kind, number) == (values["unit"], values["practice_type"], values["practice_number"])]
+    if len(same) == 1:
+        return f"{same[0]}/documento/", []
     return _PLACEHOLDER.sub(lambda m: str(values[m.group(1)]).strip(), template), []
 
 
@@ -164,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     defaults = dict(profile.get("report_defaults") or {})
     template = profile.get("delivery_dir_template")
     source = path.name if path else None
+    repo = None
     if not isinstance(template, str):
         repo = course_repo(config, args.documents_root)
         if repo is not None:
@@ -173,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         print("no profile")
         return 0
     if isinstance(template, str) and "delivery_dir" not in config.raw:
-        resolved, missing = _resolve_template(template, config, args.folder)
+        resolved, missing = _resolve_template(template, config, args.folder, repo)
         if resolved:
             defaults["delivery_dir"] = resolved
         else:

@@ -230,6 +230,48 @@ def test_course_repo_with_delivery_dir_completes_format(tmp_path: Path) -> None:
     assert _format_phase(folder, documents).state == doc_status.DONE
 
 
+def _with_delivery_dir(folder: Path, delivery: Path) -> Path:
+    report = folder / "report.yml"
+    report.write_text(report.read_text(encoding="utf-8") + f'delivery_dir: "{delivery}"\n', encoding="utf-8")
+    return folder
+
+
+def test_unusable_delivery_folder_keeps_format_pending_before_the_build(tmp_path: Path) -> None:
+    """#83: the publisher's refusal surfaces when delivery_dir is recorded, not at deliver."""
+    delivery = tmp_path / "curso" / "unidad-1" / "ejercicio-2-taylor" / "documento"
+    delivery.mkdir(parents=True)
+    (delivery / "practica-vieja.html").write_text("<html></html>", encoding="utf-8")
+    folder = _with_delivery_dir(_course_report(tmp_path / "wf"), delivery)
+    _rubric(folder)
+    _sources_bib(folder)
+    _body(folder)
+    _approval(folder)
+
+    phase = _format_phase(folder, tmp_path / "Documents")
+    status = doc_status.derive(folder, documents_root=tmp_path / "Documents")
+
+    assert phase.state == doc_status.PENDING
+    assert phase.detail.startswith("delivery folder unusable: La carpeta de entrega solo puede contener")
+    assert str(delivery) in phase.detail
+    assert {p.name: p.state for p in status.phases}["generate"] == doc_status.PENDING
+    assert (delivery / "practica-vieja.html").is_file()
+
+
+def test_delivery_folder_with_only_versioned_finals_completes_format(tmp_path: Path) -> None:
+    delivery = tmp_path / "entrega"
+    delivery.mkdir()
+    folder = _with_delivery_dir(_course_report(tmp_path / "wf"), delivery)
+    (delivery / f"{_config(folder).document_slug}-v001.pdf").write_bytes(b"%PDF-1.4\n")
+
+    assert _format_phase(folder, tmp_path / "Documents").state == doc_status.DONE
+
+
+def test_missing_delivery_folder_completes_format(tmp_path: Path) -> None:
+    folder = _with_delivery_dir(_course_report(tmp_path / "wf"), tmp_path / "todavia-no-existe")
+
+    assert _format_phase(folder, tmp_path / "Documents").state == doc_status.DONE
+
+
 def test_course_repo_rule_does_not_reopen_an_already_built_report(tmp_path: Path) -> None:
     documents = tmp_path / "Documents"
     _course_repo(documents)

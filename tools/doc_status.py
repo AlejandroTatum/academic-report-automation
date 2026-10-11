@@ -35,7 +35,7 @@ import rubric_plan
 from guide_facts import load_guide_facts
 from course_profile import COURSE_LAYOUT, PRACTICE_FORMATS, course_repo
 from approval_marker import approval_state, bound_file_names, draft_is_fresh, render_settings_unchanged, sha256_file
-from publish_pdf import PublicationError, matching_delivered_version
+from publish_pdf import PublicationError, matching_delivered_version, scan_delivery_versions
 from report_config import (
     ROOT,
     DEFAULT_STUDENT,
@@ -432,7 +432,30 @@ def _phase_format(folder: Path, config: ReportConfig, documents_root: Path | Non
                 "metadata.unit, metadata.practice_number and metadata.topic, then run course_profile.py, "
                 "or set delivery_dir by hand",
             )
+    problem = _delivery_folder_problem(config, documents_root)
+    if problem:
+        return PhaseState("format", PENDING, f"delivery folder unusable: {problem}")
     return PhaseState("format", DONE, f"format={chosen}, output and metadata complete")
+
+
+def _delivery_folder_problem(config: ReportConfig, documents_root: Path | None) -> str:
+    """The publisher's refusal for the delivery folder, checked before the build (#83).
+
+    Same scan ``deliver_report.py`` runs, so a folder holding anything but
+    ``<slug>-vNNN.pdf`` (and paired ``.bib``) is reported while the user can
+    still choose another folder, not after the final review. An unresolvable
+    identity is the deliver phase's to report.
+    """
+    try:
+        delivery = config.delivery_folder(documents_root)
+        slug = config.document_slug
+    except (KeyError, ValueError):
+        return ""
+    try:
+        scan_delivery_versions(delivery, slug)
+    except PublicationError as exc:
+        return str(exc)
+    return ""
 
 
 def _phase_generate(folder: Path, config: ReportConfig, _documents_root: Path | None) -> PhaseState:
