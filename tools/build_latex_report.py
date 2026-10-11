@@ -1122,9 +1122,13 @@ def render_tex(config: ReportConfig) -> str:
         # only when the body actually has figures. Non-academic routes render
         # their figures without the academic prelim page, and no explicit
         # template choice reinstates it — the route owns the prelim default.
+        # AA reports (the UNL template) never get it: the user dropped the
+        # figure index from every AA work.
         "{{LIST_OF_FIGURES}}": (
             r"\newpage\listoffigures"
-            if has_figures and config.route in {DEFAULT_ROUTE, "academic"}
+            if has_figures
+            and config.route in {DEFAULT_ROUTE, "academic"}
+            and template_key not in UNL_TEMPLATE_KEYS
             else ""
         ),
         "{{FRONT_MATTER}}": front_matter,

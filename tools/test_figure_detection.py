@@ -45,6 +45,9 @@ Only prose here, no images at all.
 # figures silently got no figure index — and the placeholder test only checked
 # the plain template, so nothing caught it.
 TEMPLATE_KEYS = ("unl", "plain", "chamba_overleaf")
+# AA reports (the UNL template) never print a list of figures; the other
+# academic templates still list them when the body has images.
+LISTING_TEMPLATE_KEYS = ("plain", "chamba_overleaf")
 
 
 def make_config(
@@ -67,13 +70,20 @@ def make_config(
     return report_config.ReportConfig.load(folder)
 
 
-@pytest.mark.parametrize("template", TEMPLATE_KEYS)
+@pytest.mark.parametrize("template", LISTING_TEMPLATE_KEYS)
 def test_markdown_image_produces_a_list_of_figures(
     tmp_path: Path, template: str,
 ) -> None:
     config = make_config(tmp_path, BODY_WITH_FIGURE, template)
     rendered = build_latex_report.render_tex(config)
     assert r"\listoffigures" in rendered
+
+
+def test_unl_template_with_a_markdown_image_has_no_list_of_figures(tmp_path: Path) -> None:
+    config = make_config(tmp_path, BODY_WITH_FIGURE, "unl")
+    rendered = build_latex_report.render_tex(config)
+    assert r"\includegraphics" in rendered
+    assert r"\listoffigures" not in rendered
 
 
 @pytest.mark.parametrize("template", TEMPLATE_KEYS)
