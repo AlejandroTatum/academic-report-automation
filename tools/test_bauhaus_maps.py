@@ -1838,3 +1838,22 @@ def test_separate_short_side_by_side_stretches_do_not_add_up() -> None:
     comb = [(20, 60), (20, 6), (25, 6), (25, 60), (60, 60), (60, 6), (65, 6), (65, 60)]
 
     bauhaus_maps._guard_links(model, {0: straight, 1: comb}, {})
+
+
+def test_publish_never_restores_a_backup_that_failed_to_copy(tmp_path: Path, monkeypatch) -> None:
+    """Review R3-publish-restores-incomplete-backup: a half-written backup never replaces the original."""
+    import bauhaus_maps
+
+    svg = tmp_path / "fig.svg"
+    svg.write_bytes(b"precious old map")
+
+    def failing_copy(source, destination):
+        Path(destination).write_bytes(b"prec")
+        raise OSError(28, "No space left on device", str(destination))
+
+    monkeypatch.setattr(bauhaus_maps.shutil, "copy2", failing_copy)
+    with pytest.raises(bauhaus_maps.SpecError, match="No space left on device"):
+        bauhaus_maps.publish([(svg, b"new map")])
+
+    assert svg.read_bytes() == b"precious old map"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["fig.svg"]

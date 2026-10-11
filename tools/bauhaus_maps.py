@@ -1050,8 +1050,13 @@ def publish(files: list[tuple[Path, bytes]]) -> None:
             if path.exists():
                 descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".bak")
                 os.close(descriptor)
+                try:
+                    shutil.copy2(path, name)
+                except OSError:
+                    # A half-written copy must never be restored over the intact original.
+                    Path(name).unlink(missing_ok=True)
+                    raise
                 backups.append((Path(name), path))
-                shutil.copy2(path, name)
                 os.replace(temporary, path)
             else:
                 os.replace(temporary, path)
