@@ -42,7 +42,9 @@ PROFILES_DIR = Path(__file__).resolve().parent.parent / "skills" / "academic-rep
 _FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 # The practice layout every course repo's AGENTS.md declares.
-COURSE_LAYOUT = "unidad-{unit}/{practice_type}-{practice_number}-{topic}/documento/"
+# The folder inside each practice that receives the deliverable.
+COURSE_DOCUMENT_DIR = "documento/"
+COURSE_LAYOUT = "unidad-{unit}/{practice_type}-{practice_number}-{topic}/" + COURSE_DOCUMENT_DIR
 PRACTICE_FORMATS = ("aa", "ape")
 _PRACTICE_DIR = re.compile(r"([a-z]+)-(\d+)-.+")
 
@@ -150,10 +152,11 @@ def _resolve_template(
     missing = [n for n in dict.fromkeys(_PLACEHOLDER.findall(template)) if not values.get(n)]
     if missing:
         return None, missing
+    # Course layout only: ``practices`` is empty for a profile's own template.
     same = [path for unit, kind, number, path in practices
             if (unit, kind, number) == (values["unit"], values["practice_type"], values["practice_number"])]
     if len(same) == 1:
-        return f"{same[0]}/documento/", []
+        return f"{same[0]}/{COURSE_DOCUMENT_DIR}", []
     return _PLACEHOLDER.sub(lambda m: str(values[m.group(1)]).strip(), template), []
 
 
