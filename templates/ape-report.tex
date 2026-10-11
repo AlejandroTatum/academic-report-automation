@@ -42,6 +42,10 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage[section]{placeins}
+% placeins bounds floats by \section only; each exercise is a \subsection, so
+% bound them there too (#82). placeins has no subsection option.
+\let\ReportOriginalSubsection\subsection
+\renewcommand{\subsection}{\FloatBarrier\ReportOriginalSubsection}
 \usepackage{enumitem}
 \usepackage{tabularx}
 \usepackage{xltabular}

@@ -183,19 +183,27 @@ def test_figure_is_emitted_with_tbp_placement(tmp_path: Path, template: str) -> 
     assert r"\begin{figure}[tbp]" in rendered
 
 
-@pytest.mark.parametrize("template", TEMPLATE_KEYS)
-def test_template_loads_placeins_with_section_barrier(template: str) -> None:
-    r"""A float may drift within its section, but never past the next one.
+@pytest.mark.parametrize("template", (*TEMPLATE_KEYS, "ape"))
+def test_template_loads_placeins_with_subsection_barrier(template: str) -> None:
+    r"""A float may drift within its subsection, but never past the next one.
 
     ``\usepackage{float}`` alone lets [tbp] figures cross into the next
-    section; ``placeins`` with the ``section`` option makes every
-    ``\section`` an implicit ``\FloatBarrier``.
+    section; ``placeins`` with the ``section`` option bounds them by
+    ``\section`` only, so in a multi-exercise report each figure landed under
+    the next exercise (#82). placeins has no ``subsection`` option, so the
+    template prefixes ``\subsection`` with ``\FloatBarrier`` itself, after any
+    ``titlesec`` load that would redefine it. test_float_barrier_compile.py
+    proves the effect on a real PDF.
     """
     path = build_latex_report.resolve_template(template)
     tex = path.read_text(encoding="utf-8")
     assert re.search(r"\\usepackage(\[[^\]]*\bsection\b[^\]]*\])\{placeins\}", tex), (
         f"{path.name} never loads placeins with the section option"
     )
+    patch = r"\renewcommand{\subsection}{\FloatBarrier\ReportOriginalSubsection}"
+    assert patch in tex, f"{path.name} never puts a float barrier before \\subsection"
+    if r"\usepackage{titlesec}" in tex:
+        assert tex.index(r"\usepackage{titlesec}") < tex.index(patch)
 
 
 @pytest.mark.parametrize("template", TEMPLATE_KEYS)
