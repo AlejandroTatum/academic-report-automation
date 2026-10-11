@@ -26,18 +26,18 @@ Optional `figure_placement: here` in `report.yml` pins every figure where it app
 
 ## Validate (`next: validate`, artifact `reports/<wf>/validation.yml`)
 
-Receipt schema `academic.doc-validation/v1`: `artifact_sha256`, `result: pass|fail`, `mode: rdd|fallback`, `gates`, `recorded_at`, `evidence`, optional `reason`, and `bibliography_sha256` only when `report.yml` sets `deliver_bibliography: true`. There is no production writer: the executor records the hashes. Done = `result: pass` and `artifact_sha256` matches the current PDF; `fail` is `blocked` (`validation_failed`); a missing receipt or stale hash stays `pending`.
+Receipt schema `academic.doc-validation/v1`: `artifact_sha256`, `result: pass|fail`, `mode: fallback`, `gates`, `recorded_at`, `evidence`, optional `reason`, and `bibliography_sha256` only when `report.yml` sets `deliver_bibliography: true`. There is no production writer: the executor records the hashes. Done = `result: pass` and `artifact_sha256` matches the current PDF; `fail` is `blocked` (`validation_failed`); a missing receipt or stale hash stays `pending`.
 
 When `deliver_bibliography: true`, the receipt also records the exact SHA-256 of the declared `.bib`, written only after the applicable checks pass; missing, malformed or stale keeps validate pending and delivery refuses.
 
-Branch: read `gentle-ai review mode status` once, read-only. `on` selects the RDD branch (`mode: rdd`; the native review flow checks and `evidence` is the identifier it returned, never self-issued; no identifier, no `pass`). `off`, an absent binary, non-zero exit, unparsable output or `unknown` selects the fallback, because an unknown state never lowers a gate. Never enable, activate or turn on RDD on the user's behalf. If the review preflight cannot bind `reports/<wf>/**` (for example `intended_untracked_selection_required`), fall through to the fallback and record `reason:`.
+Document validation never uses RDD: the work folder lives in the content root, outside the session's repository, so a native review would always stop to ask. Run the chain below regardless of the global review switch, without probing it and without asking; RDD stays for code changes in the automation repository. Older receipts may still say `mode: rdd`; they are read like any other receipt.
 
-Fallback (`mode: fallback`, `evidence: backups/quality_report.md`), in order:
+Chain (`mode: fallback`, `evidence: backups/quality_report.md`), in order:
 1. `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/validate_report.py" "$REPORT_CONTENT_ROOT/reports/<work-folder>/"`: `common` is mandatory and PDF output also needs `pdf_layout` (only `--tex-only` skips it).
 2. `"$REPORT_PYTHON" "$REPORT_AUTOMATION_ROOT/tools/visual_pdf_auditor.py" "$REPORT_CONTENT_ROOT/outputs/<materia-slug>/<final-pdf>.pdf"`: report and `contact_sheet.png` are `AUDITOR_PRECHECK` evidence only (manual unless `validators: {visual_pdf: true}`).
 3. Rendered readback and semantic inspection: headings, paragraphs, captions, bibliography, tables and figure labels present, legible and equivalent to the source.
 
-Gates: both branches enforce the identical gate set `BUILD_PASS`, `VALIDATION_PASS`, `VISUAL_PASS`, `HUMAN_REVIEW`, `READY_TO_SUBMIT`; neither lowers, skips or renames one, or grants one it did not verify on the same immutable artifact. Validation is not approval.
+Gates: `BUILD_PASS`, `VALIDATION_PASS`, `VISUAL_PASS`, `HUMAN_REVIEW`, `READY_TO_SUBMIT`; the chain never lowers, skips or renames one, or grants one it did not verify on the same immutable artifact. Validation is not approval.
 
 | Gate | Proof |
 |---|---|
