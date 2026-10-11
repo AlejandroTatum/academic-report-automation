@@ -84,6 +84,26 @@ def test_an_aligned_comment_extracted_as_its_own_column_is_still_exempt(tmp_path
     assert _validate(tmp_path, monkeypatch, body, pdf_text) == []
 
 
+def test_a_backslash_ending_a_line_is_not_joined_with_the_next_word(tmp_path, monkeypatch) -> None:
+    """Review R3-count-on-collapsed-text: the count runs on the text as extracted."""
+    body = "La ruta termina en una barra \\\npi es la constante.\n"
+    pdf_text = "La ruta termina en una barra \\\npi es la constante.\n"
+
+    assert _validate(tmp_path, monkeypatch, body, pdf_text) == []
+
+
+def test_a_split_line_never_cuts_prose_far_from_its_listing(tmp_path, monkeypatch) -> None:
+    """Review R3-fallback-pieces-cut-anywhere: pieces are cut only near their listing."""
+    filler = "Texto de relleno para separar el listado de la prosa. " * 12
+    body = f"```\nvalor:    \\pi/3\n```\n\n{filler}\n\nEl ángulo vale \\pi/3.\n"
+    pdf_text = f"1 valor:\n{filler}\nEl ángulo vale \\pi/3.\n"
+
+    errors = _validate(tmp_path, monkeypatch, body, pdf_text)
+
+    assert len(errors) == 1
+    assert "\\pi (1 vez/veces)" in errors[0]
+
+
 def test_a_longer_closing_fence_still_closes_the_listing(tmp_path, monkeypatch) -> None:
     body = f"# Resultados\n\n```octave\n{LISTING}\n`````\n"
     pdf_text = f"Resultados\n1 {LISTING}\n"

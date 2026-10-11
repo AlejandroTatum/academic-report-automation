@@ -257,6 +257,19 @@ def test_unusable_delivery_folder_keeps_format_pending_before_the_build(tmp_path
     assert (delivery / "practica-vieja.html").is_file()
 
 
+def test_delivery_dir_naming_a_file_is_a_reason_not_a_crash(tmp_path: Path) -> None:
+    """Review R3-oserror-unbound-delivery: an unreadable folder keeps format pending."""
+    delivery = tmp_path / "entrega"
+    delivery.write_text("not a folder", encoding="utf-8")
+    folder = _with_delivery_dir(_course_report(tmp_path / "wf"), delivery)
+
+    phase = _format_phase(folder, tmp_path / "Documents")
+
+    assert phase.state == doc_status.PENDING
+    assert phase.detail.startswith(f"delivery folder unusable: {delivery} is not a readable folder (")
+    assert delivery.read_text(encoding="utf-8") == "not a folder"
+
+
 def test_delivery_folder_with_only_versioned_finals_completes_format(tmp_path: Path) -> None:
     delivery = tmp_path / "entrega"
     delivery.mkdir()

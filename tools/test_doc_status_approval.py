@@ -383,6 +383,24 @@ def test_approval_guidance_with_an_unusable_folder_asks_only_approval(tmp_path: 
     assert "delivery folder unusable" in guidance
 
 
+def test_approval_guidance_with_a_blocked_format_asks_only_approval(tmp_path: Path) -> None:
+    """Review R3-blocked-approval-untested: a blocked format is reported, never re-asked."""
+    from conftest import _choose_format
+
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    _choose_format(folder, "zz")
+
+    guidance = doc_status._guidance("approval", folder, documents_root=tmp_path / "Documents")
+
+    assert "ask only whether the user approves" in guidance
+    assert "the format phase still reports: format=zz not recognized" in guidance
+    assert "AA, APE or libre" not in guidance
+    assert "still missing" not in guidance
+
+
 def test_format_guidance_asks_only_missing_fields(tmp_path: Path) -> None:
     folder = tmp_path / "wf"
     _report(folder)
