@@ -403,3 +403,109 @@ def test_ape_omission_of_an_unknown_section_is_an_error(tmp_path):
     )
     errors = ape_structure_validation(config).errors
     assert "ape_omit_sections: 'Marco Teórico' no es una sección del formato APE" in errors
+
+
+def _ape_metadata_without(*keys: str) -> dict:
+    return {key: value for key, value in full_ape_metadata().items() if key not in keys}
+
+
+_OMITTED_FIELDS = ["learning_outcome", "schedule", "place", "planned_time"]
+
+
+def test_ape_omitted_fields_drop_their_identification_rows(tmp_path):
+    config = make_render_config(
+        tmp_path, raw={"ape_omit_fields": _OMITTED_FIELDS},
+        metadata=_ape_metadata_without(*_OMITTED_FIELDS),
+    )
+    tex = build_latex_report.render_tex(config)
+    for label, key in IDENTIFICATION_ROWS:
+        if key in _OMITTED_FIELDS:
+            assert label not in tex, f"omitted '{key}' must not print its '{label}' row"
+        else:
+            assert label in tex, f"kept '{key}' must still print its '{label}' row"
+
+
+def test_ape_omitted_fields_are_not_required_metadata(tmp_path):
+    config = make_render_config(
+        tmp_path, raw={"ape_omit_fields": _OMITTED_FIELDS},
+        metadata=_ape_metadata_without(*_OMITTED_FIELDS),
+    )
+    required = config.format_required_metadata
+    assert not set(_OMITTED_FIELDS) & set(required)
+    assert "unit" in required and "title" in required
+
+
+def test_ape_fields_stay_required_without_the_omission(tmp_path):
+    config = make_render_config(tmp_path, metadata=full_ape_metadata())
+    assert set(_OMITTED_FIELDS) <= set(config.format_required_metadata)
+
+
+def test_ape_omission_of_a_core_or_unknown_field_is_an_error(tmp_path):
+    config = make_render_config(
+        tmp_path, raw={"ape_omit_fields": ["title", "color"]}, metadata=full_ape_metadata(),
+    )
+    errors = ape_structure_validation(config).errors
+    assert "ape_omit_fields: 'title' no es un campo omitible del formato APE" in errors
+    assert "ape_omit_fields: 'color' no es un campo omitible del formato APE" in errors
+
+
+def test_ape_group_report_lists_every_member_in_the_student_row(tmp_path):
+    members = ["Ana Pérez", "Luis Mora", "Alejandro Padilla"]
+    config = make_render_config(
+        tmp_path, metadata={**full_ape_metadata(), "practice_type": "Grupal", "members": members},
+    )
+    tex = build_latex_report.render_tex(config)
+    row = tex[tex.index("Nombre del estudiante(s)"):].split(r"\\")[0]
+    assert all(name in row for name in members), "a group report names every member"
+
+
+def test_ape_individual_report_keeps_the_student_row(tmp_path):
+    config = make_render_config(tmp_path, metadata=full_ape_metadata())
+    tex = build_latex_report.render_tex(config)
+    row = tex[tex.index("Nombre del estudiante(s)"):].split(r"\\")[0]
+    assert "Alejandro Padilla" in row
+
+
+def test_ape_title_override_replaces_the_fixed_heading(tmp_path):
+    config = make_render_config(
+        tmp_path, metadata={**full_ape_metadata(), "ape_title": "Síntesis ACD 1"},
+    )
+    tex = build_latex_report.render_tex(config)
+    assert "Síntesis ACD 1" in tex
+    assert "Reporte Técnico de Actividades Práctico-Experimentales" not in tex
+
+
+def test_ape_title_defaults_to_the_fixed_heading(tmp_path):
+    config = make_render_config(tmp_path, metadata=full_ape_metadata())
+    tex = build_latex_report.render_tex(config)
+    assert "Reporte Técnico de Actividades Práctico-Experimentales Nro. 3" in tex
+
+
+def test_aa_group_report_names_every_member_on_the_cover(tmp_path):
+    members = ["Ana Pérez", "Luis Mora", "Alejandro Padilla"]
+    config = make_render_config(
+        tmp_path, raw={"format": "aa"},
+        metadata={**full_ape_metadata(), "members": members},
+    )
+    tex = build_latex_report.render_tex(config)
+    assert "Ana Pérez, Luis Mora, Alejandro Padilla" in tex
+
+
+def test_aa_individual_report_keeps_the_single_student_on_the_cover(tmp_path):
+    config = make_render_config(tmp_path, raw={"format": "aa"}, metadata=full_ape_metadata())
+    tex = build_latex_report.render_tex(config)
+    assert "Alejandro Padilla" in tex
+
+
+def test_aa_cover_label_is_plural_for_a_group(tmp_path):
+    config = make_render_config(
+        tmp_path, raw={"format": "aa"},
+        metadata={**full_ape_metadata(), "members": ["Ana Pérez", "Luis Mora"]},
+    )
+    tex = build_latex_report.render_tex(config)
+    assert "AUTORES:" in tex and "AUTOR:}" not in tex
+
+
+def test_aa_cover_label_stays_singular_for_one_student(tmp_path):
+    config = make_render_config(tmp_path, raw={"format": "aa"}, metadata=full_ape_metadata())
+    assert "AUTOR:}" in build_latex_report.render_tex(config)
