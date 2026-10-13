@@ -32,6 +32,7 @@ from table_model import TableStylesContext, resolve_table_style
 DEFAULT_TEMPLATE = ROOT / "templates" / "unl-report.tex"
 PLAIN_TEMPLATE = ROOT / "templates" / "plain-report.tex"
 APE_TEMPLATE = ROOT / "templates" / "ape-report.tex"
+ACD_TEMPLATE = ROOT / "templates" / "acd-report.tex"
 TEMPLATE_ALIASES = {
     "default": DEFAULT_TEMPLATE,
     "unl": DEFAULT_TEMPLATE,
@@ -42,6 +43,8 @@ TEMPLATE_ALIASES = {
     "plain_report": PLAIN_TEMPLATE,
     "ape": APE_TEMPLATE,
     "ape_report": APE_TEMPLATE,
+    "acd": ACD_TEMPLATE,
+    "acd_report": ACD_TEMPLATE,
 }
 
 
@@ -80,12 +83,13 @@ ROUTE_TEMPLATE_DEFAULTS = {
 }
 
 # Default template per chosen FORMAT (new-report-flow): `ape` renders the
-# teacher's Word replica, `aa` the current academic look and `libre` the plain
-# template. The format is the user's post-approval presentation choice, so it
+# teacher's Word replica, `acd` the session record sheet, `aa` the current
+# academic look and `libre` the plain template. The format is the user's post-approval presentation choice, so it
 # outranks the route default — but never an explicit `template:` key, which
 # still wins in either direction (a libre report may ask for any shell).
 FORMAT_TEMPLATE_DEFAULTS = {
     "ape": "ape",
+    "acd": "acd",
     "aa": "unl",
     "libre": "plain",
 }
@@ -373,6 +377,9 @@ LISTING_PREAMBLE = r"""\usepackage{listings}
 
 CODE_FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})\s*(?P<language>[^`]*)$")
 
+# Pandoc definition-list marker: a ": " line that defines the term above it.
+DEFINITION_LINE_RE = re.compile(r"^:\s+(\S.*)$")
+
 
 def is_closing_fence(line: str, marker: str) -> bool:
     """Whether ``line`` closes a block opened with the fence character ``marker``.
@@ -410,6 +417,8 @@ BIBLIOGRAPHY_TITLES = {
     "overleaf_chamba": "Referencias bibliográficas",
     "ape": "Bibliografía / Referencias",
     "ape_report": "Bibliografía / Referencias",
+    "acd": "Referencias",
+    "acd_report": "Referencias",
 }
 
 
@@ -488,10 +497,87 @@ def ape_report_title(meta: dict) -> str:
     return f"{title} Nro. {practice_number}" if practice_number else title
 
 
+def acd_label(meta: dict) -> str:
+    """The ACD number as the record prints it: ``ACD-4`` for ``practice_number: 4``.
+
+    An authored ``ACD-4`` / ``ACD 4`` is taken as the number, never doubled.
+    """
+    number = re.sub(r"^acd[\s_-]*", "", str(meta.get("practice_number") or "").strip(), flags=re.IGNORECASE)
+    number = " ".join(number.split())
+    return f"ACD-{number}" if number else "ACD"
+
+
+def _flat(value: object) -> str:
+    """One line of LaTeX-escaped text: multi-line YAML values would break a table cell."""
+    return latex_escape(" ".join(str(value or "").split()))
+
+
+def acd_session_block(meta: dict) -> str:
+    """Render the ACD session grid (section 1 of the record) from metadata.
+
+    The cells follow the approved mockup: the session topic across the top,
+    then three-column rows. Every value is LaTeX-escaped and flattened, and a
+    group report (``metadata.members``) names every member in the student cell.
+    Cycle and parallel share one cell (the parallel defaults to A), and the ACD
+    number shares one with the syllabus time. ``\acdcell`` is defined by the
+    template.
+    """
+    def cell(label: str, value: str, size: str = "") -> str:
+        return rf"\acdcell{{{label}}}{{{size}{value}}}"
+
+    cycle_parallel = " · ".join(
+        _flat(meta.get(key)) for key in ("cycle", "parallel") if str(meta.get(key) or "").strip()
+    )
+    number_time = " · ".join(
+        part for part in (latex_escape(acd_label(meta)), _flat(meta.get("planned_time"))) if part
+    )
+    rows = [
+        [cell("Fecha de la sesión", _flat(meta.get("date"))),
+         cell("Horario", _flat(meta.get("schedule"))),
+         cell("Lugar", _flat(meta.get("place")))],
+        [cell("Asignatura", _flat(meta.get("subject"))),
+         cell("Ciclo / paralelo", cycle_parallel),
+         cell("Unidad", _flat(meta.get("unit")))],
+        [cell("Docente", _flat(meta.get("teacher"))),
+         cell("Estudiante(s)", _flat(report_authors(meta))),
+         cell("ACD Nro. · tiempo en sílabo", number_time)],
+    ]
+    lines = [
+        r"\begingroup",
+        r"\renewcommand{\arraystretch}{1.12}",
+        r"\setlength{\tabcolsep}{8pt}",
+        r"\begin{tabularx}{\textwidth}{@{}XVXVX@{}}",
+        r"\arrayrulecolor{brick}\specialrule{1.4pt}{0pt}{0pt}",
+        r"\multicolumn{3}{@{}p{\textwidth}@{}}{"
+        + cell("Tema de la sesión", _flat(meta.get("title")), r"\fontsize{11.5}{14}\selectfont ")
+        + r"}\\",
+        r"\arrayrulecolor{rule}\hline",
+    ]
+    for row in rows:
+        lines.append(" & ".join(row) + r"\\")
+        lines.append(r"\hline")
+    lines.extend([
+        r"\multicolumn{3}{@{}p{\textwidth}@{}}{"
+        + cell("Resultado de aprendizaje de la unidad", _flat(meta.get("learning_outcome")))
+        + r"}\\",
+        r"\arrayrulecolor{ink}\hline",
+        r"\end{tabularx}",
+        r"\endgroup",
+    ])
+    return "\n".join(lines)
+
+
+def acd_footer(meta: dict) -> str:
+    """The running footer text: the student(s) and the subject, escaped."""
+    return " · ".join(
+        part for part in (_flat(report_authors(meta)), _flat(meta.get("subject"))) if part
+    )
+
+
 def split_annexes_markdown(markdown_source: str) -> tuple[str, str | None]:
     """Split body.md at its first top-level `Anexos` heading.
 
-    The APE template must render the annexes after the IEEE bibliography, so
+    The APE and ACD templates render the annexes after the bibliography, so
     everything from `# Anexos` onward is returned separately for
     {{AFTER_BIBLIOGRAPHY}}. The heading itself travels WITH the annex chunk so
     it renders (and keeps its section number) after the bibliography. When the
@@ -515,7 +601,16 @@ def markdown_to_latex(
     build_dir: Path | None = None,
     table_styles: TableStylesContext | None = None,
     figure_placement: str = "tbp",
+    definition_lists: bool = False,
 ) -> str:
+    r"""Convert the report body to LaTeX.
+
+    ``definition_lists`` turns Pandoc-style definition lists (a term line
+    followed by ``: definition``) into ``description`` environments. It is off
+    by default: a template opts in (``DEFINITION_LIST_TEMPLATE_KEYS``) because
+    it restyles ``description`` for them. Everywhere else the same lines keep
+    rendering as the paragraph they have always been.
+    """
     lines = markdown.splitlines()
     output: list[str] = []
     paragraph: list[str] = []
@@ -646,6 +741,82 @@ def markdown_to_latex(
             r"\end{lstlisting}",
             "",
         ])
+
+    def starts_block(text: str) -> bool:
+        """A line other block rules own: never a definition term or lazy continuation."""
+        return bool(
+            re.match(r"^(#{1,4}\s|[-*]\s|\d+[.)]\s|\\(?:begin|end)\{|!\[|\$\$|<!--)", text)
+            or CODE_FENCE_RE.match(text)
+            or "|" in text
+        )
+
+    def definition_start(index: int) -> int | None:
+        """Index of the ``: definition`` line that follows the term at ``index``.
+
+        One blank line between the term and its definition is allowed (a
+        "loose" item); anything else means the line is not a term.
+        """
+        following = index + 1
+        if following < len(lines) and not lines[following].strip():
+            following += 1
+        if following < len(lines) and DEFINITION_LINE_RE.match(lines[following].strip()):
+            return following
+        return None
+
+    def is_definition_term(index: int) -> bool:
+        text = lines[index].strip()
+        return (
+            bool(text)
+            and not DEFINITION_LINE_RE.match(text)
+            and not starts_block(text)
+            and definition_start(index) is not None
+        )
+
+    def consume_definition_list(start: int) -> int:
+        """Emit the run of definition items beginning at term ``start``; return the next line.
+
+        A definition is the text after ``: `` plus its continuation lines (up
+        to a blank line or the next block); extra ``: `` lines under the same
+        term are further paragraphs of that item. Its content is inline text.
+        """
+        output.append(r"\begin{description}")
+        term_index = start
+        resume = start
+        while True:
+            definitions: list[str] = []
+            position = definition_start(term_index)
+            while position is not None:
+                match = DEFINITION_LINE_RE.match(lines[position].strip())
+                parts = [match.group(1).strip()]
+                position += 1
+                while position < len(lines) and lines[position].strip():
+                    text = lines[position].strip()
+                    indented = lines[position][:1] in {" ", "\t"}
+                    if DEFINITION_LINE_RE.match(text) or (
+                        not indented and (starts_block(text) or is_definition_term(position))
+                    ):
+                        break
+                    parts.append(text)
+                    position += 1
+                definitions.append(" ".join(parts))
+                resume = position
+                while position < len(lines) and not lines[position].strip():
+                    position += 1
+                if position >= len(lines) or not DEFINITION_LINE_RE.match(lines[position].strip()):
+                    position = None
+            term = convert_inline(lines[term_index].strip())
+            body = "\n\n".join(convert_inline(text) for text in definitions)
+            output.append(rf"\item[{{{term}}}] {body}")
+            following = resume
+            while following < len(lines) and not lines[following].strip():
+                following += 1
+            if following < len(lines) and is_definition_term(following):
+                term_index = following
+                continue
+            break
+        output.append(r"\end{description}")
+        output.append("")
+        return resume
 
     def find_closing_fence(marker: str, start: int) -> int | None:
         """Index of the fence that closes the block opened at ``start - 1``."""
@@ -880,6 +1051,10 @@ def markdown_to_latex(
             i += 1
             continue
 
+        if definition_lists and not list_stack and not paragraph and is_definition_term(i):
+            i = consume_definition_list(i)
+            continue
+
         if list_stack and len(line) - len(line.lstrip()) > list_stack[0][0]:
             flush_paragraph()
             while len(list_stack) > 1:
@@ -912,10 +1087,21 @@ COVER_SENTINELS = ("COVER_ACADEMIC_BOX", "COVER_TEACHER_BLOCK")
 UNL_TEMPLATE_KEYS = frozenset({"default", "unl", "unl_report"})
 
 # Only these template keys resolve to ape-report.tex, the teacher's Word
-# replica. On this template the fixed `# Anexos` section must render AFTER the
-# IEEE bibliography, so render_tex() splits body.md at that heading (see
-# split_annexes_markdown) and emits it through {{AFTER_BIBLIOGRAPHY}}.
+# replica.
 APE_TEMPLATE_KEYS = frozenset({"ape", "ape_report"})
+# Likewise for acd-report.tex, the ACD session record sheet.
+ACD_TEMPLATE_KEYS = frozenset({"acd", "acd_report"})
+
+# Template capabilities, not per-format special cases: a template that lists its
+# keys here gets the behaviour, and a new template opts in with one entry.
+#
+# On these templates the fixed `# Anexos` section must render AFTER the
+# bibliography, so render_tex() splits body.md at that heading (see
+# split_annexes_markdown) and emits it through {{AFTER_BIBLIOGRAPHY}}.
+ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS = APE_TEMPLATE_KEYS | ACD_TEMPLATE_KEYS
+# These templates restyle `description` as a label column, so render_tex()
+# turns Pandoc definition lists (`term` / `: definition`) into it.
+DEFINITION_LIST_TEMPLATE_KEYS = ACD_TEMPLATE_KEYS
 
 # The APE annexes heading: the last fixed section of the teacher's document.
 # Folded (accent/case-insensitive) so `# Anexos` and `# ANEXOS` both split.
@@ -1013,15 +1199,18 @@ def render_tex(config: ReportConfig) -> str:
     # Opt-in only (issue #13): a report that never declares `table_styles:
     # {enabled: true}` keeps the exact legacy single-style table renderer.
     table_styles = TableStylesContext.from_config(config) if config.table_styles_enabled else None
-    # APE only (see APE_TEMPLATE_KEYS): the fixed `# Anexos` section renders
-    # after the IEEE bibliography, so it is split off the body before
+    # Templates with an after-bibliography annex slot (see
+    # ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS): the fixed `# Anexos` section
+    # renders after the bibliography, so it is split off the body before
     # conversion. Other templates keep body.md whole.
     main_source, annex_source = markdown_source, None
-    if template_key in APE_TEMPLATE_KEYS:
+    if template_key in ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS:
         main_source, annex_source = split_annexes_markdown(markdown_source)
     figure_spec = "H" if config.figure_placement == "here" else "tbp"
+    definition_lists = template_key in DEFINITION_LIST_TEMPLATE_KEYS
     body = markdown_to_latex(
         main_source, build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
+        definition_lists=definition_lists,
     )
     # Emission detection reads the MAIN body: the annex chunk follows the
     # bibliography by construction, so its citations (if any) cannot decide
@@ -1032,6 +1221,7 @@ def render_tex(config: ReportConfig) -> str:
         body = markdown_to_latex(
             main_source, suppress_bibliography_heading=True, build_dir=build_dir,
             table_styles=table_styles, figure_placement=figure_spec,
+            definition_lists=definition_lists,
         )
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.
@@ -1114,13 +1304,14 @@ def render_tex(config: ReportConfig) -> str:
             "",
         ])
         ai_signature_latex = signature_latex
-    # APE annexes land after the bibliography, BEFORE any after-bibliography
-    # declaration block: Anexos is the teacher's last fixed section, and the
-    # declaration is automation baggage that always goes last.
+    # Annexes land after the bibliography, BEFORE any after-bibliography
+    # declaration block: Anexos is the last fixed section of these formats, and
+    # the declaration is automation baggage that always goes last.
     if annex_source is not None:
         annex_body = markdown_to_latex(
             annex_source, suppress_bibliography_heading=emit_bibliography,
             build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
+            definition_lists=definition_lists,
         )
         after_bibliography_latex = f"{annex_body}\n{after_bibliography_latex}".strip() + "\n"
     bib_file = config.bib_path.name if config.bib_path else ""
@@ -1139,10 +1330,15 @@ def render_tex(config: ReportConfig) -> str:
         "{{FACULTY}}": latex_escape(meta.get("faculty") or "Facultad de la Energía, las Industrias y los Recursos Naturales no Renovables"),
         "{{LOGO_PATH}}": latex_escape(LOGO_FILENAME),
         "{{BACKGROUND_PATH}}": latex_escape(BACKGROUND_FILENAME),
-        # APE-only machinery; harmless no-ops for every other template.
+        # APE-only machinery (the logo is shared with ACD); harmless no-ops for
+        # every other template.
         "{{APE_LOGO_PATH}}": latex_escape(APE_LOGO_FILENAME),
         "{{APE_TITLE}}": latex_escape(ape_report_title(meta)),
         "{{IDENTIFICATION_TABLE}}": ape_identification_table(meta, config.ape_omit_fields),
+        # ACD-only machinery; harmless no-ops for every other template.
+        "{{ACD_LABEL}}": latex_escape(acd_label(meta)),
+        "{{ACD_SESSION_BLOCK}}": acd_session_block(meta),
+        "{{ACD_FOOTER}}": acd_footer(meta),
         "{{BIBLATEX_OPTIONS}}": BIBLATEX_OPTIONS[config.citation_style],
         "{{BIBLATEX_SETUP}}": BIBLATEX_SETUP[config.citation_style],
         "{{BIB_FILE}}": latex_escape(bib_file),

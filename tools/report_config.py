@@ -259,6 +259,8 @@ def unknown_route_message(route: str) -> str:
 #
 #     format: ape     the teacher's Word replica (templates/ape-report.tex)
 #     format: aa      the current academic look (unl-report.tex), unchanged
+#     format: acd     the "Aprendizaje en Contacto con el Docente" session
+#                     record sheet (templates/acd-report.tex)
 #     format: libre   a user-specified format: `format_spec:` in report.yml is
 #                     mandatory, and the plain template applies by default
 #
@@ -295,6 +297,15 @@ FORMAT_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
         "title", "subject", "teacher", "student", "date",
         "cycle", "unit", "learning_outcome", "practice_number",
         "practice_type", "schedule", "place", "planned_time",
+    ),
+    # The ACD session block reuses the APE keys where the meaning is the same:
+    # `title` is the session topic, `date` the session date and
+    # `practice_number` the ACD number. The parallel is data with a default
+    # (see `metadata`), so it is not required.
+    "acd": (
+        "title", "subject", "teacher", "student", "date",
+        "cycle", "unit", "learning_outcome", "practice_number",
+        "schedule", "place", "planned_time",
     ),
     "libre": ("title", "student", "date"),
 }
@@ -411,7 +422,7 @@ class ReportConfig:
 
     @property
     def format(self) -> str | None:
-        """Canonical document format (``ape``, ``aa`` or ``libre``).
+        """Canonical document format (``ape``, ``aa``, ``acd`` or ``libre``).
 
         Returns ``None`` when the key is absent: the format has not been
         chosen yet, which is valid while the flow is still content-first.

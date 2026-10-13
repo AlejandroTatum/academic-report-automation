@@ -27,8 +27,8 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
 
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
-| T1 | S4, S6 | worker: generalize per-format section structure validation (APE behavior unchanged) and add AA/ACD section lists | done | this commit |
-| T2 | S1, S3, S4, S5 | worker: `acd` format key, metadata, `templates/acd-report.tex` from the ACD-B mockup, identification block, template default, course profile, tests | pending | |
+| T1 | S4, S6 | worker: generalize per-format section structure validation (APE behavior unchanged) and add AA/ACD section lists | done | de53f40 |
+| T2 | S1, S3, S4, S5 | worker: `acd` format key, metadata, `templates/acd-report.tex` from the ACD-B mockup, identification block, template default, course profile, tests | done | this commit |
 | T3 | S1, S2, S4, S5 | worker: `templates/aa-report.tex` from the AA-B mockup, page-1 ficha from metadata, float/zone safety, `aa` default template, tests | pending | |
 | T4 | S5, S7 | worker: skill references, format question, conversation cases, contract tests; sync skills | pending | |
 | T5 | S1-S7 | verify: end-to-end render of sample AA and ACD reports through the real pipeline, visual check, full suite | pending | |
@@ -55,3 +55,13 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
 - **L8** (T1 handoff to T2/T3):
   - `metadata_validation` and `ReportConfig.load` still reject `format: acd`; T2 adds the key and an end-to-end test.
   - Annexes after the bibliography are wired only for APE (`split_annexes_markdown`, `APE_TEMPLATE_KEYS`); the AA and ACD templates need the same slot.
+- **L9** (parent steer during T2): keep the ACD label column the user approved. Drive it from standard Markdown definition lists and drop only the minutes strip.
+- **L10** (T2 result):
+  - `acd` reuses the existing metadata keys: `title` is the session topic, `date` the session date and `practice_number` the ACD number. All 12 are required, with no new keys and no omit knob.
+  - `ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS` now drives annex placement for APE and ACD; T3 adds AA with one entry.
+  - `markdown_to_latex(definition_lists=)` is enabled only for `DEFINITION_LIST_TEMPLATE_KEYS` (ACD); other templates' output is unchanged.
+  - RED: 31 failed and 21 errors. GREEN: 284 focused tests (parent rerun) and 2459 in the full suite (worker).
+  - Real render: `outputs/_acd_scratch/sample-acd/build/acd-sample.pdf`. Page 1 matches the mockup (parent visual check).
+  - Polish for T5: grid-style tables instead of the mockup's booktabs look; `\Needspace` leaves a large gap at the end of page 2; the footer shows the full uppercased name.
+  - Open decision: `format: acd` (like APE) needs `cover: {required: false}` in report.yml, otherwise validation reports a mixed cover. A format-derived cover default would also change APE behavior.
+  - Definition-list converter tests were written after the code, so there is no RED for them.

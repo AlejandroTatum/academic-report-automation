@@ -1,0 +1,235 @@
+% ACD (Aprendizaje en Contacto con el Docente) report template: the approved
+% "session record sheet" design (proposal ACD-B, aa-acd-templates S1/S3).
+%   * A4 portrait, no cover page. Every page carries a header with the faculty
+%     logo at the left and the record identification at the right ("FEIRNNR ·
+%     CARRERA DE COMPUTACIÓN" / "REGISTRO DE SESIÓN · ACD-N") above a brick
+%     red rule, and a running footer with the student(s), the subject and
+%     "page / total".
+%   * Body font IBM Plex Sans 10pt, flush left; IBM Plex Mono spaced capitals
+%     for every label; graphite ink with brick red (#9C2F2A, from the faculty
+%     crest) as the only accent and cool greys for rules.
+%   * Section 1 is the session block the renderer generates from metadata (see
+%     acd_session_block); the remaining fixed sections are authored in body.md.
+%     Pandoc definition lists in body.md ("term" then ": definition") render as
+%     the mono label column of the mockup (the `description` list below).
+%   * The bibliography is numbered like any section, and the annexes render
+%     after it through the renderer's after-bibliography slot.
+%   * Unlike the institutional templates (onehalfspacing), the sheet keeps the
+%     mockup's tight 1.08 line spacing.
+
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[a4paper,top=3.5cm,bottom=2.4cm,left=2.4cm,right=2.4cm,headheight=1.7cm,headsep=0.6cm,footskip=1.0cm]{geometry}
+\usepackage{fontspec}
+% IBM Plex ships with TeX Live (fonts-extra) and with the texlive/texlive image
+% the renderer falls back to, but a minimal local install may lack it. When it
+% is missing the sheet degrades to TeX Gyre Heros / TeX Gyre Cursor, the same
+% sans fallback ape-report.tex relies on, instead of failing to compile.
+\IfFontExistsTF{IBMPlexSans-Regular.otf}{%
+  \setmainfont{IBMPlexSans}[Extension=.otf,UprightFont=*-Regular,BoldFont=*-SemiBold,ItalicFont=*-Italic,BoldItalicFont=*-SemiBoldItalic]
+  \newfontfamily\acdmedium{IBMPlexSans}[Extension=.otf,UprightFont=*-Medium]
+  \newfontfamily\acdlight{IBMPlexSans}[Extension=.otf,UprightFont=*-Light]
+}{%
+  \setmainfont{TeX Gyre Heros}[Ligatures=TeX]
+  \newcommand{\acdmedium}{\bfseries}
+  \newcommand{\acdlight}{\mdseries}
+}
+\IfFontExistsTF{IBMPlexMono-Regular.otf}{%
+  \setmonofont{IBMPlexMono}[Extension=.otf,UprightFont=*-Regular,BoldFont=*-SemiBold,ItalicFont=*-Italic,Scale=0.9]
+}{%
+  \setmonofont{TeX Gyre Cursor}[Scale=0.9]
+}
+\usepackage[spanish]{babel}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{needspace}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage[section]{placeins}
+% placeins bounds floats by \section only; bound them at \subsection too, as
+% ape-report.tex does (#82).
+\let\ReportOriginalSubsection\subsection
+\renewcommand{\subsection}{\FloatBarrier\ReportOriginalSubsection}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{ragged2e}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{csquotes}
+\usepackage[{{BIBLATEX_OPTIONS}}]{biblatex}{{BIBLATEX_SETUP}}
+\usepackage[table]{xcolor}
+{{LISTING_PREAMBLE}}
+\usepackage{ifthen}
+\usepackage[hidelinks]{hyperref}
+% xurl permits breaks throughout long URL and nolinkurl runs.
+\usepackage{xurl}
+\urlstyle{same}
+\addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
+
+\newcommand{\reporthasbib}{{{HAS_BIB}}}
+\ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
+
+% Palette: graphite ink, brick red from the crest, cool greys for rules.
+\definecolor{ink}{HTML}{20242A}
+\definecolor{brick}{HTML}{9C2F2A}
+\definecolor{muted}{HTML}{646C76}
+\definecolor{rule}{HTML}{B9BFC6}
+\definecolor{wash}{HTML}{EEF0F2}
+\color{ink}
+
+\linespread{1.08}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\raggedright
+\raggedbottom
+\emergencystretch=3em
+\setlist{topsep=2pt,itemsep=2pt,leftmargin=1.1em,labelsep=0.5em}
+% Bulleted lists (conclusions) carry the brick red square of the mockup.
+\setlist[itemize]{label={\color{brick}\rule[0.2ex]{0.55ex}{0.55ex}}}
+\captionsetup{font=small,labelfont=bf,justification=raggedright,singlelinecheck=false,skip=4pt}
+\renewcommand{\figurename}{Figura}
+
+% Mono spaced-capital labels: the one recurring device of the sheet.
+\newcommand{\acdspaced}[1]{{\addfontfeatures{LetterSpace=6}#1}}
+\newcommand{\acdtagfont}{\ttfamily\fontsize{7}{9}\selectfont\color{muted}}
+\newcommand{\acdtag}[1]{{\acdtagfont\acdspaced{\MakeUppercase{#1}}}}
+\renewcommand{\thesection}{\ifnum\value{section}<10 0\fi\arabic{section}}
+\renewcommand{\thesubsection}{\arabic{section}.\arabic{subsection}}
+
+% Section heading: mono number in brick, medium sans title, hairline underneath.
+\titleformat{\section}{\acdmedium\fontsize{12.5}{15}\selectfont}{\color{brick}\ttfamily\fontsize{9}{11}\selectfont\thesection}{0.9em}{}[\vspace{-1pt}{\color{rule}\titlerule[0.5pt]}]
+\titleformat{\subsection}{\acdmedium\fontsize{10.5}{13}\selectfont}{\color{brick}\ttfamily\fontsize{8}{10}\selectfont\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\acdmedium\normalsize}{\color{brick}\ttfamily\fontsize{8}{10}\selectfont\thesubsubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+\titlespacing*{\subsection}{0pt}{11pt}{5pt}
+\titlespacing*{\subsubsection}{0pt}{9pt}{4pt}
+
+% Label column: a Pandoc definition list in body.md ("term" then ": text")
+% becomes a `description` list whose term is the mono label at the left and
+% whose definition is the body column, as in the mockup's objectives, synthesis
+% and reflection rows.
+\newcommand{\acdlabel}[1]{{\acdtagfont\acdspaced{\MakeUppercase{#1}}}}
+\setlist[description]{leftmargin=2.9cm,labelwidth=2.6cm,labelsep=0.3cm,align=left,font=\acdlabel,itemsep=6pt,topsep=3pt,parsep=0pt}
+
+% Tables the Markdown converter emits (grid, grey header row): rules in the
+% sheet's cool grey, a little more air in the rows.
+\arrayrulecolor{rule}
+\renewcommand{\arraystretch}{1.15}
+
+% Code listings (fenced blocks in body.md): the mockup's plain monospace with a
+% brick red rule at the left, no line numbers and no syntax colours.
+\lstdefinestyle{reportcode}{
+  basicstyle=\linespread{1}\footnotesize\ttfamily,
+  frame=leftline,
+  rulecolor=\color{brick},
+  framerule=1.2pt,
+  framesep=8pt,
+  xleftmargin=10pt,
+  xrightmargin=0pt,
+  numbers=none,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{muted}{\tiny$\hookrightarrow$}\space},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  extendedchars=true,
+  aboveskip=0.9em,
+  belowskip=0.7em,
+  keywordstyle=\bfseries,
+  commentstyle=\color{muted},
+  stringstyle=\relax,
+}
+
+% Boxed environment used by the Markdown converter for highlighted answers.
+\newsavebox{\answerboxbox}
+\newenvironment{answerbox}{%
+  \par\medskip\noindent
+  \setlength{\fboxsep}{10pt}%
+  \begin{lrbox}{\answerboxbox}%
+  \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}%
+  \vspace{4pt}%
+}{%
+  \vspace{4pt}%
+  \end{minipage}%
+  \end{lrbox}%
+  \fcolorbox{rule}{wash}{\usebox{\answerboxbox}}%
+  \par\medskip
+}
+
+% The bibliography is a numbered section like the rest of the sheet.
+\defbibheading{bibliography}[\bibname]{\section{#1}}
+\setlength{\bibitemsep}{2pt}
+% babel's Spanish label for a reference URL is "dirección"; the IEEE entries
+% of the mockup read "Disponible en:".
+\DefineBibliographyStrings{spanish}{url={Disponible en}}
+
+% Header: logo left, record identification right, brick rule underneath.
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\raisebox{-0.2cm}{\includegraphics[height=1.3cm]{{{APE_LOGO_PATH}}}}}
+\fancyhead[R]{\parbox[b][1.3cm][c]{9cm}{\raggedleft\ttfamily\fontsize{7}{9.5}\selectfont\color{muted}\acdspaced{FEIRNNR · CARRERA DE COMPUTACIÓN}\\[1pt]\color{brick}\acdspaced{REGISTRO DE SESIÓN · {{ACD_LABEL}}}}}
+\renewcommand{\headrulewidth}{1.2pt}
+\makeatletter\renewcommand{\headrule}{{\color{brick}\hrule\@height\headrulewidth\@width\headwidth}}\makeatother
+\fancyfoot[L]{\parbox[t]{11cm}{\raggedright\ttfamily\fontsize{7}{9}\selectfont\color{muted}\acdspaced{\MakeUppercase{{{ACD_FOOTER}}}}}}
+\fancyfoot[R]{\parbox[t]{2cm}{\raggedleft\ttfamily\fontsize{7}{9}\selectfont\color{muted}\thepage\,/\,\pageref{LastPage}}}
+
+\hypersetup{
+  pdftitle={Aprendizaje en Contacto con el Docente},
+  pdfauthor={{{STUDENT}}},
+  pdfsubject={{{SUBJECT}}},
+  colorlinks=false,
+  pdfborder={0 0 0}
+}
+
+% Session grid cell: mono caps label above a medium-weight value.
+\newcommand{\acdcell}[2]{\strut\acdtag{#1}\par\vspace{1.5pt}{\acdmedium\fontsize{9.2}{11.4}\selectfont #2\par}\vspace{1pt}}
+\newcolumntype{V}{!{\color{rule}\vrule width 0.4pt}}
+
+\begin{document}
+
+% No cover page: kicker and fixed title sit at the top of page 1, above the
+% session block.
+{\ttfamily\fontsize{8}{10}\selectfont\color{brick}\acdspaced{{{ACD_LABEL}}\ \,/\ \,REGISTRO DE SESIÓN}\par}
+\vspace{4pt}
+{\acdlight\fontsize{25}{29}\selectfont Aprendizaje en Contacto\\con el Docente\par}
+\vspace{4pt}
+
+% Section 1 is generated: heading plus the session block the renderer fills.
+\Needspace{12\baselineskip}
+\section{Datos de identificación}
+
+{{ACD_SESSION_BLOCK}}
+% End the paragraph holding the grid before restoring the grey rule colour
+% (colortbl's declaration would otherwise add a line of space after the grid).
+\par\arrayrulecolor{rule}
+
+{{FRONT_MATTER}}
+
+{{AI_SIGNATURE}}
+
+{{BODY}}
+
+\ifthenelse{\equal{\reporthasbib}{true}}{
+\Needspace{6\baselineskip}
+{{PRINT_BIBLIOGRAPHY}}
+}{}
+
+% The renderer fills AFTER_BIBLIOGRAPHY with the `# Anexos` chunk it split off
+% body.md, so the annexes render after the bibliography, as the last section.
+{{AFTER_BIBLIOGRAPHY}}
+
+% The renderer fills FRONT_MATTER with the very same block it puts in
+% AI_DECLARATION (the plain-report.tex mechanism), so the declaration is
+% printed once above and the duplicate is captured here instead of being
+% typeset twice.
+\long\def\reportaideclarationalias{{{AI_DECLARATION}}}
+
+\end{document}

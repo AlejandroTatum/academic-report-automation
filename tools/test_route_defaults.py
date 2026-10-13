@@ -80,6 +80,20 @@ def test_absent_route_and_template_keep_the_academic_default(tmp_path):
     assert rendered_template_name(make_config(tmp_path, {})) == UNL_TEMPLATE.name
 
 
+def test_acd_format_renders_the_acd_template_by_default(tmp_path):
+    assert rendered_template_name(make_config(tmp_path, {"format": "acd"})) == "acd-report.tex"
+
+
+def test_acd_format_beats_the_route_template_default(tmp_path):
+    config = make_config(tmp_path, {"route": "technical", "format": "acd"})
+    assert rendered_template_name(config) == "acd-report.tex"
+
+
+def test_aa_and_ape_selection_is_unaffected_by_acd(tmp_path):
+    assert rendered_template_name(make_config(tmp_path / "a", {"format": "aa"})) == UNL_TEMPLATE.name
+    assert rendered_template_name(make_config(tmp_path / "b", {"format": "ape"})) == "ape-report.tex"
+
+
 @pytest.mark.parametrize("route", ["project", "business", "technical", "other"])
 @pytest.mark.parametrize("letter", ["b", "c", "d", "e"])
 def test_non_academic_routes_default_to_the_plain_template(tmp_path, route, letter):

@@ -415,7 +415,7 @@ def metadata_validation(config: ReportConfig) -> ValidationResult:
     academic metadata — exactly what the routing contract exists to prevent.
 
     When a ``format:`` is chosen, its own metadata requirements are checked
-    too (``FORMAT_REQUIRED_METADATA``): `ape` counts placeholder fill-in
+    too (``FORMAT_REQUIRED_METADATA``): `ape` and `acd` count placeholder fill-in
     marks ("X", "XXX", "00X", "[...]") as missing, and `libre` requires a
     non-empty ``format_spec:`` description.
     """
@@ -481,9 +481,10 @@ def metadata_validation(config: ReportConfig) -> ValidationResult:
             )
 
     if config.format_is_known:
-        # The teacher's APE table prints the identification fields verbatim, so
-        # a leftover fill-in mark ("XXX") is as useless as an empty field.
-        if config.format == "ape":
+        # The teacher's APE table and the ACD session block print the
+        # identification fields verbatim, so a leftover fill-in mark ("XXX") is
+        # as useless as an empty field.
+        if config.format in ("ape", "acd"):
             format_missing = [
                 key
                 for key in config.format_required_metadata

@@ -67,8 +67,8 @@ def make_config(tmp_path: Path, fmt: str | None, body: str, **extra: object) -> 
     raw.update(extra)
     (folder / "report.yml").write_text(yaml.safe_dump(raw), encoding="utf-8")
     (folder / "body.md").write_text(body, encoding="utf-8")
-    # Built directly: `acd` is not a known format key until aa-acd-templates T2,
-    # and ReportConfig.load rejects unknown formats.
+    # Built directly so these tests isolate the section check from the rest of
+    # report.yml loading (output paths, bibliography, ...).
     return ReportConfig(folder=folder, raw=raw)
 
 
@@ -219,9 +219,36 @@ def test_aa_structure_surfaces_through_metadata_validation(tmp_path):
     assert any(error.startswith("Faltan secciones del formato AA en body.md") for error in errors)
 
 
-# `acd` reaches metadata_validation only once T2 registers the format key: until
-# then metadata_validation reports it as an unknown format before it gets to the
-# section check, so the ACD surface is asserted on the validator itself above.
+def test_acd_structure_surfaces_through_metadata_validation(tmp_path):
+    """End to end (aa-acd-templates T2): the `acd` key is registered, so the
+    section check runs inside metadata_validation instead of an unknown-format stop."""
+    config = make_config(tmp_path, "acd", "# Objetivo(s)\n\nSolo esto.\n")
+    errors = metadata_validation(config).errors
+    assert not any("Formato de documento desconocido" in error for error in errors)
+    assert any(error.startswith("Faltan secciones del formato ACD en body.md") for error in errors)
+
+
+def test_acd_loads_from_disk_and_validates_its_structure(tmp_path):
+    folder = tmp_path / "loaded"
+    folder.mkdir()
+    (folder / "report.yml").write_text(yaml.safe_dump({
+        "type": "technical_report", "backend": "latex", "output": "pdf",
+        "pdf": "build/report.pdf", "body": "body.md", "format": "acd",
+        "metadata": {
+            "title": "Sesión", "subject": "Plataformas", "teacher": "Ing. Ríos",
+            "student": "Camila", "date": "6 de octubre de 2026", "cycle": "Quinto",
+            "unit": "Unidad 2", "learning_outcome": "Diseña APIs", "practice_number": "4",
+            "schedule": "10:00", "place": "Lab 3", "planned_time": "2 horas",
+        },
+    }), encoding="utf-8")
+    (folder / "body.md").write_text(body_of(ACD_FULL), encoding="utf-8")
+
+    config = ReportConfig.load(folder)
+
+    assert config.format == "acd"
+    assert metadata_validation(config).errors == []
+    (folder / "body.md").write_text(body_of(ACD_REQUIRED[:-1]), encoding="utf-8")
+    assert any("Faltan secciones del formato ACD" in e for e in metadata_validation(config).errors)
 
 
 def test_a_structured_aa_body_adds_no_structure_error_to_metadata_validation(tmp_path):
