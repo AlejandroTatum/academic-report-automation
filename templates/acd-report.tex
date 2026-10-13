@@ -117,9 +117,11 @@
 \newcommand{\acdlabel}[1]{{\acdtagfont\acdspaced{\MakeUppercase{#1}}}}
 \setlist[description]{leftmargin=2.9cm,labelwidth=2.6cm,labelsep=0.3cm,align=left,font=\acdlabel,itemsep=6pt,topsep=3pt,parsep=0pt}
 
-% Tables the Markdown converter emits (grid, grey header row): rules in the
-% sheet's cool grey, a little more air in the rows.
-\arrayrulecolor{rule}
+% Tables the Markdown converter emits for this template (booktabs: top, header
+% and bottom rules, no vertical rules or shading), as in the mockup: ink rules,
+% mono spaced-caps header cells, a little more air in the rows.
+\arrayrulecolor{ink}
+\newcommand{\reporttablehead}[1]{\acdtag{#1}}
 \renewcommand{\arraystretch}{1.15}
 
 % Code listings (fenced blocks in body.md): the mockup's plain monospace with a

@@ -63,7 +63,9 @@
 }{%
   \setmonofont{TeX Gyre Cursor}[Scale=MatchLowercase]
 }
-\usepackage[spanish]{babel}
+% es-noindentfirst: babel-spanish indents the first paragraph after a heading by
+% default; the mockup sets it flush and indents only the paragraphs that follow.
+\usepackage[spanish,es-noindentfirst]{babel}
 \usepackage{amsmath}
 \usepackage{unicode-math}
 \IfFontExistsTF{STIX Two Math}{%
@@ -140,10 +142,20 @@
 \titlespacing*{\subsection}{0pt}{13pt}{4pt}
 \titlespacing*{\subsubsection}{0pt}{10pt}{3pt}
 
-% Tables the Markdown converter emits (grid, grey header row): rules in the
-% report's quiet grey, a little more air in the rows.
-\arrayrulecolor{hair}
-\renewcommand{\arraystretch}{1.1}
+% Tables the Markdown converter emits for this template (booktabs: top, header
+% and bottom rules, no vertical rules or shading), as in the mockup: sans body,
+% bold header cells, ink rules.
+\arrayrulecolor{ink}
+\newcommand{\reporttablehead}[1]{\textbf{#1}}
+\AddToHook{env/xltabular/begin}{\sffamily}
+
+% The paragraph right after a table is flush, as the mockup sets it: the table
+% ends the thought that introduced it. A flag, not a group-local \everypar,
+% because the converter closes its \begingroup right after the table.
+% xltabular never runs cmd/endxltabular/after; its end command is the hook point.
+\newif\ifreportflushnext
+\AddToHook{cmd/endxltabular/after}{\global\reportflushnexttrue}
+\AddToHook{para/begin}{\ifreportflushnext\global\reportflushnextfalse\kern-\parindent\fi}
 
 % Code listings (fenced blocks in body.md): plain monospace with a green rule
 % at the left, no line numbers and no syntax colours.
@@ -276,11 +288,15 @@
 % Rule 2: push block material below the ficha. Only in vertical mode: inline
 % material (an inline tabular, math inside a paragraph) is part of a shaped
 % paragraph and stays beside the ficha, inside the narrow lines.
+% +8pt: \zonebottom stops 8pt short of the ficha box (room for the text's line
+% box), but a display set right after a heading with no indent has no empty
+% line above it, so a wide one would touch the ficha's last rule.
 \newcommand{\zoneclear}{\ifvmode\ifnum\zoneon>\z@\ifinner\else\ifnum\c@page=\@ne
-  \ifdim\pagetotal<\zonebottom \par\vskip\dimexpr\zonebottom-\pagetotal\relax\fi\fi\fi\fi\fi}
+  \ifdim\pagetotal<\dimexpr\zonebottom+8pt\relax \par\vskip\dimexpr\zonebottom-\pagetotal+8pt\relax\fi\fi\fi\fi\fi}
 \newcommand{\zone@blocks}{longtable,xltabular,tabular,tabularx,lstlisting,verbatim,%
   equation,equation*,align,align*,gather,gather*,multline,multline*,flalign,flalign*,%
-  alignat,alignat*,displaymath,eqnarray,eqnarray*,answerbox,tikzpicture}
+  alignat,alignat*,displaymath,eqnarray,eqnarray*,answerbox,tikzpicture,%
+  figure,figure*,table,table*}
 \@for\zone@env:=\zone@blocks\do{%
   \edef\zone@hook{env/\zone@env/before}%
   \expandafter\AddToHook\expandafter{\zone@hook}{\zoneclear}}

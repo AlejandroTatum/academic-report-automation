@@ -659,6 +659,8 @@ def markdown_to_latex(
     table_styles: TableStylesContext | None = None,
     figure_placement: str = "tbp",
     definition_lists: bool = False,
+    booktabs_tables: bool = False,
+    compact_headings: bool = False,
 ) -> str:
     r"""Convert the report body to LaTeX.
 
@@ -667,6 +669,14 @@ def markdown_to_latex(
     by default: a template opts in (``DEFINITION_LIST_TEMPLATE_KEYS``) because
     it restyles ``description`` for them. Everywhere else the same lines keep
     rendering as the paragraph they have always been.
+
+    ``booktabs_tables`` emits tables as horizontal rules only (top, header,
+    bottom) with a ``\reporttablehead`` header cell the template styles, and
+    ``compact_headings`` reserves five lines before a heading instead of a
+    page-sized look-ahead. Both are opt-in per template
+    (``BOOKTABS_TEMPLATE_KEYS``, ``COMPACT_HEADING_TEMPLATE_KEYS``); the
+    defaults keep the legacy grid table and look-ahead the other templates
+    were tuned against.
     """
     lines = markdown.splitlines()
     output: list[str] = []
@@ -685,10 +695,77 @@ def markdown_to_latex(
         cells = split_table_row(row)
         return bool(cells) and all(re.match(r"^:?-{3,}:?$", cell) for cell in cells)
 
-    def render_table(rows: list[list[str]]) -> None:
+    def booktabs_alignments(rows: list[list[str]], columns: int, markers: list[str]) -> list[str]:
+        # An explicit marker in the separator row wins (`:---:` centered,
+        # `---:` right, `:---` left). Otherwise the first column reads left, a
+        # column of short values (numbers, yes/no, codes) is centered as in the
+        # mockups, and any column with running text reads left.
+        names: list[str] = []
+        for index in range(columns):
+            marker = markers[index] if index < len(markers) else ""
+            if marker.startswith(":") and marker.endswith(":"):
+                names.append("centering")
+            elif marker.endswith(":"):
+                names.append("raggedleft")
+            elif marker.startswith(":"):
+                names.append("raggedright")
+            elif index == 0:
+                names.append("raggedright")
+            else:
+                cells = [re.sub(r"[*`$_]", "", row[index]) for row in rows[1:] if index < len(row)]
+                names.append("centering" if all(len(cell) <= 12 for cell in cells) else "raggedright")
+        return names
+
+    def render_booktabs_table(rows: list[list[str]], columns: int, markers: list[str]) -> None:
+        # Horizontal rules only, as in the approved AA-B and ACD-B mockups. Still
+        # one page-breakable xltabular: long cell text wraps (#26) at any column
+        # count.
+        # Column widths follow the content: X columns share the width in
+        # proportion to their longest cell (clamped, so a long sentence cannot
+        # starve a short column), instead of equal thirds. The \hsize factors
+        # must add up to the number of columns, which tabularx requires.
+        lengths = [
+            min(max(max(
+                (len(re.sub(r"[*`$_]", "", row[index])) for row in rows[1:] if index < len(row)),
+                default=0,
+            ), 8), 48)
+            for index in range(columns)
+        ]
+        weights = [round(columns * length / sum(lengths), 3) for length in lengths]
+        weights[-1] = round(columns - sum(weights[:-1]), 3)
+        colspec = " ".join(
+            rf">{{\hsize={weight}\hsize\{name}\arraybackslash}}X"
+            for weight, name in zip(weights, booktabs_alignments(rows, columns, markers))
+        )
+        header_cells = rows[0] + [""] * (columns - len(rows[0]))
+        output.extend([
+            r"\Needspace{4\baselineskip}",
+            r"\begingroup",
+            r"\small",
+            r"\renewcommand{\arraystretch}{1.2}",
+            rf"\begin{{xltabular}}{{\textwidth}}{{@{{}}{colspec}@{{}}}}",
+            r"\toprule",
+            " & ".join(r"\reporttablehead{" + convert_inline(cell) + "}" for cell in header_cells) + r" \\",
+            r"\midrule",
+            r"\endhead",
+        ])
+        for row in rows[1:]:
+            cells = row + [""] * (columns - len(row))
+            output.append(" & ".join(convert_inline(cell) for cell in cells) + r" \\")
+        output.extend([
+            r"\bottomrule",
+            r"\end{xltabular}",
+            r"\endgroup",
+            "",
+        ])
+
+    def render_table(rows: list[list[str]], markers: list[str] | None = None) -> None:
         if len(rows) < 2:
             return
         columns = max(len(row) for row in rows)
+        if booktabs_tables:
+            render_booktabs_table(rows, columns, markers or [])
+            return
         # Clean bordered grid: visible rows (\hline) and columns (| separators),
         # centered alignment, subtle gray header, consistent padding. Both
         # branches emit a page-breakable environment (xltabular/longtable)
@@ -962,7 +1039,7 @@ def markdown_to_latex(
                     emphasis_column=context.emphasis_column,
                 ))
             else:
-                render_table(table_rows)
+                render_table(table_rows, split_table_row(lines[table_start + 1]))
             continue
 
         # finalanswer{...} —→ answerbox environment (before display_math)
@@ -1048,7 +1125,11 @@ def markdown_to_latex(
             title = re.sub(r"\\url\{([^}]+)\}",
                            r"\\texorpdfstring{\\url{\1}}{\1}", title)
             command = {1: "section", 2: "subsection", 3: "subsubsection"}.get(level, "paragraph")
-            if raw_title.casefold() in {"conclusiones", "conclusión", "conclusion"}:
+            if compact_headings:
+                # Enough for the heading and a few lines of what follows; a
+                # page-sized look-ahead strands a gap at the foot of the page.
+                needspace_lines = 5 if level == 1 else 4
+            elif raw_title.casefold() in {"conclusiones", "conclusión", "conclusion"}:
                 needspace_lines = 18
             elif level == 1:
                 needspace_lines = 16
@@ -1161,6 +1242,12 @@ ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS = APE_TEMPLATE_KEYS | ACD_TEMPLATE_KEYS
 # These templates restyle `description` as a label column, so render_tex()
 # turns Pandoc definition lists (`term` / `: definition`) into it.
 DEFINITION_LIST_TEMPLATE_KEYS = ACD_TEMPLATE_KEYS
+# These templates follow mockups with booktabs tables, figures set where they
+# are introduced and a short heading look-ahead, so render_tex() opts the
+# converter into each (see markdown_to_latex).
+BOOKTABS_TEMPLATE_KEYS = ACD_TEMPLATE_KEYS | AA_TEMPLATE_KEYS
+INLINE_FIGURE_TEMPLATE_KEYS = ACD_TEMPLATE_KEYS | AA_TEMPLATE_KEYS
+COMPACT_HEADING_TEMPLATE_KEYS = ACD_TEMPLATE_KEYS | AA_TEMPLATE_KEYS
 
 # The APE annexes heading: the last fixed section of the teacher's document.
 # Folded (accent/case-insensitive) so `# Anexos` and `# ANEXOS` both split.
@@ -1265,11 +1352,20 @@ def render_tex(config: ReportConfig) -> str:
     main_source, annex_source = markdown_source, None
     if template_key in ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS:
         main_source, annex_source = split_annexes_markdown(markdown_source)
-    figure_spec = "H" if config.figure_placement == "here" else "tbp"
+    if config.figure_placement == "here":
+        figure_spec = "H"
+    else:
+        # `h` first: the figure stays where it is introduced when it fits.
+        figure_spec = "htbp" if template_key in INLINE_FIGURE_TEMPLATE_KEYS else "tbp"
     definition_lists = template_key in DEFINITION_LIST_TEMPLATE_KEYS
+    table_layout = {
+        "definition_lists": definition_lists,
+        "booktabs_tables": template_key in BOOKTABS_TEMPLATE_KEYS,
+        "compact_headings": template_key in COMPACT_HEADING_TEMPLATE_KEYS,
+    }
     body = markdown_to_latex(
         main_source, build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
-        definition_lists=definition_lists,
+        **table_layout,
     )
     # Emission detection reads the MAIN body: the annex chunk follows the
     # bibliography by construction, so its citations (if any) cannot decide
@@ -1280,7 +1376,7 @@ def render_tex(config: ReportConfig) -> str:
         body = markdown_to_latex(
             main_source, suppress_bibliography_heading=True, build_dir=build_dir,
             table_styles=table_styles, figure_placement=figure_spec,
-            definition_lists=definition_lists,
+            **table_layout,
         )
     # Figure detection runs against the Markdown source: once converted, images
     # are \includegraphics commands and the Markdown pattern can never match.
@@ -1370,7 +1466,7 @@ def render_tex(config: ReportConfig) -> str:
         annex_body = markdown_to_latex(
             annex_source, suppress_bibliography_heading=emit_bibliography,
             build_dir=build_dir, table_styles=table_styles, figure_placement=figure_spec,
-            definition_lists=definition_lists,
+            **table_layout,
         )
         after_bibliography_latex = f"{annex_body}\n{after_bibliography_latex}".strip() + "\n"
     bib_file = config.bib_path.name if config.bib_path else ""
