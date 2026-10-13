@@ -35,7 +35,7 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
 | T2 | S1, S3, S4, S5 | worker: `acd` format key, metadata, `templates/acd-report.tex` from the ACD-B mockup, identification block, template default, course profile, tests | done | b5ee140 |
 | T3 | S1, S2, S4, S5, S8 | worker: `templates/aa-report.tex` from the AA-B mockup, page-1 ficha from metadata, float/zone safety, `aa` default template, tests | done | 5216c14 |
 | T4 | S5, S7 | inline: skill references, format question, conversation cases, contract tests; sync skills | done | d5d02ce |
-| T5 | S1-S7 | verify: end-to-end render of sample AA and ACD reports through the real pipeline, visual check, full suite | pending | |
+| T5 | S1-S7 | verify: end-to-end render of sample AA and ACD reports through the real pipeline, visual check, full suite, polish | done | 55efba3 |
 
 ## Log
 
@@ -90,3 +90,10 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
   - The three `not in guidance` assertions now check the new wording, so they no longer pass vacuously.
   - RED: 2 failed (missing wording). GREEN: 252 focused tests and 2565 in the full suite (parent). `sync_skills.sh --apply` passed its 188 contract tests and synced to `.claude`, `.codex` and `.pi` (opencode is absent).
   - `guide_facts.py` still detects only APE and AA as `format_hint`. ACD detection was not in scope.
+- **L17** (user, decision on the T5 polish): "Dejar nombre completo (recomendado)". The ACD footer keeps the full uppercased name; `acd_footer` is not changed and the mockup's "APELLIDOS, I. I." form is not adopted.
+- **L18** (T5 result, commit 55efba3):
+  - AA and ACD now get booktabs tables with content-driven column widths, `[htbp]` figures, `Needspace` 5/4 and no indent on the first paragraph after a heading or table. All of it is scoped to the aa and acd template keys, and a test pins that `template: unl` and APE keep the grid tables, `[tbp]` figures and `Needspace` 16/18.
+  - Side effect: removing that indent put a wide display touching the ficha. The fix adds 8pt to `zoneclear`, and all 10 zone variants are green.
+  - RED: 11 failed (plus 3 more as tests were added, and 1 zone variant). GREEN: 19 new tests and 2584 in the full suite (worker). The visual auditor gives PASS on both samples with no failures or warnings.
+  - Parent spot check of page 2 of both samples: no gaps, the Gantt sits in place and the tables are booktabs.
+  - Known remaining differences: tables use the full text width, and an authored "Tabla 1." line is plain text. No APE PDF was rendered, so S6 rests on the key-scoping tests and the full suite.
