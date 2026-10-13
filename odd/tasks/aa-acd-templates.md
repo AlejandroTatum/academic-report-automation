@@ -33,8 +33,8 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
 |---|---|---|---|---|
 | T1 | S4, S6 | worker: generalize per-format section structure validation (APE behavior unchanged) and add AA/ACD section lists | done | de53f40 |
 | T2 | S1, S3, S4, S5 | worker: `acd` format key, metadata, `templates/acd-report.tex` from the ACD-B mockup, identification block, template default, course profile, tests | done | b5ee140 |
-| T3 | S1, S2, S4, S5, S8 | worker: `templates/aa-report.tex` from the AA-B mockup, page-1 ficha from metadata, float/zone safety, `aa` default template, tests | done | this commit |
-| T4 | S5, S7 | worker: skill references, format question, conversation cases, contract tests; sync skills | pending | |
+| T3 | S1, S2, S4, S5, S8 | worker: `templates/aa-report.tex` from the AA-B mockup, page-1 ficha from metadata, float/zone safety, `aa` default template, tests | done | 5216c14 |
+| T4 | S5, S7 | inline: skill references, format question, conversation cases, contract tests; sync skills | done | this commit |
 | T5 | S1-S7 | verify: end-to-end render of sample AA and ACD reports through the real pipeline, visual check, full suite | pending | |
 
 ## Log
@@ -83,3 +83,10 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
   - RED: 30 failed and 25 errors. GREEN: 343 focused tests (worker) and 2563 in the full suite (parent).
   - Parent visual check of `outputs/_aa_scratch/sample-aa/build/aa-sample.pdf`: page 1 matches the mockup, and an early table drops below the ficha.
   - Polish for T5: the Gantt figure floats to the bottom of page 2, leaving a large gap; the tables use grid style; paragraphs are indented; the sample was not run through the visual auditor.
+- **L15** (user, new session): "retoma lo de las plantillas". T4 resumed inline: a single unit with a known scope, so no worker.
+- **L16** (T4 result):
+  - The format question now reads "APE, AA, ACD or libre" in `doc_status.py` (approval batch, format guidance, unchosen-format detail), `approval.md`, `data.md`, `README.md`, `conversation-cases.md` and the Spanish flow diagram (SVG and PNG regenerated).
+  - `approval.md` documents the `aa` (`aa-report.tex`, page-1 ficha, metadata, sections, `template: unl` fallback) and `acd` (`acd-report.tex`, session topic and date, reused APE keys, sections, definition lists) formats, plus the S8 no-cover default and the draft-time structure checks.
+  - The three `not in guidance` assertions now check the new wording, so they no longer pass vacuously.
+  - RED: 2 failed (missing wording). GREEN: 252 focused tests. `sync_skills.sh --apply` passed its 188 contract tests and synced to `.claude`, `.codex` and `.pi` (opencode is absent).
+  - `guide_facts.py` still detects only APE and AA as `format_hint`. ACD detection was not in scope.

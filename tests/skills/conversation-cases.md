@@ -71,7 +71,7 @@ Prompt: `Resolvé el ejercicio 1.5 de Métodos Numéricos.`
 | Confirms the title | A commentary-style title gets a cleaned candidate and a one-line confirmation |
 | Requests the guide | Guide, rubric and teacher explanation are requested |
 | One batch, then stop | A single compact question batch, then STOP; no second round |
-| No formatting questions | APE/AA/libre and PDF/DOCX are left to the `format` phase |
+| No formatting questions | APE/AA/ACD/libre and PDF/DOCX are left to the `format` phase |
 
 ## Negative cases
 
