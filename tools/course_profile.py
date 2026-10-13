@@ -14,7 +14,7 @@ sets ``report_defaults`` -- a course repo under the Documents library
 (``Academicos/<subject-slug>/AGENTS.md``) supplies the shared practice layout
 ``unidad-{unit}/{practice_type}-{practice_number}-{topic}/documento/``. The
 practice type is the word the course's own ``unidad-<n>/<tipo>-<m>-<tema>/``
-folders use (``ejercicio``, ``ape``, ``aa``): the document format unless the
+folders use (``ejercicio``, ``ape``, ``aa``, ``acd``): the document format unless the
 course uses it nowhere and one other word clearly dominates. When a folder for
 the same unit, type and number already exists, it is reused whatever its topic.
 
@@ -45,7 +45,7 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 # The folder inside each practice that receives the deliverable.
 COURSE_DOCUMENT_DIR = "documento/"
 COURSE_LAYOUT = "unidad-{unit}/{practice_type}-{practice_number}-{topic}/" + COURSE_DOCUMENT_DIR
-PRACTICE_FORMATS = ("aa", "ape")
+PRACTICE_FORMATS = ("aa", "ape", "acd")
 _PRACTICE_DIR = re.compile(r"([a-z]+)-(\d+)-.+")
 
 

@@ -80,6 +80,29 @@ def test_absent_route_and_template_keep_the_academic_default(tmp_path):
     assert rendered_template_name(make_config(tmp_path, {})) == UNL_TEMPLATE.name
 
 
+def test_acd_format_renders_the_acd_template_by_default(tmp_path):
+    assert rendered_template_name(make_config(tmp_path, {"format": "acd"})) == "acd-report.tex"
+
+
+def test_acd_format_beats_the_route_template_default(tmp_path):
+    config = make_config(tmp_path, {"route": "technical", "format": "acd"})
+    assert rendered_template_name(config) == "acd-report.tex"
+
+
+def test_aa_format_renders_the_aa_template_by_default(tmp_path):
+    assert rendered_template_name(make_config(tmp_path, {"format": "aa"})) == "aa-report.tex"
+
+
+def test_aa_format_can_still_ask_for_the_unl_template(tmp_path):
+    config = make_config(tmp_path, {"format": "aa", "template": "unl"})
+    assert rendered_template_name(config) == UNL_TEMPLATE.name
+
+
+def test_aa_and_ape_selection_is_unaffected_by_acd(tmp_path):
+    assert rendered_template_name(make_config(tmp_path / "a", {"format": "aa"})) == "aa-report.tex"
+    assert rendered_template_name(make_config(tmp_path / "b", {"format": "ape"})) == "ape-report.tex"
+
+
 @pytest.mark.parametrize("route", ["project", "business", "technical", "other"])
 @pytest.mark.parametrize("letter", ["b", "c", "d", "e"])
 def test_non_academic_routes_default_to_the_plain_template(tmp_path, route, letter):
@@ -152,6 +175,14 @@ def test_academic_route_with_figures_on_the_aa_template_has_no_list_of_figures(t
 def test_aa_format_with_figures_has_no_list_of_figures(tmp_path):
     tex = build_latex_report.render_tex(
         make_render_config(tmp_path, {"route": "academic", "format": "aa"}, True)
+    )
+    assert r"\includegraphics" in tex
+    assert r"\listoffigures" not in tex
+
+
+def test_aa_format_on_the_unl_template_with_figures_has_no_list_of_figures(tmp_path):
+    tex = build_latex_report.render_tex(
+        make_render_config(tmp_path, {"route": "academic", "format": "aa", "template": "unl"}, True)
     )
     assert "titlepage" in tex
     assert r"\includegraphics" in tex

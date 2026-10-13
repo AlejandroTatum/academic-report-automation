@@ -711,6 +711,32 @@ def test_format_reference_is_one_question_with_the_ape_sections() -> None:
     assert "teacher's guide" in flat, "approval.md must extract identification fields from the guide"
 
 
+def test_format_reference_describes_aa_and_acd_with_their_sections() -> None:
+    """aa-acd-templates S5/S7: the format question offers APE, AA, ACD or libre and
+    approval.md documents each new format's template, metadata and fixed sections."""
+    approval = re.sub(r"\s+", " ", read(APPROVAL_MD))
+    flat = approval.lower()
+    assert "APE, AA, ACD or libre" in approval, "the format question must offer APE, AA, ACD or libre"
+    assert "APE, AA, libre" not in approval and "AA, APE or libre" not in approval
+    for template in ("aa-report.tex", "acd-report.tex"):
+        assert template in approval, f"approval.md must name the template `{template}`"
+    assert "`unl-report.tex`), look unchanged" not in approval, "AA no longer uses unl-report.tex"
+    for section in (
+        "Objetivo(s)",
+        "Introducción",
+        "Desarrollo",
+        "Declaración de uso de IA",
+        "Síntesis de contenidos abordados",
+        "Actividades desarrolladas en clase",
+        "Análisis / reflexión",
+    ):
+        assert section in approval, f"approval.md must name the AA/ACD section `{section}`"
+    for token in ("session topic", "session date", "no cover"):
+        assert token in flat, f"approval.md must describe `{token}`"
+    intake = re.sub(r"\s+", " ", read(DATA_MD))
+    assert "APE, AA, ACD or libre" in intake, "intake must leave APE, AA, ACD or libre to the format phase"
+
+
 def test_guide_driven_intake_and_pdf_handoff() -> None:
     intake = read(DATA_MD).lower()
     review = read(DELIVERY_MD).lower()

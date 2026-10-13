@@ -303,6 +303,23 @@ def test_approval_guidance_records_format_answers_even_when_changes_are_requeste
     assert "only when approval.yml is written" not in guidance
 
 
+def test_unchosen_format_offers_ape_aa_acd_or_libre(tmp_path: Path) -> None:
+    """aa-acd-templates S5: every format prompt offers APE, AA, ACD or libre."""
+    folder = tmp_path / "wf"
+    _report(folder)
+    _body(folder)
+    _fresh_draft(folder)
+    documents = tmp_path / "Documents"
+
+    approval = doc_status._guidance("approval", folder, documents_root=documents)
+    fmt = doc_status._guidance("format", folder, documents_root=documents)
+    state = doc_status._phase_format(folder, doc_status.ReportConfig.load(folder), documents)
+
+    assert "document format APE, AA, ACD or libre" in approval
+    assert "for APE, AA, ACD or libre" in fmt
+    assert state.detail == "format not chosen: ask the user APE, AA, ACD or libre"
+
+
 def test_approval_guidance_asks_only_approval_once_the_format_is_recorded(tmp_path: Path) -> None:
     """#80: after a change request the gate asks only to approve body.md."""
     from conftest import _choose_format
@@ -316,7 +333,7 @@ def test_approval_guidance_asks_only_approval_once_the_format_is_recorded(tmp_pa
     guidance = doc_status._guidance("approval", folder, documents_root=tmp_path / "Documents")
 
     assert "ask only whether the user approves" in guidance
-    assert "AA, APE or libre" not in guidance
+    assert "APE, AA, ACD or libre" not in guidance
     assert "PDF or DOCX" not in guidance
     assert "--no-approval-check" in guidance
 
@@ -334,7 +351,7 @@ def test_approval_guidance_names_only_the_format_fields_still_missing(tmp_path: 
     guidance = doc_status._guidance("approval", folder, documents_root=tmp_path / "Documents")
 
     assert "still missing: output" in guidance
-    assert "AA, APE or libre" not in guidance
+    assert "APE, AA, ACD or libre" not in guidance
 
 
 def _course_documents(tmp_path: Path) -> Path:
@@ -397,7 +414,7 @@ def test_approval_guidance_with_a_blocked_format_asks_only_approval(tmp_path: Pa
 
     assert "ask only whether the user approves" in guidance
     assert "the format phase still reports: format=zz not recognized" in guidance
-    assert "AA, APE or libre" not in guidance
+    assert "APE, AA, ACD or libre" not in guidance
     assert "still missing" not in guidance
 
 

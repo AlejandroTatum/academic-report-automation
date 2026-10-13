@@ -11,8 +11,9 @@ These tests pin:
   2. an unknown value fails loudly, like an unknown route;
   3. per-format required metadata, with placeholder values ("X", "XXX",
      "00X", "[...]") counting as missing for the APE fields;
-  4. template mapping: ape -> ape-report.tex, aa -> unl-report.tex,
-     libre -> plain-report.tex, an explicit `template:` key always wins.
+  4. template mapping: ape -> ape-report.tex, aa -> aa-report.tex,
+     acd -> acd-report.tex, libre -> plain-report.tex, an explicit
+     `template:` key always wins.
 """
 from __future__ import annotations
 
@@ -40,6 +41,8 @@ from validate_report import metadata_validation  # noqa: E402
 
 APE_TEMPLATE = ROOT / "templates" / "ape-report.tex"
 UNL_TEMPLATE = ROOT / "templates" / "unl-report.tex"
+AA_TEMPLATE = ROOT / "templates" / "aa-report.tex"
+ACD_TEMPLATE = ROOT / "templates" / "acd-report.tex"
 PLAIN_TEMPLATE = ROOT / "templates" / "plain-report.tex"
 
 BASE_RAW = {
@@ -254,7 +257,8 @@ def test_spanish_aliases_resolve_to_the_canonical_ape_fields(tmp_path):
 
 @pytest.mark.parametrize("fmt, template_name", [
     ("ape", APE_TEMPLATE.name),
-    ("aa", UNL_TEMPLATE.name),
+    ("aa", AA_TEMPLATE.name),
+    ("acd", ACD_TEMPLATE.name),
     ("libre", PLAIN_TEMPLATE.name),
 ])
 def test_format_maps_to_its_template(tmp_path, fmt, template_name):
@@ -262,8 +266,14 @@ def test_format_maps_to_its_template(tmp_path, fmt, template_name):
 
 
 def test_format_overrides_the_route_template_default(tmp_path):
-    """`aa` on a non-academic route still gets the institutional shell."""
+    """`aa` on a non-academic route still gets its own template."""
     config = make_config(tmp_path, {"route": "technical", "format": "aa"})
+    assert rendered_template_name(config) == AA_TEMPLATE.name
+
+
+def test_explicit_unl_template_still_wins_for_aa(tmp_path):
+    """The old AA look stays reachable with an explicit `template: unl`."""
+    config = make_config(tmp_path, {"format": "aa", "template": "unl"})
     assert rendered_template_name(config) == UNL_TEMPLATE.name
 
 

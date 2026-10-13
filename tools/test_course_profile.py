@@ -308,3 +308,28 @@ def test_a_reused_folder_ends_with_the_layout_s_document_folder(tmp_path, monkey
     assert _run_docs(folder, _profiles(tmp_path), documents) == 0
 
     assert _proposed(folder).endswith("/unidad-1/aa-1-otro-nombre/entrega/")
+
+
+def test_an_acd_report_gets_an_acd_practice_folder(tmp_path):
+    documents = _course_repo(tmp_path)
+    folder = _folder(
+        tmp_path,
+        COURSE_REPORT.replace("format: aa", "format: acd").replace('practice_number: "1"', 'practice_number: "4"'),
+    )
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/acd-4-actores-sdd/documento/")
+
+
+def test_an_acd_report_is_never_moved_into_an_aa_folder_of_the_same_number(tmp_path):
+    documents = _course_repo(tmp_path)
+    _practice_folder(documents, "unidad-1/aa-4-otro-tema")
+    folder = _folder(
+        tmp_path,
+        COURSE_REPORT.replace("format: aa", "format: acd").replace('practice_number: "1"', 'practice_number: "4"'),
+    )
+
+    assert _run_docs(folder, _profiles(tmp_path), documents) == 0
+
+    assert _proposed(folder).endswith("/unidad-1/acd-4-actores-sdd/documento/")

@@ -498,8 +498,10 @@ def test_aa_individual_report_keeps_the_single_student_on_the_cover(tmp_path):
 
 
 def test_aa_cover_label_is_plural_for_a_group(tmp_path):
+    # The cover label belongs to the UNL cover; `format: aa` now renders the AA
+    # template by default, so the cover is asked for explicitly.
     config = make_render_config(
-        tmp_path, raw={"format": "aa"},
+        tmp_path, raw={"format": "aa", "template": "unl"},
         metadata={**full_ape_metadata(), "members": ["Ana Pérez", "Luis Mora"]},
     )
     tex = build_latex_report.render_tex(config)
@@ -507,5 +509,67 @@ def test_aa_cover_label_is_plural_for_a_group(tmp_path):
 
 
 def test_aa_cover_label_stays_singular_for_one_student(tmp_path):
-    config = make_render_config(tmp_path, raw={"format": "aa"}, metadata=full_ape_metadata())
+    config = make_render_config(
+        tmp_path, raw={"format": "aa", "template": "unl"}, metadata=full_ape_metadata()
+    )
     assert "AUTOR:}" in build_latex_report.render_tex(config)
+
+
+def test_aa_template_ficha_label_is_plural_for_a_group(tmp_path):
+    """The default AA template has no cover: the ficha carries the group label."""
+    config = make_render_config(
+        tmp_path, raw={"format": "aa"},
+        metadata={**full_ape_metadata(), "members": ["Ana Pérez", "Luis Mora"]},
+    )
+    tex = build_latex_report.render_tex(config)
+    assert r"\ficha{Estudiantes}" in tex and r"\ficha{Estudiante}" not in tex
+
+
+def test_aa_template_ficha_label_stays_singular_for_one_student(tmp_path):
+    config = make_render_config(tmp_path, raw={"format": "aa"}, metadata=full_ape_metadata())
+    assert r"\ficha{Estudiante}" in build_latex_report.render_tex(config)
+
+
+# ---------------------------------------------------------------------------
+# S6 (aa-acd-templates): adding the AA and ACD templates leaves APE untouched
+# ---------------------------------------------------------------------------
+
+# sha256 of render_tex() for the fixed reports below, taken on the commit
+# before templates/aa-report.tex existed. Any change to ape-report.tex, to the
+# shared placeholder machinery or to the markdown converter as APE sees it
+# shows up here.
+APE_RENDER_SHA256 = {
+    "individual": "211372baeb59afd22d8a570dcdd4764cf5f029768709aee13e808354f7c072ce",
+    "group": "f1fb004bbc577f6d15c86bab470345cdb621be8fb522cf19da9b1170f8e8a8bd",
+}
+
+
+def test_ape_render_is_byte_identical_to_the_one_before_the_aa_template(tmp_path):
+    import hashlib
+
+    individual = build_latex_report.render_tex(
+        make_render_config(tmp_path / "a", metadata=full_ape_metadata())
+    )
+    group = build_latex_report.render_tex(
+        make_render_config(
+            tmp_path / "b",
+            metadata={**full_ape_metadata(), "members": ["Ana Pérez", "Luis Mora"]},
+        )
+    )
+    assert hashlib.sha256(individual.encode()).hexdigest() == APE_RENDER_SHA256["individual"]
+    assert hashlib.sha256(group.encode()).hexdigest() == APE_RENDER_SHA256["group"]
+
+
+def test_ape_render_carries_no_aa_machinery(tmp_path):
+    tex = build_latex_report.render_tex(make_render_config(tmp_path, metadata=full_ape_metadata()))
+    for marker in (r"\ficha", "zoneclear", r"\parshape", "Source Serif 4"):
+        assert marker not in tex
+
+
+def test_ape_keeps_its_template_and_the_aa_default_does_not_leak(tmp_path):
+    ape = make_render_config(tmp_path / "a", metadata=full_ape_metadata())
+    assert build_latex_report.resolve_template(build_latex_report.template_key_for(ape)) == APE_TEMPLATE
+    explicit = make_render_config(
+        tmp_path / "b", raw={"format": "aa", "template": "ape"}, metadata=full_ape_metadata()
+    )
+    assert build_latex_report.resolve_template(build_latex_report.template_key_for(explicit)) == APE_TEMPLATE

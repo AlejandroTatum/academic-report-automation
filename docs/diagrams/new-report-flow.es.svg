@@ -73,7 +73,7 @@
 
     <rect x="400" y="1032" width="400" height="80" rx="8" fill="#ffe08a" stroke="#b8860b" stroke-width="2" filter="url(#s)"/>
     <text x="600" y="1059" text-anchor="middle" font-size="16" font-weight="bold">6 · Formato</text>
-    <text x="600" y="1083" text-anchor="middle">Una sola pregunta: ¿APE, AA o libre?</text>
+    <text x="600" y="1083" text-anchor="middle">Una sola pregunta: ¿APE, AA, ACD o libre?</text>
     <text x="600" y="1101" text-anchor="middle">El contenido aprobado se vuelca en la plantilla</text>
 
     <rect x="400" y="1146" width="400" height="88" rx="8" fill="#fff" stroke="#c77700" stroke-width="2" filter="url(#s)"/>
@@ -159,7 +159,7 @@
     <line x1="800" y1="1072" x2="876" y2="1072" stroke="#888" stroke-dasharray="5,4" marker-end="url(#a)"/>
     <rect x="880" y="1032" width="470" height="80" rx="8" fill="#f2f6fb" stroke="#8aa4c8" filter="url(#s)"/>
     <text x="896" y="1058" font-size="14" font-weight="bold">Plantillas (las pasás vos)</text>
-    <text x="896" y="1082">APE · AA · Libre</text>
+    <text x="896" y="1082">APE · AA · ACD · Libre</text>
     <text x="896" y="1101">Sin intake largo: nada más que esta elección</text>
   </g>
 
@@ -167,7 +167,7 @@
   <line x1="40" y1="1530" x2="1360" y2="1530" stroke="#ddd"/>
   <text x="60" y="1564" font-size="16" font-weight="bold" fill="#1d2330">Qué cambia respecto del flujo actual</text>
   <g font-size="13" fill="#333">
-    <text x="60" y="1592">• El intake largo se reduce a una sola pregunta de formato: APE, AA o libre.</text>
+    <text x="60" y="1592">• El intake largo se reduce a una sola pregunta de formato: APE, AA, ACD o libre.</text>
     <text x="60" y="1614">• La IA arma el borrador; vos indicás reemplazos y eliminaciones, que se aplican literales.</text>
     <text x="60" y="1636">• Al aprobar se lanza una verificación dura que reporta hallazgos; las correcciones las hacés vos.</text>
     <text x="60" y="1658">• El formato va DESPUÉS de aprobar el contenido, no antes.</text>
