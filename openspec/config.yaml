@@ -1,8 +1,8 @@
-# OpenSpec SDD configuration — academic-report-automation
+# OpenSpec SDD configuration — academic-report-flow
 # Initialized in linked worktree `pi`. No product implementation performed.
 
 project:
-  name: academic-report-automation
+  name: academic-report-flow
   description: >-
     Python academic report automation toolkit: Markdown/YAML report content,
     canonical LaTeX pipeline (tools/build_report_auto.py) and preview HTML/WeasyPrint

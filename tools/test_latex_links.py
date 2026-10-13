@@ -73,8 +73,8 @@ def test_autolink_and_named_link_are_clickable():
 
 
 def test_inline_ssh_remote_uses_breakable_nolinkurl():
-    rendered = markdown_to_latex('`git@github.com:AlejandroTatum/academic-report-automation.git`')
-    assert r'\nolinkurl{git@github.com:AlejandroTatum/academic-report-automation.git}' in rendered
+    rendered = markdown_to_latex('`git@github.com:AlejandroTatum/academic-report-flow.git`')
+    assert r'\nolinkurl{git@github.com:AlejandroTatum/academic-report-flow.git}' in rendered
     assert r'\texttt{' not in rendered
 
 

@@ -26,7 +26,7 @@ import yaml
 from report_config import load_report_config
 from source_count import _ENTRY_HEADER
 
-USER_AGENT = "academic-report-automation/1.0 (mailto omitted)"
+USER_AGENT = "academic-report-flow/1.0 (mailto omitted)"
 WEB_TYPES = {"misc", "online"}
 PASSING = {"VERIFIED", "VERIFIED_WITH_WARNINGS", "VERIFIED_URL"}
 _URL = re.compile(r"https?://[^\s{}]+")
