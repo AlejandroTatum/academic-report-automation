@@ -82,7 +82,7 @@ def test_verified_doi_and_bib_hash(tmp_path):
     assert output["bib_sha256"] == hashlib.sha256((folder / "sources.bib").read_bytes()).hexdigest()
     assert output["checked_at"]
     assert output["results"][0]["status"] == "VERIFIED"
-    assert seen == [("https://api.crossref.org/works/10.1234/tree", "academic-report-automation/1.0 (mailto omitted)", 15)]
+    assert seen == [("https://api.crossref.org/works/10.1234/tree", "academic-report-flow/1.0 (mailto omitted)", 15)]
 
 
 def test_verified_isbn(tmp_path):

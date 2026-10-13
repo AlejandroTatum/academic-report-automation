@@ -78,7 +78,7 @@ breaks there. Keep a `body.md` bound to one backend.
 ## Project Structure
 
 ```txt
-academic-report-automation/
+academic-report-flow/
 ├── examples/
 │   ├── ejemplo_informe_academico/  # complete report folder — copy this to start
 │   │   ├── report.yml

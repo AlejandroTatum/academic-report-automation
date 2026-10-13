@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 TIMEOUT_SECONDS = 8
-USER_AGENT = "Mozilla/5.0 (compatible; academic-report-automation link-check)"
+USER_AGENT = "Mozilla/5.0 (compatible; academic-report-flow link-check)"
 
 Fetcher = Callable[[str, str], int]
 
