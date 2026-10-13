@@ -122,7 +122,7 @@ def test_the_box_keeps_its_place_in_the_stack(titlepage: str) -> None:
     """Title, then the framed box, then AUTOR — the order does not change."""
     title = titlepage.index("{{TITLE}}")
     box = titlepage.index(r"\fbox{")
-    author = titlepage.index("AUTOR:")
+    author = titlepage.index("{{AUTHOR_LABEL}}:")
     assert title < box < author
 
 

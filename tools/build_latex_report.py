@@ -173,6 +173,14 @@ def cover_field(value: str | None) -> str:
     """
     text = (value or "").strip()
     return latex_escape(text) if text else r"\strut"
+def report_authors(meta: dict) -> str:
+    """The author line: every member of a group report, else the student."""
+    members = meta.get("members")
+    if isinstance(members, list) and members:
+        return ", ".join(str(name) for name in members)
+    return str(meta.get("student") or "")
+
+
 LOGO_FILENAME = "unl-logo-aa1-transparent.png"
 BACKGROUND_FILENAME = "fondo-overleaf-investigacion.png"
 # Faculty logo extracted from the teacher's APE Word template (the header
@@ -437,15 +445,22 @@ APE_IDENTIFICATION_ROWS: tuple[tuple[str, str], ...] = (
 )
 
 
-def ape_identification_table(meta: dict) -> str:
+def ape_identification_table(meta: dict, omitted: tuple[str, ...] = ()) -> str:
     """Render the teacher's 2-column identification table from metadata.
 
     Every value is LaTeX-escaped, and internal line breaks are flattened: a
-    multi-line YAML value would otherwise break the `tabular` rows.
+    multi-line YAML value would otherwise break the `tabular` rows. Rows whose
+    key is in ``omitted`` (``ape_omit_fields:``) are left out. A group report
+    (``metadata.members``) names every member in the student row.
     """
+    members = meta.get("members")
+    values = dict(meta)
+    if isinstance(members, list) and members:
+        values["student"] = ", ".join(str(name) for name in members)
     rows = "\n\\hline\n".join(
-        rf"{label} & {latex_escape(' '.join(str(meta.get(key) or '').split()))} \\"
+        rf"{label} & {latex_escape(' '.join(str(values.get(key) or '').split()))} \\"
         for label, key in APE_IDENTIFICATION_ROWS
+        if key not in omitted
     )
     return "\n".join([
         "\\begin{center}",
@@ -462,7 +477,12 @@ def ape_identification_table(meta: dict) -> str:
 
 def ape_report_title(meta: dict) -> str:
     """The APE document title: the teacher's fixed wording plus the practice
-    number. Escaped by the caller through the normal replacement table."""
+    number, unless ``metadata.ape_title`` sets the heading for an activity that
+    is not a practical-experimental report. Escaped by the caller through the
+    normal replacement table."""
+    override = " ".join(str(meta.get("ape_title") or "").split())
+    if override:
+        return override
     practice_number = str(meta.get("practice_number") or "").strip()
     title = "Reporte Técnico de Actividades Práctico-Experimentales"
     return f"{title} Nro. {practice_number}" if practice_number else title
@@ -1109,7 +1129,8 @@ def render_tex(config: ReportConfig) -> str:
         "{{TITLE_EN}}": cover_field(meta.get("title_en") or config.raw.get("title_en")),
         "{{SUBJECT}}": latex_escape(meta.get("subject") or ""),
         "{{TEACHER}}": cover_field(meta.get("teacher")),
-        "{{STUDENT}}": cover_field(meta.get("student")),
+        "{{STUDENT}}": cover_field(report_authors(meta)),
+        "{{AUTHOR_LABEL}}": "AUTORES" if isinstance(meta.get("members"), list) and len(meta["members"]) > 1 else "AUTOR",
         "{{DATE}}": latex_escape(meta.get("date") or ""),
         "{{CAREER}}": latex_escape(meta.get("career") or "Carrera de Computación"),
         "{{PARALLEL}}": latex_escape(meta.get("parallel") or ""),
@@ -1121,7 +1142,7 @@ def render_tex(config: ReportConfig) -> str:
         # APE-only machinery; harmless no-ops for every other template.
         "{{APE_LOGO_PATH}}": latex_escape(APE_LOGO_FILENAME),
         "{{APE_TITLE}}": latex_escape(ape_report_title(meta)),
-        "{{IDENTIFICATION_TABLE}}": ape_identification_table(meta),
+        "{{IDENTIFICATION_TABLE}}": ape_identification_table(meta, config.ape_omit_fields),
         "{{BIBLATEX_OPTIONS}}": BIBLATEX_OPTIONS[config.citation_style],
         "{{BIBLATEX_SETUP}}": BIBLATEX_SETUP[config.citation_style],
         "{{BIB_FILE}}": latex_escape(bib_file),

@@ -565,6 +565,15 @@ def ape_structure_validation(config: ReportConfig) -> ValidationResult:
     for title in omitted:
         if fold_heading(title) not in known:
             result.errors.append(f"ape_omit_sections: '{title}' no es una sección del formato APE")
+    from report_config import APE_OMITTABLE_FIELDS
+
+    omitted_fields = config.raw.get("ape_omit_fields") or []
+    if not isinstance(omitted_fields, list):
+        result.errors.append("ape_omit_fields debe ser una lista de campos de metadata")
+        omitted_fields = []
+    for field in omitted_fields:
+        if field not in APE_OMITTABLE_FIELDS:
+            result.errors.append(f"ape_omit_fields: '{field}' no es un campo omitible del formato APE")
     skipped = {fold_heading(title) for title in omitted}
     required = [(title, fold_heading(title)) for title in APE_BODY_HEADINGS
                 if fold_heading(title) not in skipped]

@@ -282,6 +282,13 @@ DEFAULT_STUDENT = "Alejandro Padilla"
 # `format_spec` description (validated separately, since it lives outside
 # `metadata:`). English canonical keys; the metadata aliases below accept the
 # obvious Spanish spellings.
+# APE identification fields a teacher may leave out of the table
+# (`ape_omit_fields:` in report.yml); the core academic fields stay required.
+APE_OMITTABLE_FIELDS: tuple[str, ...] = (
+    "cycle", "unit", "learning_outcome", "practice_number",
+    "practice_type", "schedule", "place", "planned_time",
+)
+
 FORMAT_REQUIRED_METADATA: dict[str, tuple[str, ...]] = {
     "aa": ("title", "subject", "teacher", "student", "date"),
     "ape": (
@@ -443,7 +450,23 @@ class ReportConfig:
         chosen = self.format
         if chosen not in FORMAT_REQUIRED_METADATA:
             raise ValueError(unknown_format_message(chosen or ""))
-        return FORMAT_REQUIRED_METADATA[chosen]
+        required = FORMAT_REQUIRED_METADATA[chosen]
+        if chosen == "ape":
+            omitted = set(self.ape_omit_fields)
+            required = tuple(key for key in required if key not in omitted)
+        return required
+
+    @property
+    def ape_omit_fields(self) -> tuple[str, ...]:
+        """APE identification fields the teacher left out (`ape_omit_fields:`).
+
+        Only keys in ``APE_OMITTABLE_FIELDS`` count; anything else is reported
+        by the APE structure validation and ignored here.
+        """
+        value = self.raw.get("ape_omit_fields") or []
+        if not isinstance(value, list):
+            return ()
+        return tuple(key for key in value if key in APE_OMITTABLE_FIELDS)
 
     @property
     def min_sources(self) -> int | None:
