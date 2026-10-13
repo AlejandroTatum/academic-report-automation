@@ -1,0 +1,354 @@
+% AA (Aprendizaje Autónomo) report template: the approved editorial design
+% (proposal AA-B, aa-acd-templates S1/S2).
+%   * A4 portrait, no cover page. ONLY PAGE 1 IS CREATIVE: an institutional
+%     letterhead (faculty logo, university, faculty, career), the
+%     identification "ficha" hanging in the left margin, then the kicker
+%     "ACTIVIDAD AA-N · ASIGNATURA", the large serif title and the report title
+%     as an italic subtitle. The opening text wraps beside the ficha.
+%   * From the end of the ficha on, and on every later page, the layout is a
+%     conventional full-width text block with inline section numbers, a
+%     discreet running header (pages 2+) and a "page / total" footer.
+%   * Body Source Serif 4 10.5pt, headings and labels Source Sans 3, code
+%     Source Code Pro, crest green (#1F4E3D) as the only accent, grey rules.
+%   * The ficha is generated from metadata (see aa_ficha in the renderer); the
+%     fixed sections are authored in body.md. The bibliography is numbered like
+%     any section and the annexes render after it through the renderer's
+%     after-bibliography slot. Unlike the institutional templates
+%     (onehalfspacing), the report keeps the mockup's tighter 1.12 line spacing.
+%
+% The ficha zone (S2). The ficha is drawn in the page-1 background and its
+% height is measured once. Three rules keep the text clear of it, whatever the
+% length of the first section; none needs anything from the author:
+%   1. Prose, headings and list items that START beside the ficha get a
+%      \parshape: as many indented lines as fit before the end of the ficha,
+%      then full width. The count comes from the real position on the page.
+%   2. Block material that would START beside it (tables, code, display math,
+%      boxed answers, a [H] float) is pushed below the ficha by \zoneclear,
+%      which the hooks below add before each such environment.
+%   3. Floating figures and tables cannot take the top of page 1 (that is where
+%      the ficha is): \suppressfloats[t] on page 1. They go to the bottom of
+%      page 1 or to the next page, which are both clear of the ficha.
+% The zone closes for good at the first paragraph that starts below the ficha
+% or on page 2, so the change of width never meets a page break.
+
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[fontsize=10.5pt]{fontsize}
+% One geometry for every page: symmetric margins, no marginal column. The text
+% left edge is 2.7cm; the ficha hangs at 1.3cm and the page-1 text column
+% starts at 6.5cm (= 2.7cm + \zoneX, see the zone code below).
+\usepackage[a4paper,top=2.9cm,bottom=2.6cm,left=2.7cm,right=2.7cm,headheight=0.8cm,headsep=0.8cm,footskip=1.1cm]{geometry}
+\usepackage{fontspec}
+% Source Serif 4, Source Sans 3 and Source Code Pro ship with TeX Live and with
+% the texlive/texlive image the renderer falls back to, but a minimal local
+% install may lack them. Each face then degrades to a TeX Gyre face, the same
+% fallbacks the other templates rely on, instead of failing to compile.
+\IfFontExistsTF{Source Serif 4}{%
+  \setmainfont{Source Serif 4}[Ligatures=TeX]
+}{%
+  \setmainfont{TeX Gyre Pagella}[Ligatures=TeX]
+}
+\IfFontExistsTF{Source Sans 3}{%
+  \setsansfont{Source Sans 3}[Ligatures=TeX]
+}{%
+  \setsansfont{TeX Gyre Heros}[Ligatures=TeX]
+}
+\IfFontExistsTF{SourceSerif4-Light.otf}{%
+  \newfontfamily\serlight{SourceSerif4}[Extension=.otf,UprightFont=*-Light,ItalicFont=*-LightIt]
+}{%
+  \newcommand{\serlight}{\normalfont}
+}
+\IfFontExistsTF{Source Code Pro}{%
+  \setmonofont{Source Code Pro}[Scale=MatchLowercase]
+}{%
+  \setmonofont{TeX Gyre Cursor}[Scale=MatchLowercase]
+}
+\usepackage[spanish]{babel}
+\usepackage{amsmath}
+\usepackage{unicode-math}
+\IfFontExistsTF{STIX Two Math}{%
+  \setmathfont{STIX Two Math}
+}{%
+  \setmathfont{Latin Modern Math}
+}
+% Math italic letters come from the text face: it matches the body and avoids
+% the STIX Two "W i" gap (the italic correction of its W is applied before the
+% subscript).
+\IfFontExistsTF{SourceSerif4-RegularIt.otf}{%
+  \setmathfont{SourceSerif4-RegularIt}[Extension=.otf,range={it/{latin,Latin}}]
+}{}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{needspace}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage[section]{placeins}
+% placeins bounds floats by \section only; bound them at \subsection too, as
+% ape-report.tex does (#82).
+\let\ReportOriginalSubsection\subsection
+\renewcommand{\subsection}{\FloatBarrier\ReportOriginalSubsection}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{ragged2e}
+\usepackage{fancyhdr}
+\usepackage{eso-pic}
+\usepackage{lastpage}
+\usepackage{csquotes}
+\usepackage[{{BIBLATEX_OPTIONS}}]{biblatex}{{BIBLATEX_SETUP}}
+\usepackage[table]{xcolor}
+{{LISTING_PREAMBLE}}
+\usepackage{ifthen}
+\usepackage[hidelinks]{hyperref}
+% xurl permits breaks throughout long URL and nolinkurl runs.
+\usepackage{xurl}
+\urlstyle{same}
+\addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
+
+\newcommand{\reporthasbib}{{{HAS_BIB}}}
+\ifthenelse{\equal{\reporthasbib}{true}}{\addbibresource{{{BIB_FILE}}}}{}
+
+% Palette: ink, deep green taken from the crest, a quiet grey for labels.
+\definecolor{ink}{HTML}{1B1F1D}
+\definecolor{accent}{HTML}{1F4E3D}
+\definecolor{muted}{HTML}{5F6B66}
+\definecolor{hair}{HTML}{C9D1CC}
+\definecolor{wash}{HTML}{EEF2F0}
+\color{ink}
+
+\setlength{\parindent}{1.1em}
+\setlength{\parskip}{0pt}
+\linespread{1.12}
+\raggedbottom
+\emergencystretch=3em
+\setlist{topsep=3pt,itemsep=2pt,leftmargin=1.2em,labelsep=0.5em}
+\captionsetup{font={small,sf},labelfont={bf,color=accent},justification=raggedright,singlelinecheck=false,skip=5pt}
+\renewcommand{\figurename}{Figura}
+
+\newcommand{\spaced}[1]{{\addfontfeatures{LetterSpace=8}#1}}
+\newcommand{\labelcaps}[1]{{\sffamily\fontsize{6.8}{8}\selectfont\color{muted}\spaced{\MakeUppercase{#1}}\par}}
+
+% Headings: sans semibold in green, number inline before the title.
+\titleformat{\section}{\sffamily\fontsize{13.5}{16}\selectfont\bfseries\color{accent}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\itshape\bfseries\fontsize{11.5}{14}\selectfont}{\textcolor{muted}{\upshape\mdseries\thesubsection}}{0.7em}{}
+\titleformat{\subsubsection}{\normalfont\itshape\bfseries\normalsize}{\textcolor{muted}{\upshape\mdseries\thesubsubsection}}{0.6em}{}
+\titlespacing*{\section}{0pt}{20pt}{7pt}
+\titlespacing*{\subsection}{0pt}{13pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{3pt}
+
+% Tables the Markdown converter emits (grid, grey header row): rules in the
+% report's quiet grey, a little more air in the rows.
+\arrayrulecolor{hair}
+\renewcommand{\arraystretch}{1.1}
+
+% Code listings (fenced blocks in body.md): plain monospace with a green rule
+% at the left, no line numbers and no syntax colours.
+\lstdefinestyle{reportcode}{
+  basicstyle=\linespread{1}\footnotesize\ttfamily,
+  frame=leftline,
+  rulecolor=\color{accent},
+  framerule=1.2pt,
+  framesep=8pt,
+  xleftmargin=10pt,
+  xrightmargin=0pt,
+  numbers=none,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{muted}{\tiny$\hookrightarrow$}\space},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  extendedchars=true,
+  aboveskip=0.9em,
+  belowskip=0.7em,
+  keywordstyle=\bfseries,
+  commentstyle=\color{muted},
+  stringstyle=\relax,
+}
+
+% Boxed environment used by the Markdown converter for highlighted answers.
+\newsavebox{\answerboxbox}
+\newenvironment{answerbox}{%
+  \par\medskip\noindent
+  \setlength{\fboxsep}{10pt}%
+  \begin{lrbox}{\answerboxbox}%
+  \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}%
+  \vspace{4pt}%
+}{%
+  \vspace{4pt}%
+  \end{minipage}%
+  \end{lrbox}%
+  \fcolorbox{hair}{wash}{\usebox{\answerboxbox}}%
+  \par\medskip
+}
+
+% The bibliography is a numbered section like the rest of the report.
+\defbibheading{bibliography}[\bibname]{\section{#1}}
+\setlength{\bibitemsep}{2pt}
+% babel's Spanish label for a reference URL is "dirección"; the IEEE entries
+% of the mockup read "Disponible en:".
+\DefineBibliographyStrings{spanish}{url={Disponible en}}
+
+% Running header (pages 2+) and footer (all pages), both at the text edges.
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyhead[L]{\parbox[b][0.8cm][b]{\textwidth}{\sffamily\footnotesize\color{muted}\spaced{APRENDIZAJE AUTÓNOMO\ \,·\,\ \MakeUppercase{{{SUBJECT}}}}\hfill {{AA_LABEL}}\par}}
+\fancyfoot[L]{\sffamily\footnotesize\color{muted}\thepage\,/\,\pageref{LastPage}}
+
+% First page: the letterhead is drawn in the page background, so the header is empty.
+\fancypagestyle{firstpage}{%
+  \fancyhf{}\renewcommand{\headrulewidth}{0pt}
+  \fancyfoot[L]{\sffamily\footnotesize\color{muted}\thepage\,/\,\pageref{LastPage}}
+}
+
+\hypersetup{
+  pdftitle={Aprendizaje autónomo},
+  pdfauthor={{{STUDENT}}},
+  pdfsubject={{{SUBJECT}}},
+  colorlinks=false,
+  pdfborder={0 0 0}
+}
+
+% Identification "ficha": one labelled entry. The renderer writes one per
+% metadata field the report carries.
+\newcommand{\ficha}[2]{\labelcaps{#1}\vspace{1pt}{\fontsize{8.6}{10.6}\selectfont\raggedright #2\par}\vspace{4pt}{\color{hair}\hrule height 0.4pt}\vspace{4pt}}
+
+% ---------------------------------------------------------------------------
+% The ficha zone: paragraphs that start beside the ficha are narrowed, block
+% material is pushed below it. See the header of this file for the three rules.
+% ---------------------------------------------------------------------------
+\makeatletter
+\newlength{\zoneX}\setlength{\zoneX}{3.8cm}       % 6.5cm - left margin 2.7cm
+\newlength{\zonedrop}\setlength{\zonedrop}{1.1cm} % letterhead space above the title
+\newlength{\zonebottom}
+\newsavebox{\fichabox}
+\newcount\zoneon \zoneon=\z@                       % 1 = zone open (set once the ficha is measured)
+\newdimen\zone@L \newdimen\zone@W \newcount\zone@n
+% Number of baselines that fit between the current position and the end of the
+% zone; the paragraph gets that many indented lines, then full width. Rule 1.
+\def\zone@shape{%
+  % Inside lists \item has already set the paragraph shape from these two.
+  \zone@L=\@totalleftmargin \zone@W=\linewidth
+  % +4pt: a line box starts ~3.5pt above its glyphs, so lines that begin
+  % within 4pt of the end of the ficha are still narrow.
+  \@tempdima=\dimexpr\zonebottom-\pagetotal+4pt\relax
+  \ifdim\@tempdima>\z@
+    % Round UP: a line that starts above the zone's end must stay narrow.
+    \advance\@tempdima by\baselineskip \advance\@tempdima by-1sp
+    \zone@n=\@tempdima \@tempcntb=\baselineskip
+    \divide\zone@n by\@tempcntb
+    % Never narrower than the page can hold: a nearly full page (a bottom
+    % float already took the room) must not carry narrow lines over its break.
+    \ifdim\pagegoal<\maxdimen
+      \@tempdimb=\dimexpr\pagegoal-\pagetotal\relax
+      \ifdim\@tempdimb<\z@ \@tempdimb=\z@ \fi
+      \@tempcnta=\@tempdimb \divide\@tempcnta by\@tempcntb
+      \ifnum\zone@n>\@tempcnta \zone@n=\@tempcnta \fi
+    \fi
+    \ifnum\zone@n>\z@
+      \edef\zone@spec{\parshape \the\numexpr\zone@n+1\relax}%
+      \@tempcnta=\z@
+      \@whilenum\@tempcnta<\zone@n\do{%
+        \edef\zone@spec{\zone@spec\space\the\dimexpr\zone@L+\zoneX\relax
+                        \space\the\dimexpr\zone@W-\zoneX\relax}%
+        \advance\@tempcnta\@ne}%
+      \edef\zone@spec{\zone@spec\space\the\zone@L\space\the\zone@W}%
+      \zone@spec
+    \fi
+  \fi}
+\def\zone@check{%
+  \ifnum\zoneon>\z@
+    \ifinner\else
+      \ifnum\c@page=\@ne
+        \ifdim\pagetotal<\zonebottom \zone@shape \else \global\zoneon=\z@ \fi
+      \else
+        \global\zoneon=\z@
+      \fi
+    \fi
+  \fi}
+\AddToHook{para/begin}{\zone@check}
+% Rule 2: push block material below the ficha. Only in vertical mode: inline
+% material (an inline tabular, math inside a paragraph) is part of a shaped
+% paragraph and stays beside the ficha, inside the narrow lines.
+\newcommand{\zoneclear}{\ifvmode\ifnum\zoneon>\z@\ifinner\else\ifnum\c@page=\@ne
+  \ifdim\pagetotal<\zonebottom \par\vskip\dimexpr\zonebottom-\pagetotal\relax\fi\fi\fi\fi\fi}
+\newcommand{\zone@blocks}{longtable,xltabular,tabular,tabularx,lstlisting,verbatim,%
+  equation,equation*,align,align*,gather,gather*,multline,multline*,flalign,flalign*,%
+  alignat,alignat*,displaymath,eqnarray,eqnarray*,answerbox,tikzpicture}
+\@for\zone@env:=\zone@blocks\do{%
+  \edef\zone@hook{env/\zone@env/before}%
+  \expandafter\AddToHook\expandafter{\zone@hook}{\zoneclear}}
+% A [H] float is typeset in place, like any block (float.sty \@float@HH).
+\let\zone@float@HH\@float@HH
+\def\@float@HH#1[H]{\zoneclear\zone@float@HH{#1}[H]}
+\makeatother
+
+\begin{document}
+\thispagestyle{firstpage}
+% Rule 3: floating figures and tables cannot take the top of page 1, where the
+% ficha is. They go to the bottom of page 1 or to the next page.
+\suppressfloats[t]
+
+% The ficha, measured once; its height sets the end of the opening zone.
+\sbox{\fichabox}{\parbox[t]{3.9cm}{\raggedright
+  {\color{accent}\rule{1.2cm}{1.6pt}}\par\vspace{4pt}
+  {\sffamily\fontsize{9.5}{12}\selectfont\bfseries\color{accent}Datos de identificación\par}\vspace{6pt}
+  {\color{hair}\hrule height 0.4pt}\vspace{4pt}
+{{AA_FICHA}}}}
+\newlength{\fichadrop}\setlength{\fichadrop}{0.45cm} % ficha starts level with the kicker
+% minus the 8pt of blank space the last ficha entry leaves after its rule
+\setlength{\zonebottom}{\dimexpr\zonedrop+\fichadrop+\ht\fichabox+\dp\fichabox-8pt\relax}
+\global\zoneon=1
+
+% Page-1 background: letterhead (logo + institution) and the ficha.
+\AddToShipoutPictureBG*{%
+  \put(\LenToUnit{1.3cm},\LenToUnit{\dimexpr\paperheight-1.0cm\relax}){%
+    \makebox(0,0)[tl]{\includegraphics[width=4.4cm]{{{APE_LOGO_PATH}}}}}%
+  \put(\LenToUnit{6.5cm},\LenToUnit{\dimexpr\paperheight-1.3cm\relax}){%
+    \makebox(0,0)[tl]{\parbox[t]{11.8cm}{\sffamily\footnotesize\color{ink}%
+      \textbf{\spaced{\MakeUppercase{{{UNIVERSITY}}}}}\\[1pt]
+      {{FACULTY}}\\[1pt]
+      {{CAREER}}}}}%
+  \put(\LenToUnit{1.3cm},\LenToUnit{\dimexpr\paperheight-2.9cm-\zonedrop-\fichadrop\relax}){%
+    \makebox(0,0)[tl]{\usebox{\fichabox}}}%
+}
+
+\vspace*{\zonedrop}
+\begingroup\zoneon=0 \leftskip=\zoneX \parindent=0pt
+{\sffamily\small\bfseries\color{accent}\spaced{ACTIVIDAD {{AA_LABEL}}\ \,·\ \,\MakeUppercase{{{SUBJECT}}}}\par}
+\vspace{6pt}
+{\serlight\fontsize{32}{36}\selectfont Aprendizaje autónomo\par}
+\vspace{8pt}
+{\raggedright\leftskip=\zoneX\itshape\fontsize{14}{18}\selectfont\color{muted}{{TITLE}}\par}
+\vspace{10pt}
+\noindent{\color{hair}\rule{\dimexpr\linewidth-\zoneX\relax}{0.5pt}}\par
+\endgroup
+
+{{FRONT_MATTER}}
+
+{{AI_SIGNATURE}}
+
+{{BODY}}
+
+\ifthenelse{\equal{\reporthasbib}{true}}{
+\Needspace{6\baselineskip}
+{{PRINT_BIBLIOGRAPHY}}
+}{}
+
+% The renderer fills AFTER_BIBLIOGRAPHY with the `# Anexos` chunk it split off
+% body.md, so the annexes render after the bibliography, as the last section.
+{{AFTER_BIBLIOGRAPHY}}
+
+% The renderer fills FRONT_MATTER with the very same block it puts in
+% AI_DECLARATION (the plain-report.tex mechanism), so the declaration is
+% printed once above and the duplicate is captured here instead of being
+% typeset twice.
+\long\def\reportaideclarationalias{{{AI_DECLARATION}}}
+
+\end{document}

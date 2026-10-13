@@ -32,6 +32,27 @@ import course_profile  # noqa: E402
 from report_config import ReportConfig  # noqa: E402
 from validate_report import metadata_validation  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _never_publish_outside_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Leak-proof by construction: a build here can only publish into a scratch dir.
+
+    The repo-root conftest.py already pins REPORT_CONTENT_ROOT to a per-session
+    temp dir. This adds the monkeypatch ``test_content_root.py`` uses, so a
+    test that forgets ``publish_global: false`` (or a module that bound the
+    root before the pin) still copies its PDF under tmp, never into the real
+    ``outputs/<materia>/``.
+    """
+    import importlib
+
+    sandbox = tmp_path_factory.mktemp("global-outputs")
+    for name in ("output_router", "report_config", "build_latex_report", "validate_report"):
+        module = importlib.import_module(name)
+        if hasattr(module, "GLOBAL_OUTPUTS"):
+            monkeypatch.setattr(module, "GLOBAL_OUTPUTS", sandbox)
+    return sandbox
+
+
 ACD_TEMPLATE = ROOT / "templates" / "acd-report.tex"
 APE_TEMPLATE = ROOT / "templates" / "ape-report.tex"
 
@@ -539,9 +560,11 @@ def test_ape_keeps_its_template_and_annex_placement(tmp_path: Path) -> None:
 
 
 def test_non_annex_templates_still_receive_the_whole_body(tmp_path: Path) -> None:
-    config = make_render_config(tmp_path, raw={"format": "aa"})
+    # `format: aa` has its own annex slot since T3; an explicit `unl` template
+    # (which AA may still ask for) is a template without one.
+    config = make_render_config(tmp_path, raw={"format": "aa", "template": "unl"})
     assert rendered_template_name(config) == "unl-report.tex"
     tex = build_latex_report.render_tex(config)
     assert tex.index("Contenido de anexos") < tex.index(r"\printbibliography"), (
-        "the AA/UNL template keeps the annexes in body order until T3 gives it a slot"
+        "a template outside ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS keeps the annexes in body order"
     )

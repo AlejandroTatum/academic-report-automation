@@ -33,6 +33,7 @@ DEFAULT_TEMPLATE = ROOT / "templates" / "unl-report.tex"
 PLAIN_TEMPLATE = ROOT / "templates" / "plain-report.tex"
 APE_TEMPLATE = ROOT / "templates" / "ape-report.tex"
 ACD_TEMPLATE = ROOT / "templates" / "acd-report.tex"
+AA_TEMPLATE = ROOT / "templates" / "aa-report.tex"
 TEMPLATE_ALIASES = {
     "default": DEFAULT_TEMPLATE,
     "unl": DEFAULT_TEMPLATE,
@@ -45,6 +46,8 @@ TEMPLATE_ALIASES = {
     "ape_report": APE_TEMPLATE,
     "acd": ACD_TEMPLATE,
     "acd_report": ACD_TEMPLATE,
+    "aa": AA_TEMPLATE,
+    "aa_report": AA_TEMPLATE,
 }
 
 
@@ -83,14 +86,15 @@ ROUTE_TEMPLATE_DEFAULTS = {
 }
 
 # Default template per chosen FORMAT (new-report-flow): `ape` renders the
-# teacher's Word replica, `acd` the session record sheet, `aa` the current
-# academic look and `libre` the plain template. The format is the user's post-approval presentation choice, so it
-# outranks the route default — but never an explicit `template:` key, which
-# still wins in either direction (a libre report may ask for any shell).
+# teacher's Word replica, `acd` the session record sheet, `aa` the editorial
+# autonomous-learning report and `libre` the plain template. The format is the
+# user's post-approval presentation choice, so it outranks the route default —
+# but never an explicit `template:` key, which still wins in either direction
+# (a libre report may ask for any shell, an AA report may keep `unl`).
 FORMAT_TEMPLATE_DEFAULTS = {
     "ape": "ape",
     "acd": "acd",
-    "aa": "unl",
+    "aa": "aa",
     "libre": "plain",
 }
 
@@ -419,6 +423,8 @@ BIBLIOGRAPHY_TITLES = {
     "ape_report": "Bibliografía / Referencias",
     "acd": "Referencias",
     "acd_report": "Referencias",
+    "aa": "Referencias",
+    "aa_report": "Referencias",
 }
 
 
@@ -497,14 +503,25 @@ def ape_report_title(meta: dict) -> str:
     return f"{title} Nro. {practice_number}" if practice_number else title
 
 
-def acd_label(meta: dict) -> str:
-    """The ACD number as the record prints it: ``ACD-4`` for ``practice_number: 4``.
+def numbered_label(meta: dict, prefix: str) -> str:
+    """The activity number as the report prints it: ``ACD-4`` for ``practice_number: 4``.
 
     An authored ``ACD-4`` / ``ACD 4`` is taken as the number, never doubled.
+    Without a number the label is the bare acronym.
     """
-    number = re.sub(r"^acd[\s_-]*", "", str(meta.get("practice_number") or "").strip(), flags=re.IGNORECASE)
+    number = re.sub(
+        rf"^{re.escape(prefix)}[\s_-]*", "", str(meta.get("practice_number") or "").strip(), flags=re.IGNORECASE
+    )
     number = " ".join(number.split())
-    return f"ACD-{number}" if number else "ACD"
+    return f"{prefix}-{number}" if number else prefix
+
+
+def acd_label(meta: dict) -> str:
+    return numbered_label(meta, "ACD")
+
+
+def aa_label(meta: dict) -> str:
+    return numbered_label(meta, "AA")
 
 
 def _flat(value: object) -> str:
@@ -574,12 +591,52 @@ def acd_footer(meta: dict) -> str:
     )
 
 
+def aa_ficha(meta: dict) -> str:
+    r"""Render the AA identification ficha (page 1, left margin) from metadata.
+
+    One ``\ficha{label}{value}`` entry per field the report carries, in the
+    mockup's reading order; a field that is absent produces no entry, so an
+    existing AA report that only has the five required keys still renders.
+    Every value is LaTeX-escaped and flattened, and a group report
+    (``metadata.members``) lists each member on its own line under the plural
+    label. ``\ficha`` is defined by the template.
+    """
+    members = meta.get("members")
+    names = [_flat(name) for name in members if str(name).strip()] if isinstance(members, list) else []
+    if names:
+        student_label = "Estudiantes" if len(names) > 1 else "Estudiante"
+        student = r"\\ ".join(names)
+    else:
+        student_label, student = "Estudiante", _flat(meta.get("student"))
+
+    # The parallel defaults to "A" for every report, so on its own it is not
+    # data the author gave: it only qualifies a cycle that is present.
+    cycle = _flat(meta.get("cycle"))
+    parallel = _flat(meta.get("parallel"))
+    if cycle and parallel:
+        cycle = f"{cycle}, paralelo {parallel}"
+
+    activity = latex_escape(aa_label(meta)) if str(meta.get("practice_number") or "").strip() else ""
+    entries = (
+        (student_label, student),
+        ("Asignatura", _flat(meta.get("subject"))),
+        ("Ciclo", cycle),
+        ("Unidad", _flat(meta.get("unit"))),
+        ("Resultado de aprendizaje", _flat(meta.get("learning_outcome"))),
+        ("Actividad", activity),
+        ("Docente", _flat(meta.get("teacher"))),
+        ("Fecha de entrega", _flat(meta.get("date"))),
+        ("Tiempo en el sílabo", _flat(meta.get("planned_time"))),
+    )
+    return "\n".join(rf"\ficha{{{label}}}{{{value}}}" for label, value in entries if value)
+
+
 def split_annexes_markdown(markdown_source: str) -> tuple[str, str | None]:
     """Split body.md at its first top-level `Anexos` heading.
 
-    The APE and ACD templates render the annexes after the bibliography, so
-    everything from `# Anexos` onward is returned separately for
-    {{AFTER_BIBLIOGRAPHY}}. The heading itself travels WITH the annex chunk so
+    The templates in ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS (APE, ACD, AA)
+    render the annexes after the bibliography, so everything from `# Anexos`
+    onward is returned separately for {{AFTER_BIBLIOGRAPHY}}. The heading itself travels WITH the annex chunk so
     it renders (and keeps its section number) after the bibliography. When the
     body declares no `# Anexos` heading, nothing splits and the whole body
     renders as one piece -- the missing heading is the structure validator's
@@ -1091,6 +1148,8 @@ UNL_TEMPLATE_KEYS = frozenset({"default", "unl", "unl_report"})
 APE_TEMPLATE_KEYS = frozenset({"ape", "ape_report"})
 # Likewise for acd-report.tex, the ACD session record sheet.
 ACD_TEMPLATE_KEYS = frozenset({"acd", "acd_report"})
+# And for aa-report.tex, the editorial autonomous-learning report.
+AA_TEMPLATE_KEYS = frozenset({"aa", "aa_report"})
 
 # Template capabilities, not per-format special cases: a template that lists its
 # keys here gets the behaviour, and a new template opts in with one entry.
@@ -1098,7 +1157,7 @@ ACD_TEMPLATE_KEYS = frozenset({"acd", "acd_report"})
 # On these templates the fixed `# Anexos` section must render AFTER the
 # bibliography, so render_tex() splits body.md at that heading (see
 # split_annexes_markdown) and emits it through {{AFTER_BIBLIOGRAPHY}}.
-ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS = APE_TEMPLATE_KEYS | ACD_TEMPLATE_KEYS
+ANNEXES_AFTER_BIBLIOGRAPHY_TEMPLATE_KEYS = APE_TEMPLATE_KEYS | ACD_TEMPLATE_KEYS | AA_TEMPLATE_KEYS
 # These templates restyle `description` as a label column, so render_tex()
 # turns Pandoc definition lists (`term` / `: definition`) into it.
 DEFINITION_LIST_TEMPLATE_KEYS = ACD_TEMPLATE_KEYS
@@ -1339,6 +1398,9 @@ def render_tex(config: ReportConfig) -> str:
         "{{ACD_LABEL}}": latex_escape(acd_label(meta)),
         "{{ACD_SESSION_BLOCK}}": acd_session_block(meta),
         "{{ACD_FOOTER}}": acd_footer(meta),
+        # AA-only machinery; harmless no-ops for every other template.
+        "{{AA_LABEL}}": latex_escape(aa_label(meta)),
+        "{{AA_FICHA}}": aa_ficha(meta),
         "{{BIBLATEX_OPTIONS}}": BIBLATEX_OPTIONS[config.citation_style],
         "{{BIBLATEX_SETUP}}": BIBLATEX_SETUP[config.citation_style],
         "{{BIB_FILE}}": latex_escape(bib_file),

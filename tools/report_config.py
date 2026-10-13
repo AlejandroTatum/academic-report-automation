@@ -236,6 +236,19 @@ ROUTE_COVER_DEFAULTS: dict[str, dict[str, Any]] = {
     "other": {"required": False, "logo_required": False, "body_starts_on_page": 1},
 }
 
+# Cover defaults derived from the chosen FORMAT (aa-acd-templates S8): the
+# `ape`, `aa` and `acd` templates have no cover page, so a report of those
+# formats is not asked for one and report.yml does not have to say
+# `cover: {required: false}`. The body therefore starts on page 1. The logo
+# check is left alone: all three templates print the faculty logo. The format is
+# the more specific choice, so it outranks the route default on the keys it
+# sets, and an explicit `cover:` block in report.yml outranks both.
+FORMAT_COVER_DEFAULTS: dict[str, dict[str, Any]] = {
+    "ape": {"required": False, "body_starts_on_page": 1},
+    "aa": {"required": False, "body_starts_on_page": 1},
+    "acd": {"required": False, "body_starts_on_page": 1},
+}
+
 
 def unknown_route_message(route: str) -> str:
     """Spanish guidance for a `route:` value no route table recognises."""
@@ -964,22 +977,25 @@ class ReportConfig:
         return default if value is MISSING else value
 
     def cover_value(self, key: str, default: Any = None) -> Any:
-        """Resolve a cover value: report.yml -> route default -> format default.
+        """Resolve a cover value: report.yml -> format/route default -> academic_format.yml.
 
         The precedence here is the heart of the route contract: an explicit
         `cover:` block in report.yml always wins (per key, so a partial block
-        never shadows the rest), a non-academic route derives its default from
-        the route table, and an academic (or unrecognised) route falls through
-        to the global academic_format.yml values — which is what every
-        route-omitted report has always read, including its own `cover:`
-        relaxation.
+        never shadows the rest), a coverless format (``FORMAT_COVER_DEFAULTS``)
+        or a non-academic route derives its default from its table, the format
+        outranking the route, and anything else falls through to the global
+        academic_format.yml values — which is what every route-omitted report
+        has always read, including its own `cover:` relaxation.
         """
         explicit = self.raw.get("cover")
         if isinstance(explicit, dict) and key in explicit:
             return explicit[key]
-        route_defaults = ROUTE_COVER_DEFAULTS.get(self.route)
-        if route_defaults is not None and key in route_defaults:
-            value = route_defaults[key]
+        derived = {
+            **ROUTE_COVER_DEFAULTS.get(self.route, {}),
+            **FORMAT_COVER_DEFAULTS.get(self.format or "", {}),
+        }
+        if key in derived:
+            value = derived[key]
             if key != "required" and not self.cover_value("required", default=True):
                 return value
             # Dependent coherence: an explicitly required cover carries the

@@ -21,6 +21,10 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
   - ACD: Objetivo(s); Síntesis de contenidos abordados; Actividades desarrolladas en clase; Análisis / reflexión; Conclusiones; Referencias; Anexos (optional).
 - **S5 — Selection.** `format: aa` renders the new AA template by default, and `format: acd` renders the ACD template by default. The skill's format question offers APE, AA, ACD or libre.
 - **S6 — APE unchanged.** Existing APE rendering, validation and tests keep passing unchanged.
+- **S8 — Coverless by format.** User chose "Sí, por formato (recomendado)" to the question "¿Que APE, AA y ACD no lleven portada por defecto según el formato (cambia también APE)?".
+  - Formats `ape`, `aa` and `acd` default to no cover, so validation does not require `cover: {required: false}` in report.yml.
+  - An explicit cover setting in report.yml still wins.
+  - No report that validates today may start failing.
 - **S7 — Skill docs.** The `academic-report-flow` references describe the AA and ACD formats, their metadata and their sections; the skill contract tests cover them.
 
 ## Tasks
@@ -28,8 +32,8 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
 | T1 | S4, S6 | worker: generalize per-format section structure validation (APE behavior unchanged) and add AA/ACD section lists | done | de53f40 |
-| T2 | S1, S3, S4, S5 | worker: `acd` format key, metadata, `templates/acd-report.tex` from the ACD-B mockup, identification block, template default, course profile, tests | done | this commit |
-| T3 | S1, S2, S4, S5 | worker: `templates/aa-report.tex` from the AA-B mockup, page-1 ficha from metadata, float/zone safety, `aa` default template, tests | pending | |
+| T2 | S1, S3, S4, S5 | worker: `acd` format key, metadata, `templates/acd-report.tex` from the ACD-B mockup, identification block, template default, course profile, tests | done | b5ee140 |
+| T3 | S1, S2, S4, S5, S8 | worker: `templates/aa-report.tex` from the AA-B mockup, page-1 ficha from metadata, float/zone safety, `aa` default template, tests | done | this commit |
 | T4 | S5, S7 | worker: skill references, format question, conversation cases, contract tests; sync skills | pending | |
 | T5 | S1-S7 | verify: end-to-end render of sample AA and ACD reports through the real pipeline, visual check, full suite | pending | |
 
@@ -65,3 +69,17 @@ Give AA a dedicated template and add ACD as a new format, both from the user-app
   - Polish for T5: grid-style tables instead of the mockup's booktabs look; `\Needspace` leaves a large gap at the end of page 2; the footer shows the full uppercased name.
   - Open decision: `format: acd` (like APE) needs `cover: {required: false}` in report.yml, otherwise validation reports a mixed cover. A format-derived cover default would also change APE behavior.
   - Definition-list converter tests were written after the code, so there is no RED for them.
+- **L11** (user, decision): "Sí, por formato (recomendado)". The ape, aa and acd formats default to no cover (S8), added to T3.
+- **L12** (incident during T3): standalone probe builds published a scratch PDF to the real `.reports-system/automation/outputs/sistemas-operativos/main.pdf`.
+  - Removed with user approval.
+  - The new tests are now leak-proof: an autouse fixture monkeypatches `GLOBAL_OUTPUTS`, and probes use `publish_global: false`.
+  - A possible T2 leftover in `outputs/desarrollo-basado-en-plataformas/` is kept by user decision ("no lo borres no hay problema").
+- **L13** (user): "acabas t3, y paramos t4 en otra sesion". T4 and T5 move to a new session.
+- **L14** (T3 result):
+  - `templates/aa-report.tex`: the page-1 ficha zone narrows prose with `\parshape`. An `env/*/before` hook pushes tables, code and display math below the ficha, and `\suppressfloats[t]` keeps floats off the top of page 1. 10 real-PDF variants passed, and a mutant check confirmed the overlap reappears without the hook.
+  - S8: `FORMAT_COVER_DEFAULTS` in `ReportConfig.cover_value`; an explicit `cover:` wins per key.
+  - `format: aa` now defaults to `aa-report.tex`, and `template: unl` keeps the old look. Existing tests were adjusted accordingly: the route-defaults and cover-label tests now use `template: unl`, and the parent updated `test_format_choice.py`.
+  - Definition lists stay off for AA.
+  - RED: 30 failed and 25 errors. GREEN: 343 focused tests (worker) and 2563 in the full suite (parent).
+  - Parent visual check of `outputs/_aa_scratch/sample-aa/build/aa-sample.pdf`: page 1 matches the mockup, and an early table drops below the ficha.
+  - Polish for T5: the Gantt figure floats to the bottom of page 2, leaving a large gap; the tables use grid style; paragraphs are indented; the sample was not run through the visual auditor.
